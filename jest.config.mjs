@@ -6,5 +6,4 @@ export default {
         '^.+\\.ts$': ['ts-jest', { useESM: true, tsconfig: '<rootDir>/tsconfig.jest.json' }],
     },
     testMatch: ['**/?(*.)+(test).ts'],
-    // Removed deprecated globals config
 };
