@@ -7,9 +7,3 @@ A command line utility for the Unity Game Engine. This tool is primarily designe
 ```bash
 npm install -g unity-cli
 ```
-
-## Usage
-
-```bash
-unity-cli [command] [options]
-```

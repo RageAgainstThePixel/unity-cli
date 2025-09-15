@@ -1,0 +1,9 @@
+dist/
+node_modules/
+*.log
+*.tsbuildinfo
+coverage/
+.git/
+.github/
+tsconfig.json
+package-lock.json

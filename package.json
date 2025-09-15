@@ -1,0 +1,41 @@
+{
+  "name": "unity-cli",
+  "version": "1.0.0",
+  "description": "A command line utility for the Unity Game Engine.",
+  "author": "RageAgainstThePixel",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RageAgainstThePixel/unity-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/RageAgainstThePixel/unity-cli/issues"
+  },
+  "homepage": "https://github.com/RageAgainstThePixel/unity-cli#readme",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "unity-cli": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "link": "npm link",
+    "tests": "jest --roots tests"
+  },
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "@types/commander": "^2.12.0",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.4.0",
+    "jest": "^30.1.1",
+    "ts-jest": "^29.4.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "commander": "^14.0.1"
+  }
+}
