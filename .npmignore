@@ -6,6 +6,7 @@ coverage/
 .github/
 tsconfig*.json
 package-lock.json
+src/
 tests/
 jest.config.mjs
 .vscode/
