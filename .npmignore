@@ -1,9 +1,14 @@
-dist/
 node_modules/
 *.log
 *.tsbuildinfo
 coverage/
 .git/
 .github/
-tsconfig.json
+tsconfig*.json
 package-lock.json
+tests/
+jest.config.mjs
+.vscode/
+.idea/
+.env
+.env.local
