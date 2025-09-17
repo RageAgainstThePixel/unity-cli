@@ -20,24 +20,18 @@ export async function promptForSecretInput(prompt: string): Promise<string> {
     return new Promise<string>((resolve) => {
         const rl = readline.createInterface({
             input: process.stdin,
-            output: process.stdout
+            output: process.stdout,
+            terminal: true
         });
 
-        // @ts-ignore
-        rl.stdoutMuted = true;
-
         rl.question(prompt, (input) => {
+            // mask the previous line with asterisks in place of each character
+            readline.moveCursor(process.stdout, 0, -1);
+            readline.clearLine(process.stdout, 0);
+            process.stdout.write(prompt + '*'.repeat(input.length) + '\n');
             rl.close();
             console.log(); // Move to next line after input
             resolve(input);
         });
-
-        // @ts-ignore
-        rl._writeToOutput = function _writeToOutput(stringToWrite: string) {
-            // @ts-ignore
-            if (rl.stdoutMuted) rl.output.write("*");
-            // @ts-ignore
-            else rl.output.write(stringToWrite);
-        };
     });
 }
