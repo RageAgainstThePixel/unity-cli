@@ -23,14 +23,14 @@ program.command('license-version')
 
 program.command('activate-license')
     .description('Activate a Unity license.')
-    .option('--email <email>', 'Email associated with the Unity account. Required when activating a personal or professional license.')
-    .option('--password <password>', 'Password for the Unity account. Required when activating a personal or professional license.')
-    .option('--serial <serial>', 'License serial number. Required when activating a professional license.')
-    .option('--type <type>', 'License type (personal, professional, floating)')
-    .option('--config <config>', 'Path to the configuration file. Required when activating a floating license.')
+    .option('-e, --email <email>', 'Email associated with the Unity account. Required when activating a personal or professional license.')
+    .option('-p, --password <password>', 'Password for the Unity account. Required when activating a personal or professional license.')
+    .option('-s, --serial <serial>', 'License serial number. Required when activating a professional license.')
+    .option('-l, --license <license>', 'License type (personal, professional, floating).')
+    .option('-c, --config <config>', 'Path to the configuration file. Required when activating a floating license.')
     .action(async (options) => {
         const client = new LicensingClient();
-        const licenseType: LicenseType = options.type;
+        const licenseType: LicenseType = options.license;
 
         if (![LicenseType.personal, LicenseType.professional, LicenseType.floating].includes(licenseType)) {
             throw new Error(`Invalid license type: ${licenseType}`);
