@@ -31,6 +31,7 @@ program.command('activate-license')
     .action(async (options) => {
         const client = new LicensingClient();
         const licenseType: LicenseType = options.type;
+
         if (![LicenseType.personal, LicenseType.professional, LicenseType.floating].includes(licenseType)) {
             throw new Error(`Invalid license type: ${licenseType}`);
         }
@@ -58,6 +59,7 @@ program.command('return-license')
     .action(async (options) => {
         const client = new LicensingClient();
         const licenseType: LicenseType = options.type;
+
         if (![LicenseType.personal, LicenseType.professional, LicenseType.floating].includes(licenseType)) {
             throw new Error(`Invalid license type: ${licenseType}`);
         }
