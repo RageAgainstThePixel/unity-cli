@@ -21,8 +21,13 @@ export class LicensingClient {
     }
 
     async init() {
-        await fs.promises.access(this.unityHub.executable, fs.constants.R_OK);
-        await fs.promises.access(this.unityHub.rootDirectory, fs.constants.R_OK);
+        try {
+            await fs.promises.access(this.unityHub.executable, fs.constants.R_OK);
+            await fs.promises.access(this.unityHub.rootDirectory, fs.constants.R_OK);
+        } catch (error) {
+            await this.unityHub.Install();
+        }
+
         const licensingClientExecutable = process.platform === 'win32' ? 'Unity.Licensing.Client.exe' : 'Unity.Licensing.Client';
         const licenseClientPath = await ResolveGlobPath([this.unityHub.rootDirectory, '**', licensingClientExecutable]);
         this.licenseClientPath = licenseClientPath;
@@ -227,7 +232,7 @@ export class LicensingClient {
 
         try {
             exitCode = await new Promise<number>((resolve, reject) => {
-                const child = spawn(this.licenseClientPath as string, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+                const child = spawn(this.licenseClientPath!, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
                 child.stdout.on('data', (data) => {
                     const chunk = data.toString();

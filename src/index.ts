@@ -4,7 +4,7 @@ import { Command } from 'commander';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { LicenseType, LicensingClient } from './license-client';
-import { promptForSecretInput } from './utilities';
+import { PromptForSecretInput } from './utilities';
 
 const pkgPath = join(__dirname, '..', 'package.json');
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
@@ -38,15 +38,15 @@ program.command('activate-license')
 
         if (licenseType !== LicenseType.floating) {
             if (!options.email) {
-                options.email = await promptForSecretInput('Email: ');
+                options.email = await PromptForSecretInput('Email: ');
             }
 
             if (!options.password) {
-                options.password = await promptForSecretInput('Password: ');
+                options.password = await PromptForSecretInput('Password: ');
             }
 
             if (licenseType === LicenseType.professional && !options.serial) {
-                options.serial = await promptForSecretInput('Serial: ');
+                options.serial = await PromptForSecretInput('Serial: ');
             }
         }
 
