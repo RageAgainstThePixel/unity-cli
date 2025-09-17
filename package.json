@@ -12,7 +12,6 @@
     "url": "https://github.com/RageAgainstThePixel/unity-cli/issues"
   },
   "homepage": "https://github.com/RageAgainstThePixel/unity-cli#readme",
-  "type": "module",
   "main": "dist/index.js",
   "bin": {
     "unity-cli": "./dist/index.js"
@@ -36,6 +35,7 @@
     "typescript": "^5.9.2"
   },
   "dependencies": {
-    "commander": "^14.0.1"
+    "commander": "^14.0.1",
+    "glob": "^11.0.3"
   }
 }
