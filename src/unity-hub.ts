@@ -157,7 +157,7 @@ export class UnityHub {
      * Installs or updates the Unity Hub.
      * If the Unity Hub is already installed, it will be updated to the latest version.
      */
-    public async Install(): Promise<void> {
+    public async Install(): Promise<string> {
         let isInstalled = false;
         try {
             await fs.promises.access(this.executable, fs.constants.X_OK);
@@ -193,13 +193,11 @@ sudo apt-get update --allow-releaseinfo-change
 sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
                 }
             } else {
-                this.logger.info(`Unity Hub is up to date.`);
+                this.logger.info(`Unity Hub is already installed and up to date.`);
             }
         }
 
-        this.logger.info(`Unity Hub Path:\n  > ${this.executable}`);
-
-        await this.Exec(['help']);
+        return this.executable;
     }
 
     private async installHub(): Promise<void> {

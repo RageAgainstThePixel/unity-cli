@@ -83,20 +83,27 @@ program.command('return-license')
 program.command('hub-version')
     .description('Print the version of the Unity Hub.')
     .action(async () => {
-        const hub = new UnityHub();
-        await hub.Version();
+        const unityHub = new UnityHub();
+        await unityHub.Version();
     });
 
 program.command('hub-install')
     .description('Install the Unity Hub.')
     .option('--verbose', 'Enable verbose logging.')
+    .option('--json', 'Prints the last line of output as JSON string.')
     .action(async (options) => {
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
-        const hub = new UnityHub();
-        await hub.Install();
+        const unityHub = new UnityHub();
+        const hubPath = await unityHub.Install();
+
+        if (options.json) {
+            process.stdout.write(JSON.stringify({ UNITY_HUB: hubPath }));
+        } else {
+            process.stdout.write(hubPath);
+        }
     });
 
 program.command('hub-path')
@@ -109,8 +116,8 @@ program.command('hub-path')
 program.command('hub')
     .description('Run commands directly to the Unity Hub. (You need not to pass --headless or -- to this command).')
     .allowUnknownOption(true)
-    .option('--verbose', 'Enable verbose logging.')
     .argument('<args...>', 'Arguments to pass to the Unity Hub executable.')
+    .option('--verbose', 'Enable verbose logging.')
     .action(async (args: string[], options) => {
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
@@ -120,12 +127,17 @@ program.command('hub')
         await hub.Exec(args, { silent: false, showCommand: Logger.instance.logLevel === LogLevel.DEBUG });
     });
 
-program.command('hub-get-editor')
-    .description('Attempts to find or install the specified Unity Editor version.')
-    .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000).')
+program.command('setup-unity')
+    .description('Sets up the environment for the specified project and finds or installs the Unity Editor version for it.')
+    .option('-p, --unity-project <unityProjectPath>', 'The path to a Unity project or "none" to skip project detection.')
+    .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000). If specified, it will override the version read from the project.')
     .option('-c, --changeset <changeset>', 'The Unity changeset to get (e.g. 1234567890ab).')
+    .option('-a, --arch <architecture>', 'The Unity architecture to get (e.g. x86_64, arm64). Defaults to the architecture of the current process.')
+    .option('-b, --build-targets <buildTargets>', 'The Unity build target to get (e.g. iOS, Android).')
     .option('-m, --modules <modules>', 'The Unity module to get (e.g. ios, android).')
+    .option('-i, --install-path <installPath>', 'The path to install the Unity Editor to. By default, it will be installed to the default Unity Hub location.')
     .option('--verbose', 'Enable verbose logging.')
+    .option('--json', 'Prints the last line of output as JSON string.')
     .action(async (options) => {
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
