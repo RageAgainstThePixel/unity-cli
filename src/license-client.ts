@@ -2,8 +2,9 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
+import { Logger } from './logging';
 import { UnityHub } from './unity-hub';
-import { ResolveGlobPath } from './utilities';
+import { ResolveGlobToPath } from './utilities';
 
 export enum LicenseType {
     personal = 'personal',
@@ -15,6 +16,7 @@ export class LicensingClient {
     private unityHub: UnityHub = new UnityHub();
     private licenseClientPath: string | undefined;
     private licenseVersion: string | undefined;
+    private logger: Logger = Logger.instance;
 
     constructor(licenseVersion: string | undefined = undefined) {
         this.licenseVersion = licenseVersion;
@@ -29,7 +31,7 @@ export class LicensingClient {
         }
 
         const licensingClientExecutable = process.platform === 'win32' ? 'Unity.Licensing.Client.exe' : 'Unity.Licensing.Client';
-        const licenseClientPath = await ResolveGlobPath([this.unityHub.rootDirectory, '**', licensingClientExecutable]);
+        const licenseClientPath = await ResolveGlobToPath([this.unityHub.rootDirectory, '**', licensingClientExecutable]);
         this.licenseClientPath = licenseClientPath;
         await fs.promises.access(this.licenseClientPath, fs.constants.X_OK);
         return this.licenseClientPath;
@@ -166,7 +168,7 @@ export class LicensingClient {
         }
 
         if (this.licenseVersion !== '5.x' && this.licenseVersion !== '4.x') {
-            console.warn(`Warning: Specified license version '${this.licenseVersion}' is unsupported, skipping`);
+            this.logger.warn(`Warning: Specified license version '${this.licenseVersion}' is unsupported, skipping`);
             return;
         }
 
@@ -178,7 +180,7 @@ export class LicensingClient {
         const patchedDirectory = path.join(os.tmpdir(), `UnityLicensingClient-${this.licenseVersion.replace('.', '_')}`);
 
         if (await fs.promises.mkdir(patchedDirectory, { recursive: true }) === undefined) {
-            console.log('Unity Licensing Client was already patched, reusing')
+            this.logger.info('Unity Licensing Client was already patched, reusing');
         } else {
             let found = false;
             for (const fileName of await fs.promises.readdir(clientDirectory)) {
@@ -232,18 +234,19 @@ export class LicensingClient {
 
         try {
             exitCode = await new Promise<number>((resolve, reject) => {
+                this.logger.info(`\x1b[34m${this.licenseClientPath} ${args.join(' ')}\x1b[0m`);
                 const child = spawn(this.licenseClientPath!, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
                 child.stdout.on('data', (data) => {
                     const chunk = data.toString();
                     output += chunk;
-                    console.log(chunk);
+                    this.logger.info(chunk);
                 });
 
                 child.stderr.on('data', (data) => {
                     const chunk = data.toString();
                     output += chunk;
-                    console.error(chunk);
+                    this.logger.error(chunk);
                 });
 
                 child.on('error', (error) => {
@@ -272,7 +275,7 @@ export class LicensingClient {
         let activeLicenses = await this.showEntitlements();
 
         if (activeLicenses.includes(licenseType)) {
-            console.log(`License of type '${licenseType}' is already active, skipping activation`);
+            this.logger.info(`License of type '${licenseType}' is already active, skipping activation`);
             return;
         }
 
@@ -398,7 +401,7 @@ export class LicensingClient {
             throw new Error(`Failed to activate license of type '${licenseType}'`);
         }
 
-        console.log(`Successfully activated license of type '${licenseType}'`);
+        this.logger.info(`Successfully activated license of type '${licenseType}'`);
     }
 
     private async returnLicense(licenseType: LicenseType): Promise<void> {
@@ -410,6 +413,6 @@ export class LicensingClient {
             throw new Error(`Failed to return license of type '${licenseType}'`);
         }
 
-        console.log(`Successfully returned license of type '${licenseType}'`);
+        this.logger.info(`Successfully returned license of type '${licenseType}'`);
     }
 }

@@ -5,14 +5,25 @@ import * as fs from 'fs';
 import * as https from 'https';
 import * as readline from 'readline';
 import { spawn } from 'child_process';
+import { Logger } from './logging';
 
-export async function ResolveGlobPath(globs: string[]): Promise<string> {
+const logger = Logger.instance;
+
+/**
+ * Resolves a glob pattern to this first file path that matches it.
+ * @param globs An array of path segments that may include glob patterns.
+ * @returns The first matching file path.
+ */
+export async function ResolveGlobToPath(globs: string[]): Promise<string> {
     const globPath: string = path.join(...globs).split(path.sep).join('/');
-    const files: string[] = await glob.glob(globPath, { nodir: true });
+    logger.debug(`glob: ${globPath}`);
+    const paths: string[] = await glob.glob(globPath, { nodir: true });
 
-    for (const file of files) {
-        await fs.promises.access(file, fs.constants.R_OK);
-        return file;
+    logger.debug(`Resolved "${globPath}" to ${paths.length} paths:\n  > ${paths.join('\n  > ')}`);
+
+    for (const path of paths) {
+        await fs.promises.access(path, fs.constants.R_OK);
+        return path;
     }
 
     throw new Error(`No accessible file found for glob pattern: ${globPath}`);
@@ -32,30 +43,37 @@ export async function PromptForSecretInput(prompt: string): Promise<string> {
             readline.clearLine(process.stdout, 0);
             process.stdout.write(prompt + '*'.repeat(input.length) + '\n');
             rl.close();
-            console.log(); // Move to next line after input
+            console.log(); // Don't use logger. Move to next line after input.
             resolve(input);
         });
     });
 }
 
-export async function Exec(command: string, args: string[]): Promise<string> {
+export async function Exec(command: string, args: string[], options: { silent: boolean, showCommand: boolean } = { silent: false, showCommand: true }): Promise<string> {
     let output: string = '';
     let exitCode: number = 0;
 
     try {
         exitCode = await new Promise<number>((resolve, reject) => {
+            if (options.showCommand) {
+                logger.info(`\x1b[34m${command} ${args.join(' ')}\x1b[0m`);
+            }
+
             const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
             child.stdout.on('data', (data) => {
                 const chunk = data.toString();
                 output += chunk;
-                console.log(chunk);
+
+                if (!options.silent) {
+                    logger.info(chunk);
+                }
             });
 
             child.stderr.on('data', (data) => {
                 const chunk = data.toString();
                 output += chunk;
-                console.error(chunk);
+                logger.error(chunk);
             });
 
             child.on('error', (error) => {
@@ -76,7 +94,7 @@ export async function Exec(command: string, args: string[]): Promise<string> {
 }
 
 export async function DownloadFile(url: string, downloadPath: string): Promise<void> {
-    console.log(`Downloading from ${url} to ${downloadPath}`);
+    logger.debug(`Downloading from ${url} to ${downloadPath}...`);
     await new Promise<void>((resolve, reject) => {
         const file = fs.createWriteStream(downloadPath);
         https.get(url, (response) => {
@@ -90,4 +108,21 @@ export async function DownloadFile(url: string, downloadPath: string): Promise<v
         });
     });
     await fs.promises.access(downloadPath, fs.constants.R_OK | fs.constants.X_OK);
+}
+
+export async function DeleteDirectory(targetPath: string | undefined): Promise<void> {
+    logger.debug(`Attempting to delete directory: ${targetPath}...`);
+    if (targetPath && targetPath.length > 0 && fs.existsSync(targetPath)) {
+        await fs.promises.rm(targetPath, { recursive: true, force: true, maxRetries: 2, retryDelay: 100 });
+    }
+}
+
+export async function ReadFileContents(filePath: string): Promise<string> {
+    const fileHandle = await fs.promises.open(filePath, 'r');
+    try {
+        const projectSettingsContent = await fileHandle.readFile('utf8');
+        return projectSettingsContent;
+    } finally {
+        await fileHandle.close();
+    }
 }
