@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import 'source-map-support/register';
 import { Command } from 'commander';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -9,7 +10,6 @@ import { UnityHub } from './unity-hub';
 import { Logger, LogLevel } from './logging';
 import { UnityVersion } from './unity-version';
 import { UnityProject } from './unity-project';
-import { UnityEditor } from './unity-editor';
 import { CheckAndroidSdkInstalled } from './android-sdk';
 
 const pkgPath = join(__dirname, '..', 'package.json');
@@ -148,12 +148,19 @@ program.command('setup-unity')
 
         Logger.instance.debug(JSON.stringify(options));
 
-        if (!options.unityVersion) {
+
+        let unityProject: UnityProject | undefined;
+
+        if (options.unityProject) {
+            unityProject = await UnityProject.GetProject(options.unityProject);
+        }
+
+        if (!options.unityVersion && !unityProject) {
             throw new Error('You must specify a Unity version with -u or --unity-version.');
         }
 
-        const unityVersion = new UnityVersion(options.unityVersion, options.changeset);
-        const modules: string[] = options.modules ? options.modules.split(',').split(' ') : [];
+        const unityVersion = unityProject?.version ?? new UnityVersion(options.unityVersion, options.changeset);
+        const modules: string[] = options.modules ? options.modules.split(/[ ,]+/).filter(Boolean) : [];
         const unityHub = new UnityHub();
 
         const output: { [key: string]: string } = {};
@@ -164,17 +171,11 @@ program.command('setup-unity')
 
         output['UNITY_EDITOR'] = editorPath;
 
-        let unityProject: UnityProject | undefined;
+        if (unityProject) {
+            output['UNITY_PROJECT'] = unityProject.projectPath;
 
-        if (options.unityProject) {
-            unityProject = await UnityProject.GetProject(options.unityProject);
-
-            if (unityProject) {
-                output['UNITY_PROJECT'] = unityProject.projectPath;
-
-                if (modules.includes('android')) {
-                    await CheckAndroidSdkInstalled(editorPath, unityProject.projectPath);
-                }
+            if (modules.includes('android')) {
+                await CheckAndroidSdkInstalled(editorPath, unityProject.projectPath);
             }
         }
 

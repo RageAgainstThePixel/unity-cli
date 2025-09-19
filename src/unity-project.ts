@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { Logger } from './logging';
 import { ResolveGlobToPath } from './utilities';
+import { UnityVersion } from './unity-version';
 
 export class UnityProject {
     public static readonly DefaultModules: string[] = (() => {
@@ -48,11 +49,28 @@ export class UnityProject {
     private logger: Logger = Logger.instance;
 
     public readonly projectVersionPath: string;
+    public readonly version: UnityVersion;
 
     constructor(public readonly projectPath: string) {
         fs.accessSync(projectPath, fs.constants.R_OK);
         this.projectVersionPath = path.join(this.projectPath, 'ProjectSettings', 'ProjectVersion.txt');
         fs.accessSync(this.projectVersionPath, fs.constants.R_OK);
+        const versionText = fs.readFileSync(this.projectVersionPath, 'utf-8');
+        const match = versionText.match(/m_EditorVersionWithRevision: (?<version>(?:(?<major>\d+)\.)?(?:(?<minor>\d+)\.)?(?:(?<patch>\d+[abcfpx]\d+)\b))\s?(?:\((?<changeset>\w+)\))?/);
+
+        if (!match) {
+            throw Error(`No version match found!`);
+        }
+
+        if (!match.groups?.version) {
+            throw Error(`No version group found!`);
+        }
+
+        if (!match.groups?.changeset) {
+            throw Error(`No changeset group found!`);
+        }
+
+        this.version = new UnityVersion(match.groups.version, match.groups.changeset, undefined);
     }
 
     public static async GetProject(projectPath: string | undefined = undefined): Promise<UnityProject> {

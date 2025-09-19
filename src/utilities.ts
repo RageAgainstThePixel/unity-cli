@@ -17,7 +17,7 @@ const logger = Logger.instance;
 export async function ResolveGlobToPath(globs: string[]): Promise<string> {
     const globPath: string = path.join(...globs).split(path.sep).join('/');
     logger.debug(`glob: ${globPath}`);
-    const paths: string[] = await glob.glob(globPath, { nodir: true });
+    const paths: string[] = await glob.glob(globPath);
 
     logger.debug(`Resolved "${globPath}" to ${paths.length} paths:\n  > ${paths.join('\n  > ')}`);
 
@@ -26,7 +26,7 @@ export async function ResolveGlobToPath(globs: string[]): Promise<string> {
         return path;
     }
 
-    throw new Error(`No accessible file found for glob pattern: ${globPath}`);
+    throw new Error(`No accessible file found for glob pattern: ${path.normalize(globPath)}`);
 }
 
 export async function PromptForSecretInput(prompt: string): Promise<string> {
