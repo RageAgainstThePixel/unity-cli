@@ -32,10 +32,10 @@ export class UnityHub {
     constructor() {
         switch (process.platform) {
             case 'win32':
-                this.executable = process.env.UNITY_HUB_PATH || 'C:/Program Files/Unity Hub/Unity Hub.exe';
+                this.executable = process.env.UNITY_HUB_PATH || 'C:\\Program Files\\Unity Hub\\Unity Hub.exe';
                 this.rootDirectory = path.join(this.executable, '../');
-                this.editorInstallationDirectory = 'C:/Program Files/Unity/Hub/Editor/';
-                this.editorFileExtension = '/Editor/Unity.exe';
+                this.editorInstallationDirectory = 'C:\\Program Files\\Unity\\Hub\\Editor\\';
+                this.editorFileExtension = '\\Editor\\Unity.exe';
                 break;
             case 'darwin':
                 this.executable = process.env.UNITY_HUB_PATH || '/Applications/Unity Hub.app/Contents/MacOS/Unity Hub';
@@ -467,7 +467,7 @@ chmod -R 777 "$hubPath"`]);
             }
         }
 
-        return editorPath;
+        return path.normalize(editorPath);
     }
 
     /**
@@ -475,7 +475,13 @@ chmod -R 777 "$hubPath"`]);
      * @returns A list of installed Unity Editor versions and their paths.
      */
     public async ListInstalledEditors(): Promise<string[]> {
-        return (await this.Exec(['editors', '-i'], { silent: this.logger.logLevel !== LogLevel.DEBUG, showCommand: this.logger.logLevel === LogLevel.DEBUG })).split('\n').filter(line => line.trim().length > 0).map(line => line.trim());
+        const output = await this.Exec(['editors', '-i'], {
+            silent: this.logger.logLevel !== LogLevel.DEBUG,
+            showCommand: this.logger.logLevel === LogLevel.DEBUG
+        });
+        return output.split('\n')
+            .filter(line => line.trim().length > 0)
+            .map(line => line.trim());
     }
 
     private async checkInstalledEditors(unityVersion: UnityVersion, failOnEmpty: boolean, installPath: string | undefined = undefined): Promise<string | undefined> {

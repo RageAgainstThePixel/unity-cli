@@ -8,6 +8,9 @@ import { PromptForSecretInput } from './utilities';
 import { UnityHub } from './unity-hub';
 import { Logger, LogLevel } from './logging';
 import { UnityVersion } from './unity-version';
+import { UnityProject } from './unity-project';
+import { UnityEditor } from './unity-editor';
+import { CheckAndroidSdkInstalled } from './android-sdk';
 
 const pkgPath = join(__dirname, '..', 'package.json');
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
@@ -151,10 +154,31 @@ program.command('setup-unity')
 
         const unityVersion = new UnityVersion(options.unityVersion, options.changeset);
         const modules: string[] = options.modules ? options.modules.split(',').split(' ') : [];
-        const hub = new UnityHub();
+        const unityHub = new UnityHub();
 
-        const editorPath = await hub.GetEditor(unityVersion, modules);
-        process.stdout.write(editorPath);
+        const output: { [key: string]: string } = {};
+
+        output['UNITY_HUB_PATH'] = unityHub.executable;
+
+        const editorPath = await unityHub.GetEditor(unityVersion, modules);
+
+        output['UNITY_EDITOR'] = editorPath;
+
+        let unityProject: UnityProject | undefined;
+
+        if (options.unityProject) {
+            unityProject = await UnityProject.GetProject(options.unityProject);
+
+            if (unityProject) {
+                output['UNITY_PROJECT'] = unityProject.projectPath;
+
+                if (modules.includes('android')) {
+                    await CheckAndroidSdkInstalled(editorPath, unityProject.projectPath);
+                }
+            }
+        }
+
+        process.stdout.write(JSON.stringify(output));
     });
 
 program.parse(process.argv);

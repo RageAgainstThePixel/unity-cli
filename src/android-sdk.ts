@@ -1,14 +1,27 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { UnityEditor } from './unity-editor';
-import { ReadFileContents, ResolveGlobToPath } from './utilities';
-import { Logger, LogLevel } from './logging';
 import { spawn } from 'child_process';
+import { UnityEditor } from './unity-editor';
+import {
+    ReadFileContents,
+    ResolveGlobToPath
+} from './utilities';
+import {
+    Logger,
+    LogLevel
+} from './logging';
 
 const logger = Logger.instance;
 
+/**
+ * Checks if the required Android SDK is installed for the given Unity Editor and Project.
+ * @param editorPath The path to the Unity Editor executable.
+ * @param projectPath The path to the Unity project.
+ * @returns A promise that resolves when the check is complete.
+ */
 export async function CheckAndroidSdkInstalled(editorPath: string, projectPath: string): Promise<void> {
+    logger.debug(`Checking Android SDK installation for:\n  > Editor: ${editorPath}\n  > Project: ${projectPath}`);
     let sdkPath = undefined;
     await createRepositoryCfg();
     const rootEditorPath = await UnityEditor.GetEditorRootPath(editorPath);
