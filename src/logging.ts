@@ -1,5 +1,6 @@
 export enum LogLevel {
     DEBUG = 'debug',
+    CI = 'ci',
     INFO = 'info',
     WARN = 'warn',
     ERROR = 'error',
@@ -7,12 +8,13 @@ export enum LogLevel {
 
 export class Logger {
     public logLevel: LogLevel = LogLevel.INFO;
-    public ci: string | undefined;
+    private _ci: string | undefined;
     static instance: Logger = new Logger();
 
     private constructor() {
         if (process.env.GITHUB_ACTIONS) {
-            this.ci = 'GITHUB_ACTIONS';
+            this._ci = 'GITHUB_ACTIONS';
+            this.logLevel = LogLevel.CI;
         }
 
         Logger.instance = this;
@@ -26,8 +28,12 @@ export class Logger {
      */
     public log(level: LogLevel, message: any, optionalParams: any[] = []): void {
         if (this.shouldLog(level)) {
-            switch (this.ci) {
+            switch (this._ci) {
                 case 'GITHUB_ACTIONS': {
+                    if (level === LogLevel.CI) {
+                        level = LogLevel.INFO;
+                    }
+
                     console.log(`::${level}::${message}`, ...optionalParams);
                     break;
                 }
@@ -35,14 +41,57 @@ export class Logger {
                     const clear = '\x1b[0m';
                     const stringColor: string = {
                         [LogLevel.DEBUG]: '\x1b[35m', // Purple
-                        [LogLevel.INFO]: clear,  // No color / White
+                        [LogLevel.INFO]: clear,       // No color / White
+                        [LogLevel.CI]: clear,         // No color / White
                         [LogLevel.WARN]: '\x1b[33m',  // Yellow
                         [LogLevel.ERROR]: '\x1b[31m', // Red
-                    }[level] || clear; // Default
+                    }[level] || clear;                // Default to no color / White
                     console.log(`${stringColor}${message}${clear}`, ...optionalParams);
+                    break;
                 }
             }
         }
+    }
+
+    /**
+     * Starts a log group. In CI environments that support grouping, this will create a collapsible group.
+     */
+    public startGroup(message: any, optionalParams: any[] = [], logLevel: LogLevel = LogLevel.INFO): void {
+        switch (this._ci) {
+            case 'GITHUB_ACTIONS': {
+                console.log(`::group::${message}`, ...optionalParams);
+                break;
+            }
+            default: {
+                // No grouping in standard console
+                this.log(logLevel, message, optionalParams);
+                break;
+            }
+        }
+    }
+
+    /**
+     * Ends a log group. In CI environments that support grouping, this will end the current group.
+     */
+    public endGroup(): void {
+        switch (this._ci) {
+            case 'GITHUB_ACTIONS': {
+                console.log('::endgroup::');
+                break;
+            }
+            default: {
+                break; // No grouping in standard console
+            }
+        }
+    }
+
+    /**
+     *
+     * @param message
+     * @param optionalParams
+     */
+    public ci(message: any, ...optionalParams: any[]): void {
+        this.log(LogLevel.CI, message, optionalParams);
     }
 
     public debug(message: any, ...optionalParams: any[]): void {
@@ -62,6 +111,7 @@ export class Logger {
     }
 
     private shouldLog(level: LogLevel): boolean {
+        if (level === LogLevel.CI) { return true; }
         const levelOrder = [LogLevel.DEBUG, LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR];
         return levelOrder.indexOf(level) >= levelOrder.indexOf(this.logLevel);
     }

@@ -61,7 +61,7 @@ export class UnityHub {
      * @param silent If true, suppresses output logging.
      * @returns The output from the command.
      */
-    public async Exec(args: string[], options: ExecOptions = { silent: this.logger.logLevel !== LogLevel.DEBUG, showCommand: this.logger.logLevel === LogLevel.DEBUG }): Promise<string> {
+    public async Exec(args: string[], options: ExecOptions = { silent: this.logger.logLevel > LogLevel.CI, showCommand: this.logger.logLevel <= LogLevel.CI }): Promise<string> {
         await fs.promises.access(this.executable, fs.constants.X_OK);
 
         let output: string = '';
@@ -83,7 +83,7 @@ export class UnityHub {
                 const execArgs = process.platform === 'linux' ? ['--headless', ...filteredArgs] : ['--', '--headless', ...filteredArgs];
 
                 if (options.showCommand) {
-                    this.logger.info(`\x1b[34m${executable} ${execArgs.join(' ')}\x1b[0m`);
+                    this.logger.startGroup(`\x1b[34m${executable} ${execArgs.join(' ')}\x1b[0m`);
                 }
 
                 const child = spawn(executable, execArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -100,6 +100,7 @@ export class UnityHub {
                 });
             });
         } finally {
+            this.logger.endGroup();
             const match = output.match(/Assertion (?<assert>.+) failed/g);
 
             if (match ||
@@ -147,12 +148,12 @@ export class UnityHub {
 
         if (isInstalled) {
             const installedVersion: SemVer = await this.getInstalledHubVersion();
-            this.logger.debug(`Installed Unity Hub version: ${installedVersion.version}`);
+            this.logger.ci(`Installed Unity Hub version: ${installedVersion.version}`);
             let latestVersion: SemVer | undefined = undefined;
 
             try {
                 latestVersion = await this.getLatestHubVersion();
-                this.logger.debug(`Latest Unity Hub version: ${latestVersion.version}`);
+                this.logger.ci(`Latest Unity Hub version: ${latestVersion.version}`);
             } catch (error) {
                 this.logger.warn(`Failed to get latest Unity Hub version: ${error}`);
             }
@@ -368,7 +369,7 @@ chmod -R 777 "$hubPath"`]);
             'failed to download. Error given: Request timeout'
         ];
 
-        this.logger.debug(`Getting release info for Unity ${unityVersion.toString()}...`);
+        this.logger.ci(`Getting release info for Unity ${unityVersion.toString()}...`);
         let editorPath = await this.checkInstalledEditors(unityVersion, false);
 
         // attempt to resolve the full version with the changeset if we don't have one already
@@ -423,21 +424,21 @@ chmod -R 777 "$hubPath"`]);
         }
 
         try {
-            this.logger.debug(`Checking installed modules for Unity ${unityVersion.toString()}...`);
+            this.logger.ci(`Checking installed modules for Unity ${unityVersion.toString()}...`);
             const [installedModules, additionalModules] = await this.checkEditorModules(editorPath, unityVersion, modules);
 
             if (installedModules && installedModules.length > 0) {
-                this.logger.debug(`Installed Modules:`);
+                this.logger.ci(`Installed Modules:`);
 
                 for (const module of installedModules) {
-                    this.logger.debug(`  > ${module}`);
+                    this.logger.ci(`  > ${module}`);
                 }
             }
             if (additionalModules && additionalModules.length > 0) {
-                this.logger.debug(`Additional Modules:`);
+                this.logger.ci(`Additional Modules:`);
 
                 for (const module of additionalModules) {
-                    this.logger.debug(`  > ${module}`);
+                    this.logger.ci(`  > ${module}`);
                 }
             }
         } catch (error: Error | any) {
@@ -533,12 +534,12 @@ chmod -R 777 "$hubPath"`]);
         }
 
         try {
-            await fs.promises.access(editorPath, fs.constants.R_OK);
+            await fs.promises.access(editorPath, fs.constants.R_OK | fs.constants.X_OK);
         } catch (error) {
             throw new Error(`Failed to find installed Unity Editor: ${unityVersion.toString()}\n  > ${error}`);
         }
 
-        this.logger.debug(`Found installed Unity Editor: ${editorPath}`);
+        this.logger.ci(`Found installed Unity Editor: ${editorPath}`);
         return editorPath;
     }
 
@@ -572,7 +573,7 @@ chmod -R 777 "$hubPath"`]);
             const beeBackend = path.join(dataPath, 'bee_backend');
             const dotBeeBackend = path.join(dataPath, '.bee_backend');
             if (fs.existsSync(beeBackend) && !fs.existsSync(dotBeeBackend)) {
-                this.logger.debug(`Patching Unity Linux Editor for Bee Backend...`);
+                this.logger.ci(`Patching Unity Linux Editor for Bee Backend...`);
                 await fs.promises.rename(beeBackend, dotBeeBackend);
                 const wrapperSource: string = `#!/bin/bash
 # https://discussions.unity.com/t/linux-editor-stuck-on-loading-because-of-bee-backend-w-workaround/854480
@@ -801,7 +802,7 @@ done
 
         if (modules.length > 0) {
             for (const module of modules) {
-                this.logger.info(`  > with module: ${module}`);
+                this.logger.ci(`  > with module: ${module}`);
                 args.push('-m', module);
             }
 
@@ -809,7 +810,7 @@ done
         }
 
         this.logger.info(`Installing Unity ${unityVersion.toString()}...`);
-        const output = await this.Exec(args);
+        const output = await this.Exec(args, { showCommand: true, silent: false });
 
         if (output.includes(`Error while installing an editor or a module from changeset`)) {
             throw new Error(`Failed to install Unity ${unityVersion.toString()}`);

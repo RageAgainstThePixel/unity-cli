@@ -21,7 +21,7 @@ const logger = Logger.instance;
  * @returns A promise that resolves when the check is complete.
  */
 export async function CheckAndroidSdkInstalled(editorPath: string, projectPath: string): Promise<void> {
-    logger.debug(`Checking Android SDK installation for:\n  > Editor: ${editorPath}\n  > Project: ${projectPath}`);
+    logger.ci(`Checking Android SDK installation for:\n  > Editor: ${editorPath}\n  > Project: ${projectPath}`);
     let sdkPath = undefined;
     await createRepositoryCfg();
     const rootEditorPath = await UnityEditor.GetEditorRootPath(editorPath);
@@ -29,18 +29,18 @@ export async function CheckAndroidSdkInstalled(editorPath: string, projectPath: 
     const projectSettingsContent = await ReadFileContents(projectSettingsPath);
     const matchResult = projectSettingsContent.match(/(?<=AndroidTargetSdkVersion: )\d+/);
     const androidTargetSdk = matchResult ? parseInt(matchResult[0]) : 0;
-    logger.debug(`AndroidTargetSdkVersion:\n  > ${androidTargetSdk}`);
+    logger.ci(`AndroidTargetSdkVersion:\n  > ${androidTargetSdk}`);
 
     if (androidTargetSdk === undefined || androidTargetSdk === 0) { return; }
 
     sdkPath = await getAndroidSdkPath(rootEditorPath, androidTargetSdk);
 
     if (sdkPath) {
-        logger.debug(`Target Android SDK android-${androidTargetSdk} Installed in:\n  > "${sdkPath}"`);
+        logger.ci(`Target Android SDK android-${androidTargetSdk} Installed in:\n  > "${sdkPath}"`);
         return;
     }
 
-    logger.debug(`Installing Android Target SDK:\n  > android-${androidTargetSdk}`);
+    logger.info(`Installing Android Target SDK:\n  > android-${androidTargetSdk}`);
     const sdkManagerPath = await getSdkManager(rootEditorPath);
     const javaSdk = await getJDKPath(rootEditorPath);
     await execSdkManager(sdkManagerPath, javaSdk, ['--licenses']);
@@ -52,7 +52,7 @@ export async function CheckAndroidSdkInstalled(editorPath: string, projectPath: 
         throw new Error(`Failed to install android-${androidTargetSdk} in ${rootEditorPath}`);
     }
 
-    logger.debug(`Target Android SDK Installed in:\n  > "${sdkPath}"`);
+    logger.ci(`Target Android SDK Installed in:\n  > "${sdkPath}"`);
 
 }
 
@@ -71,7 +71,7 @@ async function getJDKPath(rootEditorPath: string): Promise<string> {
     }
 
     await fs.promises.access(jdkPath, fs.constants.R_OK);
-    logger.debug(`jdkPath:\n  > "${jdkPath}"`);
+    logger.ci(`jdkPath:\n  > "${jdkPath}"`);
     return jdkPath;
 }
 
@@ -95,12 +95,12 @@ async function getSdkManager(rootEditorPath: string): Promise<string> {
     }
 
     await fs.promises.access(sdkmanagerPath, fs.constants.R_OK);
-    logger.debug(`sdkmanagerPath:\n  > "${sdkmanagerPath}"`);
+    logger.ci(`sdkmanagerPath:\n  > "${sdkmanagerPath}"`);
     return sdkmanagerPath;
 }
 
 async function getAndroidSdkPath(rootEditorPath: string, androidTargetSdk: number): Promise<string | undefined> {
-    logger.debug(`Attempting to locate Android SDK Path...\n  > editorPath: ${rootEditorPath}\n  > androidTargetSdk: ${androidTargetSdk}`);
+    logger.ci(`Attempting to locate Android SDK Path...\n  > editorPath: ${rootEditorPath}\n  > androidTargetSdk: ${androidTargetSdk}`);
     const sdkPath = await ResolveGlobToPath([rootEditorPath, '**', 'PlaybackEngines', 'AndroidPlayer', 'SDK', 'platforms', `android-${androidTargetSdk}/`]);
 
     try {
@@ -110,6 +110,7 @@ async function getAndroidSdkPath(rootEditorPath: string, androidTargetSdk: numbe
         return undefined;
     }
 
+    logger.ci(`Android sdkPath:\n  > "${sdkPath}"`);
     return sdkPath;
 }
 
@@ -120,9 +121,7 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
 
     try {
         exitCode = await new Promise<number>((resolve, reject) => {
-            if (logger.logLevel === LogLevel.DEBUG) {
-                logger.info(`\x1b[34m${sdkManagerPath} ${args.join(' ')}\x1b[0m`);
-            }
+            logger.startGroup(`\x1b[34m${sdkManagerPath} ${args.join(' ')}\x1b[0m`);
 
             const child = spawn(sdkManagerPath, args, {
                 stdio: ['pipe', 'pipe', 'pipe'],
@@ -138,13 +137,13 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
                     output = '';
                 }
 
-                logger.debug(chunk);
+                process.stdout.write(chunk);
             });
 
             child.stderr.on('data', (data: Buffer) => {
                 const chunk = data.toString();
                 output += chunk;
-                logger.error(chunk);
+                process.stderr.write(chunk);
             });
 
             child.on('error', (error: Error) => {
@@ -156,6 +155,8 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
             });
         });
     } finally {
+        logger.endGroup();
+
         if (exitCode !== 0) {
             throw new Error(`${sdkManagerPath} ${args.join(' ')} failed with exit code ${exitCode}`);
         }
