@@ -16,10 +16,10 @@ const logger = Logger.instance;
  */
 export async function ResolveGlobToPath(globs: string[]): Promise<string> {
     const globPath: string = path.join(...globs).split(path.sep).join('/');
-    logger.debug(`glob: ${globPath}`);
+    // logger.debug(`glob: ${globPath}`);
     const paths: string[] = await glob.glob(globPath);
 
-    logger.debug(`Resolved "${globPath}" to ${paths.length} paths:\n  > ${paths.join('\n  > ')}`);
+    // logger.debug(`Resolved "${globPath}" to ${paths.length} paths:\n  > ${paths.join('\n  > ')}`);
 
     for (const path of paths) {
         await fs.promises.access(path, fs.constants.R_OK);
@@ -49,9 +49,23 @@ export async function PromptForSecretInput(prompt: string): Promise<string> {
     });
 }
 
-export async function Exec(command: string, args: string[], options: { silent: boolean, showCommand: boolean } = { silent: false, showCommand: true }): Promise<string> {
+export type ExecOptions = {
+    silent?: boolean;
+    showCommand?: boolean;
+}
+
+export async function Exec(command: string, args: string[], options: ExecOptions = { silent: false, showCommand: true }): Promise<string> {
     let output: string = '';
     let exitCode: number = 0;
+
+    function processOutput(data: Buffer) {
+        const chunk = data.toString();
+        output += chunk;
+
+        if (!options.silent) {
+            process.stdout.write(chunk);
+        }
+    }
 
     try {
         exitCode = await new Promise<number>((resolve, reject) => {
@@ -59,22 +73,11 @@ export async function Exec(command: string, args: string[], options: { silent: b
                 logger.info(`\x1b[34m${command} ${args.join(' ')}\x1b[0m`);
             }
 
+            fs.accessSync(command, fs.constants.R_OK | fs.constants.X_OK);
             const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
-            child.stdout.on('data', (data) => {
-                const chunk = data.toString();
-                output += chunk;
-
-                if (!options.silent) {
-                    logger.info(chunk);
-                }
-            });
-
-            child.stderr.on('data', (data) => {
-                const chunk = data.toString();
-                output += chunk;
-                logger.error(chunk);
-            });
+            child.stdout.on('data', processOutput);
+            child.stderr.on('data', processOutput);
 
             child.on('error', (error) => {
                 reject(error);

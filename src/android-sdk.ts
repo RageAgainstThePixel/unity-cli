@@ -33,7 +33,6 @@ export async function CheckAndroidSdkInstalled(editorPath: string, projectPath: 
 
     if (androidTargetSdk === undefined || androidTargetSdk === 0) { return; }
 
-    logger.debug('Validating Android Target SDK Installed...');
     sdkPath = await getAndroidSdkPath(rootEditorPath, androidTargetSdk);
 
     if (sdkPath) {
@@ -103,13 +102,14 @@ async function getSdkManager(rootEditorPath: string): Promise<string> {
 async function getAndroidSdkPath(rootEditorPath: string, androidTargetSdk: number): Promise<string | undefined> {
     logger.debug(`Attempting to locate Android SDK Path...\n  > editorPath: ${rootEditorPath}\n  > androidTargetSdk: ${androidTargetSdk}`);
     const sdkPath = await ResolveGlobToPath([rootEditorPath, '**', 'PlaybackEngines', 'AndroidPlayer', 'SDK', 'platforms', `android-${androidTargetSdk}/`]);
+
     try {
         await fs.promises.access(sdkPath, fs.constants.R_OK);
     } catch (error) {
         logger.debug(`android-${androidTargetSdk} not installed`);
         return undefined;
     }
-    logger.debug(`sdkPath:\n  > "${sdkPath}"`);
+
     return sdkPath;
 }
 

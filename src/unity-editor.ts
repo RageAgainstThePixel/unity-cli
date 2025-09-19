@@ -6,7 +6,6 @@ export class UnityEditor {
     private static logger: Logger = Logger.instance;
 
     static async GetEditorRootPath(editorPath: string): Promise<string> {
-        this.logger.debug(`searching for editor root path: ${editorPath}`);
         let editorRootPath = editorPath;
         switch (process.platform) {
             case 'darwin':
@@ -20,7 +19,6 @@ export class UnityEditor {
                 break
         }
         await fs.promises.access(editorRootPath, fs.constants.R_OK);
-        this.logger.debug(`found editor root path: ${editorRootPath}`);
         return editorRootPath;
     }
 }

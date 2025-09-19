@@ -14,6 +14,7 @@ import {
     DeleteDirectory,
     DownloadFile,
     Exec,
+    ExecOptions,
     ReadFileContents
 } from './utilities';
 import { UnityVersion } from './unity-version';
@@ -60,38 +61,20 @@ export class UnityHub {
      * @param silent If true, suppresses output logging.
      * @returns The output from the command.
      */
-    public async Exec(args: string[], options: { silent: boolean, showCommand: boolean } = { silent: false, showCommand: true }): Promise<string> {
+    public async Exec(args: string[], options: ExecOptions = { silent: this.logger.logLevel !== LogLevel.DEBUG, showCommand: this.logger.logLevel === LogLevel.DEBUG }): Promise<string> {
         await fs.promises.access(this.executable, fs.constants.X_OK);
 
         let output: string = '';
         let exitCode: number = 0;
 
-        // These lines are commonly found in stderr but can be ignored
-        const ignoredLines = [
-            `This error originated either by throwing inside of an async function without a catch block`,
-            `Unexpected error attempting to determine if executable file exists`,
-            `dri3 extension not supported`,
-            `Failed to connect to the bus:`,
-            `Checking for beta autoupdate feature for deb/rpm distributions`,
-            `Found package-type: deb`,
-            `XPC error for connection com.apple.backupd.sandbox.xpc: Connection invalid`
-        ];
+        function processOutput(data: Buffer) {
+            const chunk = data.toString();
+            output += chunk;
 
-        const processOutput = (data: Buffer) => {
-            const line = data.toString();
-
-            if (line && line.trim().length > 0) {
-                if (ignoredLines.some(ignored => line.includes(ignored))) {
-                    return;
-                }
-
-                if (!options.silent) {
-                    this.logger.info(line);
-                }
-
-                output += `${line}\n`;
+            if (!options.silent) {
+                process.stdout.write(chunk);
             }
-        };
+        }
 
         try {
             exitCode = await new Promise<number>((resolve, reject) => {
@@ -117,28 +100,24 @@ export class UnityHub {
                 });
             });
         } finally {
-            if (exitCode !== 0) {
-                throw new Error(`License command failed with exit code ${exitCode}`);
+            const match = output.match(/Assertion (?<assert>.+) failed/g);
+
+            if (match ||
+                output.includes('async hook stack has become corrupted')) {
+                this.logger.warn(`Install failed, retrying...`);
+                return await this.Exec(args);
             }
-        }
 
-        const match = output.match(/Assertion (?<assert>.+) failed/g);
+            if (exitCode > 0 || output.includes('Error:')) {
+                const error = output.match(/Error: (.+)/);
+                const errorMessage = error && error[1] ? error[1] : 'Unknown Error';
 
-        if (match ||
-            output.includes('async hook stack has become corrupted')) {
-            this.logger.warn(`Install failed, retrying...`);
-            return await this.Exec(args);
-        }
-
-        if (output.includes('Error:')) {
-            const error = output.match(/Error: (.+)/);
-            const errorMessage = error && error[1] ? error[1] : 'Unknown Error';
-
-            switch (errorMessage) {
-                case 'No modules found to install.':
-                    return output;
-                default:
-                    throw new Error(`Failed to execute Unity Hub: ${errorMessage}`);
+                switch (errorMessage) {
+                    case 'No modules found to install.':
+                        return output;
+                    default:
+                        throw new Error(`Failed to execute Unity Hub: [${exitCode}] ${errorMessage}`);
+                }
             }
         }
 
@@ -148,9 +127,9 @@ export class UnityHub {
     /**
      * Prints the installed Unity Hub version.
      */
-    public async Version(): Promise<void> {
+    public async Version(): Promise<string> {
         const version = await this.getInstalledHubVersion();
-        this.logger.info(`Unity Hub Version: ${version.version}`);
+        return version.version;
     }
 
     /**
@@ -351,6 +330,7 @@ chmod -R 777 "$hubPath"`]);
      */
     public async GetInstallPath(): Promise<string> {
         const result = (await this.Exec(['install-path', '--get'])).trim();
+
         if (!result || result.length === 0) {
             throw new Error('Failed to get Unity Hub install path.');
         }
@@ -443,21 +423,21 @@ chmod -R 777 "$hubPath"`]);
         }
 
         try {
-            this.logger.info(`Checking installed modules for Unity ${unityVersion.toString()}...`);
+            this.logger.debug(`Checking installed modules for Unity ${unityVersion.toString()}...`);
             const [installedModules, additionalModules] = await this.checkEditorModules(editorPath, unityVersion, modules);
 
             if (installedModules && installedModules.length > 0) {
-                this.logger.info(`Installed Modules:`);
+                this.logger.debug(`Installed Modules:`);
 
                 for (const module of installedModules) {
-                    this.logger.info(`  > ${module}`);
+                    this.logger.debug(`  > ${module}`);
                 }
             }
             if (additionalModules && additionalModules.length > 0) {
-                this.logger.info(`Additional Modules:`);
+                this.logger.debug(`Additional Modules:`);
 
                 for (const module of additionalModules) {
-                    this.logger.info(`  > ${module}`);
+                    this.logger.debug(`  > ${module}`);
                 }
             }
         } catch (error: Error | any) {
@@ -475,10 +455,7 @@ chmod -R 777 "$hubPath"`]);
      * @returns A list of installed Unity Editor versions and their paths.
      */
     public async ListInstalledEditors(): Promise<string[]> {
-        const output = await this.Exec(['editors', '-i'], {
-            silent: this.logger.logLevel !== LogLevel.DEBUG,
-            showCommand: this.logger.logLevel === LogLevel.DEBUG
-        });
+        const output = await this.Exec(['editors', '-i']);
         return output.split('\n')
             .filter(line => line.trim().length > 0)
             .map(line => line.trim());
@@ -488,11 +465,10 @@ chmod -R 777 "$hubPath"`]);
         let editorPath = undefined;
         if (!installPath) {
             const paths: string[] = await this.ListInstalledEditors();
-            this.logger.debug(`Paths: ${JSON.stringify(paths, null, 2)}`);
+
             if (paths && paths.length > 0) {
                 const pattern = /(?<version>\d+\.\d+\.\d+[abcfpx]?\d*)\s*(?:\((?<arch>Apple silicon|Intel)\))?\s*,? installed at (?<editorPath>.*)/;
                 const matches = paths.map(path => path.match(pattern)).filter(match => match && match.groups);
-                this.logger.debug(`Matches: ${JSON.stringify(matches, null, 2)}`);
 
                 if (paths.length !== matches.length) {
                     throw new Error(`Failed to parse all installed Unity Editors!`);
@@ -506,7 +482,6 @@ chmod -R 777 "$hubPath"`]);
                 } else {
                     // Fallback: semver satisfies
                     const versionMatches = matches.filter(match => match?.groups?.version && unityVersion.satisfies(match.groups.version));
-                    this.logger.debug(`Version Matches: ${JSON.stringify(versionMatches, null, 2)}`);
 
                     if (versionMatches.length === 0) {
                         return undefined;
@@ -745,10 +720,11 @@ done
             args.push('-m', module);
         }
 
-        const output = await this.Exec([...args, '--cm']);
         const editorRootPath = await UnityEditor.GetEditorRootPath(editorPath);
         const modulesPath = path.join(editorRootPath, 'modules.json');
         this.logger.debug(`Editor Modules Manifest:\n  > "${modulesPath}"`);
+
+        const output = await this.Exec([...args, '--cm']);
         const moduleMatches = output.matchAll(/Omitting module (?<module>.+) because it's already installed/g);
 
         if (moduleMatches) {

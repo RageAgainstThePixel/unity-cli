@@ -4,7 +4,7 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import { Logger } from './logging';
 import { UnityHub } from './unity-hub';
-import { ResolveGlobToPath } from './utilities';
+import { ExecOptions, ResolveGlobToPath } from './utilities';
 
 export enum LicenseType {
     personal = 'personal',
@@ -227,27 +227,25 @@ export class LicensingClient {
             this.licenseClientPath = await this.init();
         }
 
-        await fs.promises.access(this.licenseClientPath, fs.constants.X_OK);
+        await fs.promises.access(this.licenseClientPath!, fs.constants.R_OK | fs.constants.X_OK);
 
         let output: string = '';
         let exitCode: number = 0;
 
+        function processOutput(data: Buffer) {
+            const chunk = data.toString();
+            output += chunk;
+            process.stdout.write(chunk);
+        }
+
         try {
             exitCode = await new Promise<number>((resolve, reject) => {
                 this.logger.info(`\x1b[34m${this.licenseClientPath} ${args.join(' ')}\x1b[0m`);
+
                 const child = spawn(this.licenseClientPath!, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
-                child.stdout.on('data', (data) => {
-                    const chunk = data.toString();
-                    output += chunk;
-                    this.logger.info(chunk);
-                });
-
-                child.stderr.on('data', (data) => {
-                    const chunk = data.toString();
-                    output += chunk;
-                    this.logger.error(chunk);
-                });
+                child.stdout.on('data', processOutput);
+                child.stderr.on('data', processOutput);
 
                 child.on('error', (error) => {
                     reject(error);

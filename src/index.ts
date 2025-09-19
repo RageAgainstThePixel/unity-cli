@@ -87,7 +87,8 @@ program.command('hub-version')
     .description('Print the version of the Unity Hub.')
     .action(async () => {
         const unityHub = new UnityHub();
-        await unityHub.Version();
+        const version = await unityHub.Version();
+        process.stdout.write(version);
     });
 
 program.command('hub-install')
@@ -148,7 +149,6 @@ program.command('setup-unity')
 
         Logger.instance.debug(JSON.stringify(options));
 
-
         let unityProject: UnityProject | undefined;
 
         if (options.unityProject) {
@@ -156,7 +156,7 @@ program.command('setup-unity')
         }
 
         if (!options.unityVersion && !unityProject) {
-            throw new Error('You must specify a Unity version with -u or --unity-version.');
+            throw new Error('You must specify a Unity version or project with -u, --unity-version, -p, --unity-project.');
         }
 
         const unityVersion = unityProject?.version ?? new UnityVersion(options.unityVersion, options.changeset);
