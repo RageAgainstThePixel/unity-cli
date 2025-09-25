@@ -66,11 +66,21 @@ export class UnityHub {
         let output: string = '';
         let exitCode: number = 0;
 
+        const ignoredLines = [
+            `This error originated either by throwing inside of an async function without a catch block`,
+            `Unexpected error attempting to determine if executable file exists`,
+            `dri3 extension not supported`,
+            `Failed to connect to the bus:`,
+            `Checking for beta autoupdate feature for deb/rpm distributions`,
+            `Found package-type: deb`,
+            `XPC error for connection com.apple.backupd.sandbox.xpc: Connection invalid`
+        ];
+
         function processOutput(data: Buffer) {
             const chunk = data.toString();
             output += chunk;
 
-            if (!options.silent) {
+            if (!options.silent && !ignoredLines.some(line => chunk.includes(line))) {
                 process.stdout.write(chunk);
             }
         }
