@@ -136,7 +136,10 @@ export class UnityHub {
                 `Found package-type: deb`,
                 `XPC error for connection com.apple.backupd.sandbox.xpc: Connection invalid`
             ];
-            output = output.split(os.EOL).filter(line => !ignoredLines.some(ignored => line.includes(ignored))).join(os.EOL);
+            output = output.split(os.EOL)
+                .filter(line => line.trim().length > 0)
+                .filter(line => !ignoredLines.some(ignored => line.includes(ignored)))
+                .join(os.EOL);
         }
 
         return output;
