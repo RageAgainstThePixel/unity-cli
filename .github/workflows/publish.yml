@@ -1,0 +1,29 @@
+name: Publish
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+      - run: |
+          npm ci
+          npm run build
+          # check if the last release is the same as the current version
+          lastVersion=$(npm show @rage-against-the-pixel/unity-releases-api version)
+          version=$(node -p "require('./package.json').version")
+          if [ "$version" = "$lastVersion" ]; then
+            echo "No changes detected"
+            exit 0
+          fi
+          npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

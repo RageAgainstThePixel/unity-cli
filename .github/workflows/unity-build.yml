@@ -1,0 +1,44 @@
+name: unity-build
+permissions:
+  contents: read
+on:
+  workflow_call:
+    inputs:
+      matrix:
+        required: true
+        type: string
+    secrets:
+      UNITY_USERNAME:
+        required: true
+      UNITY_PASSWORD:
+        required: true
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      matrix: ${{ fromJSON(inputs.matrix) }}
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    env:
+      VERSION: ''
+      EXPORT_OPTION: ''
+      BUILD_DIRECTORY: ''
+      UNITY_PROJECT_PATH: ${{ github.workspace }}/UnityProject
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      - run: |
+          npm ci
+          npm run build
+          npm run link
+          unity-cli --version
+          unity-cli hub-install
+          unity-cli activate-license --username ${{ secrets.UNITY_USERNAME }} --password ${{ secrets.UNITY_PASSWORD }}
+      - name: Post Run
+        if: always()
+        run: |
+          unity-cli return-license

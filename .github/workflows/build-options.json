@@ -1,0 +1,27 @@
+{
+  "os": [
+    "ubuntu-latest",
+    "windows-latest",
+    "macos-latest"
+  ],
+  "unity-version": [
+    "2022.3.x",
+    "6000.0.x",
+    "6000.1.x",
+    "6000"
+  ],
+  "include": [
+    {
+      "os": "ubuntu-latest",
+      "build-target": "StandaloneLinux64"
+    },
+    {
+      "os": "windows-latest",
+      "build-target": "StandaloneWindows64"
+    },
+    {
+      "os": "macos-latest",
+      "build-target": "StandaloneOSX"
+    }
+  ]
+}
