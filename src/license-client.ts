@@ -227,8 +227,6 @@ export class LicensingClient {
             this.licenseClientPath = await this.init();
         }
 
-        await fs.promises.access(this.licenseClientPath!, fs.constants.R_OK | fs.constants.X_OK);
-
         let output: string = '';
         let exitCode: number = 0;
 
@@ -238,11 +236,15 @@ export class LicensingClient {
             process.stdout.write(chunk);
         }
 
+        this.logger.startGroup(`\x1b[34m${this.licenseClientPath} ${args.join(' ')}\x1b[0m`);
+        await fs.promises.access(this.licenseClientPath!, fs.constants.R_OK | fs.constants.X_OK);
+
         try {
             exitCode = await new Promise<number>((resolve, reject) => {
-                this.logger.info(`\x1b[34m${this.licenseClientPath} ${args.join(' ')}\x1b[0m`);
-
-                const child = spawn(this.licenseClientPath!, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+                fs.accessSync(this.licenseClientPath!, fs.constants.R_OK | fs.constants.X_OK);
+                const child = spawn(this.licenseClientPath!, args, {
+                    stdio: ['ignore', 'pipe', 'pipe']
+                });
 
                 child.stdout.on('data', processOutput);
                 child.stderr.on('data', processOutput);
@@ -256,6 +258,8 @@ export class LicensingClient {
                 });
             });
         } finally {
+            this.logger.endGroup();
+
             if (exitCode !== 0) {
                 const message = this.getExitCodeMessage(exitCode);
                 throw new Error(`License command failed with exit code ${exitCode}: ${message}`);

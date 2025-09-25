@@ -32,9 +32,11 @@ export class Logger {
                 case 'GITHUB_ACTIONS': {
                     if (level === LogLevel.CI) {
                         level = LogLevel.INFO;
+                        process.stdout.write(`${message}`, ...optionalParams);
+                        break;
                     }
 
-                    console.log(`::${level}::${message}`, ...optionalParams);
+                    process.stdout.write(`::${level}::${message}`, ...optionalParams);
                     break;
                 }
                 default: {
@@ -46,7 +48,7 @@ export class Logger {
                         [LogLevel.WARN]: '\x1b[33m',  // Yellow
                         [LogLevel.ERROR]: '\x1b[31m', // Red
                     }[level] || clear;                // Default to no color / White
-                    console.log(`${stringColor}${message}${clear}`, ...optionalParams);
+                    process.stdout.write(`${stringColor}${message}${clear}`, ...optionalParams);
                     break;
                 }
             }
@@ -59,7 +61,7 @@ export class Logger {
     public startGroup(message: any, optionalParams: any[] = [], logLevel: LogLevel = LogLevel.INFO): void {
         switch (this._ci) {
             case 'GITHUB_ACTIONS': {
-                console.log(`::group::${message}`, ...optionalParams);
+                process.stdout.write(`::group::${message}`, ...optionalParams);
                 break;
             }
             default: {
@@ -76,7 +78,7 @@ export class Logger {
     public endGroup(): void {
         switch (this._ci) {
             case 'GITHUB_ACTIONS': {
-                console.log('::endgroup::');
+                process.stdout.write('::endgroup::');
                 break;
             }
             default: {
@@ -86,7 +88,7 @@ export class Logger {
     }
 
     /**
-     *
+     * Logs a message with CI level.
      * @param message
      * @param optionalParams
      */

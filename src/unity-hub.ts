@@ -62,12 +62,6 @@ export class UnityHub {
      * @returns The output from the command.
      */
     public async Exec(args: string[], options: ExecOptions = { silent: this.logger.logLevel > LogLevel.CI, showCommand: this.logger.logLevel <= LogLevel.CI }): Promise<string> {
-        const isPath = this.executable.includes(path.sep);
-
-        if (isPath) {
-            await fs.promises.access(this.executable, fs.constants.X_OK);
-        }
-
         let output: string = '';
         let exitCode: number = 0;
 
@@ -80,15 +74,20 @@ export class UnityHub {
             }
         }
 
+        const filteredArgs = args.filter(arg => arg !== '--headless' && arg !== '--');
+        const executable = process.platform === 'linux' ? 'unity-hub' : this.executable;
+        const execArgs = process.platform === 'linux' ? ['--headless', ...filteredArgs] : ['--', '--headless', ...filteredArgs];
+
+        if (options.showCommand) {
+            this.logger.startGroup(`\x1b[34m${executable} ${execArgs.join(' ')}\x1b[0m`);
+        }
+
+        if (this.executable.includes(path.sep)) {
+            fs.accessSync(this.executable, fs.constants.R_OK | fs.constants.X_OK);
+        }
+
         try {
             exitCode = await new Promise<number>((resolve, reject) => {
-                const filteredArgs = args.filter(arg => arg !== '--headless' && arg !== '--');
-                const executable = process.platform === 'linux' ? 'unity-hub' : this.executable;
-                const execArgs = process.platform === 'linux' ? ['--headless', ...filteredArgs] : ['--', '--headless', ...filteredArgs];
-
-                if (options.showCommand) {
-                    this.logger.startGroup(`\x1b[34m${executable} ${execArgs.join(' ')}\x1b[0m`);
-                }
 
                 const child = spawn(executable, execArgs, {
                     stdio: ['ignore', 'pipe', 'pipe'],

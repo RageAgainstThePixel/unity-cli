@@ -119,10 +119,14 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
     let output = '';
     let exitCode = 0;
 
+    logger.startGroup(`\x1b[34m${sdkManagerPath} ${args.join(' ')}\x1b[0m`);
+
+    if (sdkManagerPath.includes(path.sep)) {
+        fs.accessSync(sdkManagerPath, fs.constants.R_OK | fs.constants.X_OK);
+    }
+
     try {
         exitCode = await new Promise<number>((resolve, reject) => {
-            logger.startGroup(`\x1b[34m${sdkManagerPath} ${args.join(' ')}\x1b[0m`);
-
             const child = spawn(sdkManagerPath, args, {
                 stdio: ['pipe', 'pipe', 'pipe'],
                 env: { ...process.env, JAVA_HOME: javaPath }
