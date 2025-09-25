@@ -16,7 +16,7 @@ export class Logger {
     private constructor() {
         if (process.env.GITHUB_ACTIONS) {
             this._ci = 'GITHUB_ACTIONS';
-            this.logLevel = LogLevel.CI;
+            this.logLevel = process.env.ACTIONS_STEP_DEBUG === 'true' ? LogLevel.DEBUG : LogLevel.CI;
         }
 
         Logger.instance = this;
