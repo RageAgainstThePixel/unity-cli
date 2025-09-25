@@ -80,7 +80,9 @@ export class UnityHub {
             const chunk = data.toString();
             output += chunk;
 
-            if (!options.silent && !ignoredLines.some(line => chunk.includes(line))) {
+            if (!options.silent &&
+                chunk.trim().length > 0 &&
+                !ignoredLines.some(line => chunk.includes(line))) {
                 process.stdout.write(chunk);
             }
         }
@@ -478,7 +480,7 @@ chmod -R 777 "$hubPath"`]);
      */
     public async ListInstalledEditors(): Promise<string[]> {
         const output = await this.Exec(['editors', '-i']);
-        return output.split('\n')
+        return output.split(os.EOL)
             .filter(line => line.trim().length > 0)
             .map(line => line.trim());
     }
