@@ -155,6 +155,7 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
             });
 
             child.on('close', (code: number | null) => {
+                process.stdout.write(os.EOL);
                 resolve(code === null ? 0 : code);
             });
         });

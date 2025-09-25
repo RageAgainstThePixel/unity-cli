@@ -254,6 +254,7 @@ export class LicensingClient {
                 });
 
                 child.on('close', (code) => {
+                    process.stdout.write(os.EOL);
                     resolve(code === null ? 0 : code);
                 });
             });

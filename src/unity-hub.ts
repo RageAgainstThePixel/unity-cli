@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as yaml from 'yaml';
 import { spawn } from 'child_process';
@@ -88,7 +89,6 @@ export class UnityHub {
 
         try {
             exitCode = await new Promise<number>((resolve, reject) => {
-
                 const child = spawn(executable, execArgs, {
                     stdio: ['ignore', 'pipe', 'pipe'],
                 });
@@ -101,6 +101,7 @@ export class UnityHub {
                 });
 
                 child.on('close', (code) => {
+                    process.stdout.write(os.EOL);
                     resolve(code === null ? 0 : code);
                 });
             });
