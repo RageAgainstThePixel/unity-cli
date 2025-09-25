@@ -140,8 +140,8 @@ program.command('hub')
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
-        const hub = new UnityHub();
-        await hub.Exec(args, { silent: false, showCommand: Logger.instance.logLevel === LogLevel.DEBUG });
+        const unityHub = new UnityHub();
+        await unityHub.Exec(args, { silent: false, showCommand: Logger.instance.logLevel === LogLevel.DEBUG });
     });
 
 program.command('setup-unity')
@@ -189,7 +189,9 @@ program.command('setup-unity')
             }
         }
 
-        process.stdout.write(`${JSON.stringify(output)}${os.EOL}`);
+        if (options.json) {
+            process.stdout.write(`$${JSON.stringify(output)}${os.EOL}`);
+        }
     });
 
 program.parse(process.argv);

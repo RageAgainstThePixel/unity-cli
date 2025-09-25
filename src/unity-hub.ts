@@ -495,7 +495,7 @@ chmod -R 777 "$hubPath"`]);
                 const matches = paths.map(path => path.match(pattern)).filter(match => match && match.groups);
 
                 if (paths.length !== matches.length) {
-                    throw new Error(`Failed to parse all installed Unity Editors!`);
+                    throw new Error(`Failed to parse all installed Unity Editors!\n > paths: ${JSON.stringify(paths)}\n  > matches: ${JSON.stringify(matches)}`);
                 }
 
                 // Prefer exact version match first
