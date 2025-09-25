@@ -235,7 +235,7 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
                         await Exec('sudo', ['rm', '-rf', '/Applications/Unity Hub.app']);
                     }
                     await Exec('sudo', ['cp', '-R', appPath, '/Applications/Unity Hub.app']);
-                    await fs.promises.chmod('/Applications/Unity Hub.app/Contents/MacOS/Unity Hub', 0o777);
+                    await Exec('sudo', ['chmod', '777', '/Applications/Unity Hub.app/Contents/MacOS/Unity Hub']);
                     await Exec('sudo', ['mkdir', '-p', '/Library/Application Support/Unity']);
                     await Exec('sudo', ['chmod', '777', '/Library/Application Support/Unity']);
                 } finally {
