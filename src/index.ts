@@ -41,7 +41,13 @@ program.command('activate-license')
         }
 
         const client = new LicensingClient();
-        const licenseType: LicenseType = options.license.toString().toLowerCase() as LicenseType;
+        const licenseStr: string = options.license?.toString()?.trim();
+
+        if (!licenseStr || licenseStr.length === 0) {
+            throw new Error('License type is required. Use -l or --license to specify it.');
+        }
+
+        const licenseType: LicenseType = options.license.toLowerCase() as LicenseType;
 
         if (![LicenseType.personal, LicenseType.professional, LicenseType.floating].includes(licenseType)) {
             throw new Error(`Invalid license type: ${licenseType}`);
