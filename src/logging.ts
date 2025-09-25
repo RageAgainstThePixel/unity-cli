@@ -32,13 +32,22 @@ export class Logger {
         if (this.shouldLog(level)) {
             switch (this._ci) {
                 case 'GITHUB_ACTIONS': {
-                    if (level === LogLevel.CI ||
-                        level === LogLevel.INFO) {
-                        process.stdout.write(`${message}${os.EOL}`, ...optionalParams);
-                        break;
+                    switch (level) {
+                        case LogLevel.DEBUG: {
+                            message.toString().split(os.EOL).forEach((line: string) => {
+                                process.stdout.write(`::debug::${line}${os.EOL}`, ...optionalParams);
+                            });
+                        }
+                        case LogLevel.CI:
+                        case LogLevel.INFO: {
+                            process.stdout.write(`${message}${os.EOL}`, ...optionalParams);
+                            break;
+                        }
+                        default: {
+                            process.stdout.write(`::${level}::${message}${os.EOL}`, ...optionalParams);
+                            break;
+                        }
                     }
-
-                    process.stdout.write(`::${level}::${message}${os.EOL}`, ...optionalParams);
                     break;
                 }
                 default: {
