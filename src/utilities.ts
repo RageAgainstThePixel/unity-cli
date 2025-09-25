@@ -74,7 +74,10 @@ export async function Exec(command: string, args: string[], options: ExecOptions
                 logger.info(`\x1b[34m${command} ${args.join(' ')}\x1b[0m`);
             }
 
-            // fs.accessSync(command, fs.constants.R_OK | fs.constants.X_OK);
+            if (command.includes(path.sep)) {
+                fs.accessSync(command, fs.constants.R_OK | fs.constants.X_OK);
+            }
+
             const child = spawn(command, args, {
                 env: process.env,
                 stdio: ['ignore', 'pipe', 'pipe'],
