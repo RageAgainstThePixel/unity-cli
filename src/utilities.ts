@@ -74,7 +74,10 @@ export async function Exec(command: string, args: string[], options: ExecOptions
             }
 
             fs.accessSync(command, fs.constants.R_OK | fs.constants.X_OK);
-            const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+            const child = spawn(command, args, {
+                env: process.env,
+                stdio: ['ignore', 'pipe', 'pipe'],
+            });
 
             child.stdout.on('data', processOutput);
             child.stderr.on('data', processOutput);

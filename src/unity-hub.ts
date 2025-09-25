@@ -86,7 +86,9 @@ export class UnityHub {
                     this.logger.startGroup(`\x1b[34m${executable} ${execArgs.join(' ')}\x1b[0m`);
                 }
 
-                const child = spawn(executable, execArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+                const child = spawn(executable, execArgs, {
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                });
 
                 child.stdout.on('data', processOutput);
                 child.stderr.on('data', processOutput);
