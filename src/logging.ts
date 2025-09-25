@@ -1,3 +1,5 @@
+import * as os from 'os';
+
 export enum LogLevel {
     DEBUG = 'debug',
     CI = 'ci',
@@ -30,13 +32,13 @@ export class Logger {
         if (this.shouldLog(level)) {
             switch (this._ci) {
                 case 'GITHUB_ACTIONS': {
-                    if (level === LogLevel.CI) {
-                        level = LogLevel.INFO;
-                        process.stdout.write(`${message}\n`, ...optionalParams);
+                    if (level === LogLevel.CI ||
+                        level === LogLevel.INFO) {
+                        process.stdout.write(`${message}${os.EOL}`, ...optionalParams);
                         break;
                     }
 
-                    process.stdout.write(`::${level}::${message}\n`, ...optionalParams);
+                    process.stdout.write(`::${level}::${message}${os.EOL}`, ...optionalParams);
                     break;
                 }
                 default: {
@@ -48,7 +50,7 @@ export class Logger {
                         [LogLevel.WARN]: '\x1b[33m',  // Yellow
                         [LogLevel.ERROR]: '\x1b[31m', // Red
                     }[level] || clear;                // Default to no color / White
-                    process.stdout.write(`${stringColor}${message}${clear}\n`, ...optionalParams);
+                    process.stdout.write(`${stringColor}${message}${clear}${os.EOL}`, ...optionalParams);
                     break;
                 }
             }
@@ -63,13 +65,13 @@ export class Logger {
             case 'GITHUB_ACTIONS': {
                 // if there is newline in message, only use the first line for group title
                 // then print the rest of the lines inside the group in cyan color
-                const firstLine: string = message.toString().split('\n')[0];
-                const restLines: string[] = message.toString().split('\n').slice(1);
+                const firstLine: string = message.toString().split(os.EOL)[0];
+                const restLines: string[] = message.toString().split(os.EOL).slice(1);
                 const cyan = '\x1b[36m';
                 const clear = '\x1b[0m';
-                process.stdout.write(`::group::${firstLine}\n`, ...optionalParams);
+                process.stdout.write(`::group::${firstLine}${os.EOL}`, ...optionalParams);
                 restLines.forEach(line => {
-                    process.stdout.write(`${cyan}${line}${clear}\n`, ...optionalParams);
+                    process.stdout.write(`${cyan}${line}${clear}${os.EOL}`, ...optionalParams);
                 });
                 break;
             }
@@ -87,7 +89,7 @@ export class Logger {
     public endGroup(): void {
         switch (this._ci) {
             case 'GITHUB_ACTIONS': {
-                process.stdout.write('::endgroup::\n');
+                process.stdout.write(`::endgroup::${os.EOL}`);
                 break;
             }
             default: {
