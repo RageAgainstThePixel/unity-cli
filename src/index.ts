@@ -175,14 +175,11 @@ program.command('setup-unity')
         const unityVersion = unityProject?.version ?? new UnityVersion(options.unityVersion, options.changeset);
         const modules: string[] = options.modules ? options.modules.split(/[ ,]+/).filter(Boolean) : [];
         const unityHub = new UnityHub();
-
-        const output: { [key: string]: string } = {};
-
-        output['UNITY_HUB_PATH'] = unityHub.executable;
-
         const editorPath = await unityHub.GetEditor(unityVersion, modules);
-
-        output['UNITY_EDITOR'] = editorPath;
+        const output: { [key: string]: string } = {
+            'UNITY_HUB_PATH': unityHub.executable,
+            'UNITY_EDITOR': editorPath
+        };
 
         if (unityProject) {
             output['UNITY_PROJECT'] = unityProject.projectPath;
