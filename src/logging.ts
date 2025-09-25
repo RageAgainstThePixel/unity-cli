@@ -32,11 +32,11 @@ export class Logger {
                 case 'GITHUB_ACTIONS': {
                     if (level === LogLevel.CI) {
                         level = LogLevel.INFO;
-                        process.stdout.write(`${message}`, ...optionalParams);
+                        process.stdout.write(`${message}\n`, ...optionalParams);
                         break;
                     }
 
-                    process.stdout.write(`::${level}::${message}`, ...optionalParams);
+                    process.stdout.write(`::${level}::${message}\n`, ...optionalParams);
                     break;
                 }
                 default: {
@@ -48,7 +48,7 @@ export class Logger {
                         [LogLevel.WARN]: '\x1b[33m',  // Yellow
                         [LogLevel.ERROR]: '\x1b[31m', // Red
                     }[level] || clear;                // Default to no color / White
-                    process.stdout.write(`${stringColor}${message}${clear}`, ...optionalParams);
+                    process.stdout.write(`${stringColor}${message}${clear}\n`, ...optionalParams);
                     break;
                 }
             }
@@ -61,7 +61,7 @@ export class Logger {
     public startGroup(message: any, optionalParams: any[] = [], logLevel: LogLevel = LogLevel.INFO): void {
         switch (this._ci) {
             case 'GITHUB_ACTIONS': {
-                process.stdout.write(`::group::${message}`, ...optionalParams);
+                process.stdout.write(`::group::${message}\n`, ...optionalParams);
                 break;
             }
             default: {
@@ -78,7 +78,7 @@ export class Logger {
     public endGroup(): void {
         switch (this._ci) {
             case 'GITHUB_ACTIONS': {
-                process.stdout.write('::endgroup::');
+                process.stdout.write('::endgroup::\n');
                 break;
             }
             default: {
