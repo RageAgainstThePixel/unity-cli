@@ -40,7 +40,7 @@ jobs:
           npm run link
           unity-cli --version
           unity-cli hub-install
-          unity-cli activate-license --username ${{ secrets.UNITY_USERNAME }} --password ${{ secrets.UNITY_PASSWORD }}
+          unity-cli activate-license --username "${{ secrets.UNITY_USERNAME }}" --password "${{ secrets.UNITY_PASSWORD }}"
       - name: Post Run
         if: always()
         shell: bash
