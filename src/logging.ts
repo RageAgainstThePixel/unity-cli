@@ -63,12 +63,14 @@ export class Logger {
             case 'GITHUB_ACTIONS': {
                 // if there is newline in message, only use the first line for group title
                 // then print the rest of the lines inside the group in cyan color
-                const firstLine = message.toString().split('\n')[0];
-                const restLines = message.toString().split('\n').slice(1).join('\n');
+                const firstLine: string = message.toString().split('\n')[0];
+                const restLines: string[] = message.toString().split('\n').slice(1);
                 const cyan = '\x1b[36m';
                 const clear = '\x1b[0m';
                 process.stdout.write(`::group::${firstLine}\n`, ...optionalParams);
-                process.stdout.write(`${cyan}${restLines}${clear}\n`, ...optionalParams);
+                restLines.forEach(line => {
+                    process.stdout.write(`${cyan}${line}${clear}\n`, ...optionalParams);
+                });
                 break;
             }
             default: {
