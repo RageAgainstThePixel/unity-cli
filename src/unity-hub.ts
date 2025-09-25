@@ -231,7 +231,7 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
                     this.logger.debug(`Copying ${appPath} to /Applications...`);
 
                     await fs.promises.access(appPath, fs.constants.R_OK | fs.constants.X_OK);
-                    await fs.promises.cp(appPath, '/Applications/Unity Hub.app', { recursive: true, mode: 0o777 });
+                    await fs.promises.cp(appPath, '/Applications/Unity Hub.app', { recursive: true });
                     await fs.promises.chmod('/Applications/Unity Hub.app/Contents/MacOS/Unity Hub', 0o777);
                     await fs.promises.mkdir('/Library/Application Support/Unity', { recursive: true, mode: 0o777 });
                     await fs.promises.chmod('/Library/Application Support/Unity', 0o777);
