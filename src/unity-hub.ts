@@ -62,7 +62,11 @@ export class UnityHub {
      * @returns The output from the command.
      */
     public async Exec(args: string[], options: ExecOptions = { silent: this.logger.logLevel > LogLevel.CI, showCommand: this.logger.logLevel <= LogLevel.CI }): Promise<string> {
-        await fs.promises.access(this.executable, fs.constants.X_OK);
+        const isPath = this.executable.includes(path.sep);
+
+        if (isPath) {
+            await fs.promises.access(this.executable, fs.constants.X_OK);
+        }
 
         let output: string = '';
         let exitCode: number = 0;
