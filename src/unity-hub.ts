@@ -242,8 +242,7 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
                 break;
             }
             case 'linux': {
-                const sudoPath = await Exec('which', ['sudo'], { silent: true, showCommand: false });
-                await Exec(sudoPath, ['sh', '-c', `#!/bin/bash
+                await Exec('sudo', ['sh', '-c', `#!/bin/bash
 set -e
 dbus-uuidgen >/etc/machine-id && mkdir -p /var/lib/dbus/ && ln -sf /etc/machine-id /var/lib/dbus/machine-id
 wget -qO - https://hub.unity3d.com/linux/keys/public | gpg --dearmor | tee /usr/share/keyrings/Unity_Technologies_ApS.gpg >/dev/null
