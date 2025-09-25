@@ -68,12 +68,12 @@ export async function Exec(command: string, args: string[], options: ExecOptions
         }
     }
 
+    if (options.showCommand) {
+        logger.startGroup(`\x1b[34m${command} ${args.join(' ')}\x1b[0m`);
+    }
+
     try {
         exitCode = await new Promise<number>((resolve, reject) => {
-            if (options.showCommand) {
-                logger.info(`\x1b[34m${command} ${args.join(' ')}\x1b[0m`);
-            }
-
             if (command.includes(path.sep)) {
                 fs.accessSync(command, fs.constants.R_OK | fs.constants.X_OK);
             }
@@ -95,6 +95,9 @@ export async function Exec(command: string, args: string[], options: ExecOptions
             });
         });
     } finally {
+        if (options.showCommand) {
+            logger.endGroup();
+        }
         if (exitCode !== 0) {
             throw new Error(`${command} failed with exit code ${exitCode}`);
         }
