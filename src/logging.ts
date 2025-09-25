@@ -61,7 +61,14 @@ export class Logger {
     public startGroup(message: any, optionalParams: any[] = [], logLevel: LogLevel = LogLevel.INFO): void {
         switch (this._ci) {
             case 'GITHUB_ACTIONS': {
-                process.stdout.write(`::group::${message}\n`, ...optionalParams);
+                // if there is newline in message, only use the first line for group title
+                // then print the rest of the lines inside the group in cyan color
+                const firstLine = message.toString().split('\n')[0];
+                const restLines = message.toString().split('\n').slice(1).join('\n');
+                const cyan = '\x1b[36m';
+                const clear = '\x1b[0m';
+                process.stdout.write(`::group::${firstLine}\n`, ...optionalParams);
+                process.stdout.write(`${cyan}${restLines}${clear}\n`, ...optionalParams);
                 break;
             }
             default: {
