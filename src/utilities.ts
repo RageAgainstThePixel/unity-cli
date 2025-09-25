@@ -104,7 +104,7 @@ export async function DownloadFile(url: string, downloadPath: string): Promise<v
     logger.debug(`Downloading from ${url} to ${downloadPath}...`);
     await fs.promises.mkdir(path.dirname(downloadPath), { recursive: true });
     await new Promise<void>((resolve, reject) => {
-        const file = fs.createWriteStream(downloadPath);
+        const file = fs.createWriteStream(downloadPath, { mode: 0o755 });
         https.get(url, (response) => {
             response.pipe(file);
             file.on('finish', () => {
