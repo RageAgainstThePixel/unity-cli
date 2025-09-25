@@ -37,6 +37,7 @@ export class Logger {
                             message.toString().split(os.EOL).forEach((line: string) => {
                                 process.stdout.write(`::debug::${line}${os.EOL}`, ...optionalParams);
                             });
+                            break;
                         }
                         case LogLevel.CI:
                         case LogLevel.INFO: {
