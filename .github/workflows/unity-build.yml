@@ -34,6 +34,7 @@ jobs:
       - name: unity-cli
         shell: bash
         run: |
+          set -xe
           npm ci
           npm run build
           npm run link
@@ -44,4 +45,5 @@ jobs:
         if: always()
         shell: bash
         run: |
+          set -xe
           unity-cli return-license
