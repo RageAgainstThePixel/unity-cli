@@ -129,3 +129,17 @@ export async function ReadFileContents(filePath: string): Promise<string> {
         await fileHandle.close();
     }
 }
+
+export function GetTempDir(): string {
+    if (process.env['RUNNER_TEMP']) {
+        return process.env['RUNNER_TEMP']!;
+    } else if (process.env['TMPDIR']) {
+        return process.env['TMPDIR']!;
+    } else if (process.env['TEMP']) {
+        return process.env['TEMP']!;
+    } else if (process.env['TMP']) {
+        return process.env['TMP']!;
+    }
+    // fallback to current directory
+    return '.';
+}

@@ -14,7 +14,8 @@ import {
     DownloadFile,
     Exec,
     ExecOptions,
-    ReadFileContents
+    ReadFileContents,
+    GetTempDir
 } from './utilities';
 import { UnityVersion } from './unity-version';
 import { GetUnityReleasesData, UnityRelease } from '@rage-against-the-pixel/unity-releases-api/dist/unity-releases-api/types.gen';
@@ -183,7 +184,7 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
         switch (process.platform) {
             case 'win32': {
                 const url = 'https://public-cdn.cloud.unity3d.com/hub/prod/UnityHubSetup.exe';
-                const downloadPath = path.join(process.env.TEMP || '.', 'UnityHubSetup.exe');
+                const downloadPath = path.join(GetTempDir(), 'UnityHubSetup.exe');
                 await DownloadFile(url, downloadPath);
 
                 this.logger.info(`Running Unity Hub installer...`);
@@ -199,7 +200,7 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
             case 'darwin': {
                 const baseUrl = 'https://public-cdn.cloud.unity3d.com/hub/prod';
                 const url = `${baseUrl}/UnityHubSetup-${process.arch}.dmg`;
-                const downloadPath = path.join(process.env.TEMP || '.', `UnityHubSetup-${process.arch}.dmg`);
+                const downloadPath = path.join(GetTempDir(), `UnityHubSetup-${process.arch}.dmg`);
                 this.logger.info(`Downloading Unity Hub from ${url} to ${downloadPath}`);
 
                 await DownloadFile(url, downloadPath);
@@ -770,7 +771,7 @@ done
 
             if (['2019.1', '2019.2'].some(v => unityVersion.version.startsWith(v))) {
                 const url = `https://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.0.0_1.0.2g-1ubuntu4.20_${arch}.deb`;
-                const downloadPath = path.join(process.env.TEMP || '.', `libssl1.0.0_1.0.2g-1ubuntu4.20_${arch}.deb`);
+                const downloadPath = path.join(GetTempDir(), `libssl1.0.0_1.0.2g-1ubuntu4.20_${arch}.deb`);
                 await DownloadFile(url, downloadPath);
 
                 try {
@@ -780,7 +781,7 @@ done
                 }
             } else if (['2019.3', '2019.4'].some(v => unityVersion.version.startsWith(v)) || unityVersion.version.startsWith('2020.')) {
                 const url = `https://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.0g-2ubuntu4_${arch}.deb`;
-                const downloadPath = path.join(process.env.TEMP || '.', `libssl1.1_1.1.0g-2ubuntu4_${arch}.deb`);
+                const downloadPath = path.join(GetTempDir(), `libssl1.1_1.1.0g-2ubuntu4_${arch}.deb`);
                 await DownloadFile(url, downloadPath);
 
                 try {
@@ -827,7 +828,7 @@ done
 
                 if (!fs.existsSync(installPath)) {
                     const url = `https://beta.unity3d.com/download/UnitySetup-${unityVersion.version}.exe`;
-                    const installerPath = path.join(process.env.TEMP || '.', `UnitySetup-${unityVersion.version}.exe`);
+                    const installerPath = path.join(GetTempDir(), `UnitySetup-${unityVersion.version}.exe`);
                     await DownloadFile(url, installerPath);
 
                     this.logger.info(`Running Unity ${unityVersion.toString()} installer...`);
@@ -849,7 +850,7 @@ done
 
                 if (!fs.existsSync(installPath)) {
                     const url = `https://beta.unity3d.com/download/unity-${unityVersion.version}.dmg`;
-                    const installerPath = path.join(process.env.TEMP || '.', `UnitySetup-${unityVersion.version}.dmg`);
+                    const installerPath = path.join(GetTempDir(), `UnitySetup-${unityVersion.version}.dmg`);
                     await DownloadFile(url, installerPath);
 
                     this.logger.info(`Running Unity ${unityVersion.toString()} installer...`);
