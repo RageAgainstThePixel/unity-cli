@@ -206,6 +206,7 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
                 this.logger.info(`Downloading Unity Hub from ${url} to ${downloadPath}`);
 
                 await DownloadFile(url, downloadPath);
+                await fs.promises.chmod(downloadPath, 0o777);
 
                 let mountPoint = '';
                 this.logger.debug(`Mounting DMG...`);
