@@ -4,6 +4,7 @@ import * as glob from 'glob';
 import * as fs from 'fs';
 import * as https from 'https';
 import * as readline from 'readline';
+import * as os from 'os';
 import { spawn } from 'child_process';
 import { Logger } from './logging';
 
@@ -101,6 +102,7 @@ export async function Exec(command: string, args: string[], options: ExecOptions
 
 export async function DownloadFile(url: string, downloadPath: string): Promise<void> {
     logger.debug(`Downloading from ${url} to ${downloadPath}...`);
+    await fs.promises.mkdir(path.dirname(downloadPath), { recursive: true });
     await new Promise<void>((resolve, reject) => {
         const file = fs.createWriteStream(downloadPath);
         https.get(url, (response) => {
@@ -144,5 +146,5 @@ export function GetTempDir(): string {
         return process.env['TMP']!;
     }
     // fallback to current directory
-    return '.';
+    return os.tmpdir();
 }
