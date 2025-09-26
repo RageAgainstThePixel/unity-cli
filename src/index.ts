@@ -148,7 +148,7 @@ program.command('hub')
         Logger.instance.debug(JSON.stringify(options));
 
         const unityHub = new UnityHub();
-        await unityHub.Exec(args, { silent: false, showCommand: Logger.instance.logLevel === LogLevel.DEBUG });
+        await unityHub.Exec(args, { silent: false, showCommand: false });
     });
 
 program.command('setup-unity')
@@ -193,14 +193,6 @@ program.command('setup-unity')
 
             if (modules.includes('android')) {
                 await CheckAndroidSdkInstalled(editorPath, unityProject.projectPath);
-            }
-        }
-
-        if (process.env.GITHUB_ACTIONS) {
-            process.env.UNITY_HUB_PATH = unityHub.executable;
-            process.env.UNITY_EDITOR = editorPath;
-            if (unityProject) {
-                process.env.UNITY_PROJECT_PATH = unityProject.projectPath;
             }
         }
 
@@ -250,10 +242,6 @@ program.command('create-project')
                 '-cloneFromTemplate', templatePath
             ]
         });
-
-        if (process.env.GITHUB_ACTIONS) {
-            process.env.UNITY_PROJECT_PATH = projectPath;
-        }
 
         if (options.json) {
             process.stdout.write(`$${JSON.stringify({ UNITY_PROJECT_PATH: projectPath })}\n`);
