@@ -197,7 +197,7 @@ program.command('setup-unity')
         }
 
         if (options.json) {
-            process.stdout.write(`$${JSON.stringify(output)}\n`);
+            process.stdout.write(`\n${JSON.stringify(output)}`);
         }
     });
 
@@ -244,7 +244,7 @@ program.command('create-project')
         });
 
         if (options.json) {
-            process.stdout.write(`$${JSON.stringify({ UNITY_PROJECT_PATH: projectPath })}\n`);
+            process.stdout.write(`\n${JSON.stringify({ UNITY_PROJECT_PATH: projectPath })}`);
         }
     });
 
