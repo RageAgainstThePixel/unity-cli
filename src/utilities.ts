@@ -125,6 +125,8 @@ export async function DownloadFile(url: string, downloadPath: string): Promise<v
             fs.unlink(downloadPath, () => reject(`Download failed: ${error}`));
         });
     });
+    // make sure the file is closed and accessible
+    await new Promise((r) => setTimeout(r, 100));
     await fs.promises.access(downloadPath, fs.constants.R_OK | fs.constants.X_OK);
 }
 
