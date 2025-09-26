@@ -37,11 +37,9 @@ jobs:
           unity-cli hub-install
           unity-cli activate-license --license personal --email "${{ secrets.UNITY_USERNAME }}" --password "${{ secrets.UNITY_PASSWORD }}"
           setup_output=$(unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-targets }}" --json)
-          echo "$setup_output"
           unity_editor_path=$(echo "$setup_output" | tail -n 1 | jq -r '.UNITY_EDITOR')
           echo "$unity_editor_path"
           create_project_output=$(unity-cli create-project --name "Unity Project" --unity-editor "$unity_editor_path" --json)
-          echo "$create_project_output"
           project_path=$(echo "$create_project_output" | tail -n 1 | jq -r '.UNITY_PROJECT_PATH')
           echo "$project_path"
       - name: Post Run

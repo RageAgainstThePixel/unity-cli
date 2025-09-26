@@ -11,7 +11,6 @@ import {
     spawn,
     ChildProcessByStdio,
 } from 'child_process';
-import { UnityVersion } from './unity-version';
 
 export interface EditorCommand {
     args: string[];
@@ -300,7 +299,7 @@ export class UnityEditor {
                 }
             } catch {
                 fileLocked = true;
-                await new Promise(res => setTimeout(res, logPollingInterval));
+                await new Promise(r => setTimeout(r, logPollingInterval));
             }
         }
 
