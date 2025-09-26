@@ -106,7 +106,7 @@ program.command('hub-version')
     .action(async () => {
         const unityHub = new UnityHub();
         const version = await unityHub.Version();
-        process.stdout.write(`${version}\n`);
+        process.stdout.write(version);
     });
 
 program.command('hub-install')
@@ -122,17 +122,22 @@ program.command('hub-install')
         const hubPath = await unityHub.Install();
 
         if (options.json) {
-            process.stdout.write(`$${JSON.stringify({ UNITY_HUB: hubPath })}\n`);
+            process.stdout.write(`\n${JSON.stringify({ UNITY_HUB_PATH: hubPath })}`);
         } else {
-            process.stdout.write(`${hubPath}\n`);
+            process.stdout.write(hubPath);
         }
     });
 
 program.command('hub-path')
     .description('Print the path to the Unity Hub executable.')
-    .action(async () => {
+    .option('--json', 'Prints the last line of output as JSON string.')
+    .action(async (options) => {
         const hub = new UnityHub();
-        process.stdout.write(`${hub.executable}\n`);
+        if (options.json) {
+            process.stdout.write(`${JSON.stringify({ UNITY_HUB_PATH: hub.executable })}`);
+        } else {
+            process.stdout.write(hub.executable);
+        }
     });
 
 program.command('hub')
@@ -145,10 +150,10 @@ program.command('hub')
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
-        Logger.instance.debug(JSON.stringify(options));
+        Logger.instance.debug(JSON.stringify({ args, options }));
 
         const unityHub = new UnityHub();
-        await unityHub.Exec(args, { silent: false, showCommand: false });
+        await unityHub.Exec(args, { silent: false, showCommand: Logger.instance.logLevel === LogLevel.DEBUG });
     });
 
 program.command('setup-unity')
@@ -261,7 +266,7 @@ program.command('run')
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
-        Logger.instance.debug(JSON.stringify(options));
+        Logger.instance.debug(JSON.stringify({ options, args }));
 
         const editorPath = options.editorPath?.toString()?.trim() || process.env.UNITY_EDITOR;
 
