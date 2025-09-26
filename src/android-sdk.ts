@@ -132,6 +132,8 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
                 env: { ...process.env, JAVA_HOME: javaPath }
             });
 
+            process.once('SIGINT', () => child.kill('SIGINT'));
+            process.once('SIGTERM', () => child.kill('SIGTERM'));
             child.stdout.on('data', (data: Buffer) => {
                 const chunk = data.toString();
                 output += chunk;
@@ -143,17 +145,12 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
 
                 process.stdout.write(chunk);
             });
-
             child.stderr.on('data', (data: Buffer) => {
                 const chunk = data.toString();
                 output += chunk;
                 process.stderr.write(chunk);
             });
-
-            child.on('error', (error: Error) => {
-                reject(error);
-            });
-
+            child.on('error', (error: Error) => reject(error));
             child.on('close', (code: number | null) => {
                 process.stdout.write('\n');
                 resolve(code === null ? 0 : code);

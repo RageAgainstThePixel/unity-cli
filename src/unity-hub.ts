@@ -92,13 +92,11 @@ export class UnityHub {
                     stdio: ['ignore', 'pipe', 'pipe'],
                 });
 
+                process.once('SIGINT', () => child.kill('SIGINT'));
+                process.once('SIGTERM', () => child.kill('SIGTERM'));
                 child.stdout.on('data', processOutput);
                 child.stderr.on('data', processOutput);
-
-                child.on('error', (error) => {
-                    reject(error);
-                });
-
+                child.on('error', (error) => reject(error));
                 child.on('close', (code) => {
                     process.stdout.write('\n');
                     resolve(code === null ? 0 : code);

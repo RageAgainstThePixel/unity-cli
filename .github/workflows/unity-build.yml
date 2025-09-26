@@ -21,11 +21,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-    env:
-      VERSION: ''
-      EXPORT_OPTION: ''
-      BUILD_DIRECTORY: ''
-      UNITY_PROJECT_PATH: ${{ github.workspace }}/UnityProject
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,6 +37,7 @@ jobs:
           unity-cli hub-install
           unity-cli activate-license --license personal --email "${{ secrets.UNITY_USERNAME }}" --password "${{ secrets.UNITY_PASSWORD }}"
           unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-targets }}"
+          unity-cli create-project --name "Unity Project"
       - name: Post Run
         if: always()
         shell: bash

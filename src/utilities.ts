@@ -6,7 +6,7 @@ import * as https from 'https';
 import * as readline from 'readline';
 import * as os from 'os';
 import { spawn } from 'child_process';
-import { Logger } from './logging';
+import { Logger, LogLevel } from './logging';
 
 const logger = Logger.instance;
 
@@ -17,10 +17,7 @@ const logger = Logger.instance;
  */
 export async function ResolveGlobToPath(globs: string[]): Promise<string> {
     const globPath: string = path.join(...globs).split(path.sep).join('/');
-    // logger.debug(`glob: ${globPath}`);
     const paths: string[] = await glob.glob(globPath);
-
-    // logger.debug(`Resolved "${globPath}" to ${paths.length} paths:\n  > ${paths.join('\n  > ')}`);
 
     for (const path of paths) {
         await fs.promises.access(path, fs.constants.R_OK);
@@ -55,6 +52,14 @@ export type ExecOptions = {
     showCommand?: boolean;
 }
 
+/**
+ * Executes a command with arguments and options.
+ * @param command The command to execute.
+ * @param args The arguments for the command.
+ * @param options Options for the execution. `silent` controls console output, `showCommand` controls if the command is logged. If LogLevel is DEBUG, both are overridden to show command and not be silent.
+ * @returns The output of the command.
+ * @throws An error if the command returns a non-zero exit code.
+ */
 export async function Exec(command: string, args: string[], options: ExecOptions = { silent: false, showCommand: true }): Promise<string> {
     let output: string = '';
     let exitCode: number = 0;
@@ -63,12 +68,12 @@ export async function Exec(command: string, args: string[], options: ExecOptions
         const chunk = data.toString();
         output += chunk;
 
-        if (!options.silent) {
+        if (!options.silent || logger.logLevel === LogLevel.DEBUG) {
             process.stdout.write(chunk);
         }
     }
 
-    if (options.showCommand) {
+    if (options.showCommand || logger.logLevel === LogLevel.DEBUG) {
         logger.startGroup(`\x1b[34m${command} ${args.join(' ')}\x1b[0m`);
     }
 
@@ -82,23 +87,21 @@ export async function Exec(command: string, args: string[], options: ExecOptions
                 env: process.env,
                 stdio: ['ignore', 'pipe', 'pipe'],
             });
-
+            process.once('SIGINT', () => child.kill('SIGINT'));
+            process.once('SIGTERM', () => child.kill('SIGTERM'));
             child.stdout.on('data', processOutput);
             child.stderr.on('data', processOutput);
-
-            child.on('error', (error) => {
-                reject(error);
-            });
-
+            child.on('error', (error) => reject(error));
             child.on('close', (code) => {
                 process.stdout.write('\n');
                 resolve(code === null ? 0 : code);
             });
         });
     } finally {
-        if (options.showCommand) {
+        if (options.showCommand || logger.logLevel === LogLevel.DEBUG) {
             logger.endGroup();
         }
+
         if (exitCode !== 0) {
             throw new Error(`${command} failed with exit code ${exitCode}`);
         }
@@ -164,9 +167,11 @@ export function GetTempDir(): string {
  */
 export function getArgumentValue(value: string, args: string[]): string | undefined {
     const index = args.indexOf(value);
+
     if (index === -1 || index === args.length - 1) {
         throw Error(`Missing ${value} argument`);
     }
+
     return args[index + 1];
 }
 
@@ -177,35 +182,70 @@ export interface ProcInfo {
 }
 
 /**
- * Attempts to kill a process with the given PID read from a PID file.
- * @param pidFilePath The path to the PID file.
- * @returns The PID of the killed process, or null if no process was killed.
+ * Attempts to kill a process with the given ProcInfo.
+ * @param procInfo The process information containing the PID.
+ * @returns The PID of the killed process, or undefined if no process was killed.
  */
-export async function tryKillPid(pidFilePath: string): Promise<number | null> {
-    let pid: number | null = null;
+export async function tryKillProcess(procInfo: ProcInfo): Promise<number | undefined> {
+    let pid: number | undefined;
+
+    try {
+        pid = procInfo.pid;
+        logger.debug(`Killing process pid: ${pid}`);
+        process.kill(pid);
+    } catch (error) {
+        const nodeJsException = error as NodeJS.ErrnoException;
+        const errorCode = nodeJsException?.code;
+
+        if (errorCode !== 'ENOENT' && errorCode !== 'ESRCH') {
+            logger.error(`Failed to kill process:\n${JSON.stringify(error)}`);
+        }
+    }
+
+    return pid;
+}
+
+export async function readPidFile(pidFilePath: string): Promise<ProcInfo | undefined> {
+    let procInfo: ProcInfo | undefined;
     try {
         if (!fs.existsSync(pidFilePath)) {
             logger.debug(`PID file does not exist: ${pidFilePath}`);
-            return null;
+            return procInfo;
         }
+
         const fileHandle = await fs.promises.open(pidFilePath, 'r');
         try {
-            pid = parseInt(await fileHandle.readFile('utf8'));
-            logger.debug(`Killing process pid: ${pid}`);
-            process.kill(pid);
-        } catch (error) {
-            const nodeJsException = error as NodeJS.ErrnoException;
-            const errorCode = nodeJsException?.code;
-            if (errorCode !== 'ENOENT' && errorCode !== 'ESRCH') {
-                logger.error(`Failed to kill process:\n${JSON.stringify(error)}`);
+            const pid = parseInt(await fileHandle.readFile('utf8'));
+
+            if (isNaN(pid)) {
+                logger.error(`Invalid PID in file: ${pidFilePath}`);
+                return procInfo;
             }
+
+            procInfo = { pid, ppid: 0, name: '' };
+        } catch (error) {
+            logger.error(`Failed to read PID file: ${pidFilePath}\n${error}`);
         } finally {
             await fileHandle.close();
             await fs.promises.unlink(pidFilePath);
         }
-
     } catch (error) {
         // ignored
     }
-    return pid;
+
+    return procInfo;
+}
+
+export async function killChildProcesses(procInfo: ProcInfo): Promise<void> {
+    try {
+        if (process.platform === 'win32') {
+            const pwshCommand = 'powershell -Command "Get-CimInstance Win32_Process -Filter \'ParentProcessId=' + procInfo.pid + '\' | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"';
+            await Exec('cmd', ['/c', pwshCommand]);
+        } else { // linux and macos
+            const unixCommand = `pgrep -P ${procInfo.pid} | xargs -r kill`;
+            await Exec('sudo', ['sh', '-c', unixCommand]);
+        }
+    } catch (error) {
+        logger.error(`Failed to kill child processes of pid ${procInfo.pid}:\n${JSON.stringify(error)}`);
+    }
 }

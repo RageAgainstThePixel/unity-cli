@@ -4,7 +4,7 @@ import 'source-map-support/register';
 import * as os from 'os';
 import { Command } from 'commander';
 import { readFileSync } from 'fs';
-import { join } from 'path';
+import path, { join } from 'path';
 import { LicenseType, LicensingClient } from './license-client';
 import { PromptForSecretInput } from './utilities';
 import { UnityHub } from './unity-hub';
@@ -41,6 +41,8 @@ program.command('activate-license')
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
+
+        Logger.instance.debug(JSON.stringify(options));
 
         const client = new LicensingClient();
         const licenseStr: string = options.license?.toString()?.trim();
@@ -80,6 +82,8 @@ program.command('return-license')
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
+
+        Logger.instance.debug(JSON.stringify(options));
 
         const client = new LicensingClient();
         const licenseStr: string = options.license?.toString()?.trim();
@@ -141,6 +145,8 @@ program.command('hub')
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
+        Logger.instance.debug(JSON.stringify(options));
+
         const unityHub = new UnityHub();
         await unityHub.Exec(args, { silent: false, showCommand: Logger.instance.logLevel === LogLevel.DEBUG });
     });
@@ -183,10 +189,18 @@ program.command('setup-unity')
         };
 
         if (unityProject) {
-            output['UNITY_PROJECT'] = unityProject.projectPath;
+            output['UNITY_PROJECT_PATH'] = unityProject.projectPath;
 
             if (modules.includes('android')) {
                 await CheckAndroidSdkInstalled(editorPath, unityProject.projectPath);
+            }
+        }
+
+        if (process.env.GITHUB_ACTIONS) {
+            process.env.UNITY_HUB_PATH = unityHub.executable;
+            process.env.UNITY_EDITOR = editorPath;
+            if (unityProject) {
+                process.env.UNITY_PROJECT_PATH = unityProject.projectPath;
             }
         }
 
@@ -195,9 +209,62 @@ program.command('setup-unity')
         }
     });
 
+program.command('create-project')
+    .description('Create a new Unity project.')
+    .option('-n, --name <projectName>', 'The name of the new Unity project. If unspecified, the project will be created in the specified path or the current working directory.')
+    .option('-p, --path <projectPath>', 'The path to create the new Unity project. If unspecified, the current working directory will be used.')
+    .option('-t, --template <projectTemplate>', 'The name of the template package to use for creating the unity project. Supports regex patterns.', 'com.unity.template.3d(-cross-platform)?')
+    .option('-e, --unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR environment variable must be set.')
+    .option('--verbose', 'Enable verbose logging.')
+    .option('--json', 'Prints the last line of output as JSON string.')
+    .action(async (options) => {
+        if (options.verbose) {
+            Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        Logger.instance.debug(JSON.stringify(options));
+
+        const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR;
+
+        if (!editorPath || editorPath.length === 0) {
+            throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR environment variable.');
+        }
+
+        const unityEditor = new UnityEditor(editorPath);
+        const templatePath = unityEditor.GetTemplatePath(options.template);
+        const projectName = options.name?.toString()?.trim();
+
+        let projectPath = options.path?.toString()?.trim() || process.cwd();
+
+        if (projectName && projectName.length > 0) {
+            projectPath = path.join(projectPath, projectName);
+        }
+
+        await unityEditor.Run({
+            editorPath: editorPath,
+            args: [
+                '-quit',
+                '-nographics',
+                '-batchmode',
+                '-createProject', projectPath,
+                '-cloneFromTemplate', templatePath
+            ]
+        });
+
+        if (process.env.GITHUB_ACTIONS) {
+            process.env.UNITY_PROJECT_PATH = projectPath;
+        }
+
+        if (options.json) {
+            process.stdout.write(`$${JSON.stringify({ UNITY_PROJECT_PATH: projectPath })}\n`);
+        }
+    });
+
 program.command('run')
     .description('Run command line args directly to the Unity Editor.')
-    .option('-e, --editor-path <editorPath>', 'The path to the Unity Editor executable.')
+    .option('-e, --editor-path <editorPath>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR environment variable must be set.')
+    .option('-p, --unity-project <unityProjectPath>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
+    .option('-l, --log-name <logName>', 'The name of the log file.')
     .allowUnknownOption(true)
     .argument('<args...>', 'Arguments to pass to the Unity Editor executable.')
     .option('--verbose', 'Enable verbose logging.')
@@ -206,14 +273,26 @@ program.command('run')
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
+        Logger.instance.debug(JSON.stringify(options));
+
         const editorPath = options.editorPath?.toString()?.trim() || process.env.UNITY_EDITOR;
 
         if (!editorPath || editorPath.length === 0) {
             throw new Error('The Unity Editor path was not specified. Use -e or --editor-path to specify it, or set the UNITY_EDITOR environment variable.');
         }
 
+        const unityProjectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || process.cwd();
+        const unityProject = await UnityProject.GetProject(unityProjectPath);
+
+        if (!unityProject) {
+            throw new Error(`The specified path is not a valid Unity project: ${unityProjectPath}`);
+        }
+
         const unityEditor = new UnityEditor(editorPath);
-        await unityEditor.Exec(args);
+        await unityEditor.Run({
+            editorPath: editorPath,
+            args: [...args]
+        });
     });
 
 program.parse(process.argv);
