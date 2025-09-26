@@ -4,7 +4,7 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import { Logger } from './logging';
 import { UnityHub } from './unity-hub';
-import { ExecOptions, ResolveGlobToPath } from './utilities';
+import { ResolveGlobToPath } from './utilities';
 
 export enum LicenseType {
     personal = 'personal',
@@ -405,6 +405,8 @@ export class LicensingClient {
         if (serial !== undefined && serial.length > 0) {
             serial = serial.trim();
             args.push(`--serial`, serial);
+            const maskedSerial = serial.slice(0, -4) + `XXXX`;
+            this.logger.mask(maskedSerial);
         }
 
         if (licenseType === LicenseType.personal) {
