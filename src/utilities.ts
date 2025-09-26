@@ -165,14 +165,14 @@ export function GetTempDir(): string {
  * @param args The list of command line arguments.
  * @returns The value of the argument or an error if not found.
  */
-export function getArgumentValue(value: string, args: string[]): string | undefined {
+export function getArgumentValueAsString(value: string, args: string[]): string {
     const index = args.indexOf(value);
 
     if (index === -1 || index === args.length - 1) {
         throw Error(`Missing ${value} argument`);
     }
 
-    return args[index + 1];
+    return args[index + 1] as string;
 }
 
 export interface ProcInfo {

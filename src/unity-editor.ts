@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Logger } from './logging';
 import {
-    getArgumentValue,
+    getArgumentValueAsString,
     killChildProcesses,
     ProcInfo,
     tryKillProcess
@@ -11,10 +11,11 @@ import {
     spawn,
     ChildProcessByStdio,
 } from 'child_process';
+import { UnityVersion } from './unity-version';
 
 export interface EditorCommand {
-    editorPath: string;
     args: string[];
+    projectPath?: string;
 }
 
 export class UnityEditor {
@@ -23,6 +24,7 @@ export class UnityEditor {
     private procInfo: ProcInfo | undefined;
     private pidFile: string;
     private logger: Logger = Logger.instance;
+    private autoAddNoGraphics: boolean;
 
     constructor(public editorPath: string) {
         if (!fs.existsSync(editorPath)) {
@@ -32,6 +34,20 @@ export class UnityEditor {
         fs.accessSync(editorPath, fs.constants.X_OK);
         this.editorRootPath = UnityEditor.GetEditorRootPath(editorPath);
         this.pidFile = path.join(process.env.RUNNER_TEMP || process.env.USERPROFILE || '.', '.unity', 'unity-editor-process-id.txt');
+
+        const match = editorPath.match(/(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)/);
+
+        if (!match) {
+            throw Error(`Invalid Unity Editor Path: ${editorPath}`);
+        }
+
+        const unityMajorVersion = match.groups?.major;
+
+        if (!unityMajorVersion) {
+            throw Error(`Invalid Unity Major Version: ${editorPath}`);
+        }
+
+        this.autoAddNoGraphics = parseInt(unityMajorVersion, 10) > 2018;
     }
 
     /**
@@ -105,10 +121,13 @@ export class UnityEditor {
         process.once('SIGTERM', onCancel);
         let exitCode: number | undefined;
         try {
-            this.logger.info(`[command]"${command.editorPath}" ${command.args.join(' ')}`);
+            this.logger.info(`[command]"${this.editorPath}" ${command.args.join(' ')}`);
             exitCode = await this.exec(command, pInfo => { this.procInfo = pInfo; });
         } catch (error) {
-            this.logger.error(`Unity execution failed:\n${error}`);
+            if (error instanceof Error) {
+                this.logger.error(error.toString());
+            }
+
             if (!exitCode) {
                 exitCode = 1;
             }
@@ -124,18 +143,50 @@ export class UnityEditor {
     }
 
     private async exec(command: EditorCommand, onPid: (pid: ProcInfo) => void): Promise<number> {
-        const logPath = getArgumentValue('-logFile', command.args);
-
-        if (!logPath) {
-            throw Error('Log file path not specified in command arguments');
+        if (!command.args || command.args.length === 0) {
+            throw Error('No command arguments provided for Unity execution');
         }
+
+        if (!command.args.includes(`-automated`)) {
+            command.args.push(`-automated`);
+        }
+
+        if (!command.args.includes(`-batchmode`)) {
+            command.args.push(`-batchmode`);
+        }
+
+        if (this.autoAddNoGraphics &&
+            !command.args.includes(`-nographics`) &&
+            !command.args.includes(`-force-graphics`)) {
+            command.args.push(`-nographics`);
+        }
+
+        if (!command.args.includes('-logFile')) {
+            const logsDir = command.projectPath !== undefined
+                ? path.join(command.projectPath, 'Builds', 'Logs')
+                : path.join(process.env.GITHUB_WORKSPACE || process.cwd(), 'Logs');
+
+            try {
+                await fs.promises.access(logsDir, fs.constants.R_OK);
+            } catch (error) {
+                this.logger.debug(`Creating Logs Directory:\n  > "${logsDir}"`);
+                await fs.promises.mkdir(logsDir, { recursive: true });
+            }
+
+            const timestamp = new Date().toISOString().replace(/[-:]/g, ``).replace(/\..+/, ``);
+            const generatedLogPath = path.join(logsDir, `Unity-${timestamp}.log`);
+            this.logger.debug(`Log File Path:\n  > "${generatedLogPath}"`);
+            command.args.push('-logFile', generatedLogPath);
+        }
+
+        const logPath: string = getArgumentValueAsString('-logFile', command.args);
 
         let unityProcess: ChildProcessByStdio<null, null, null>;
 
         if (process.platform === 'linux' && !command.args.includes('-nographics')) {
             unityProcess = spawn(
                 'xvfb-run',
-                [command.editorPath, ...command.args], {
+                [this.editorPath, ...command.args], {
                 stdio: ['ignore', 'ignore', 'ignore'],
                 detached: true,
                 env: {
@@ -146,7 +197,7 @@ export class UnityEditor {
             });
         } else {
             unityProcess = spawn(
-                command.editorPath,
+                this.editorPath,
                 command.args, {
                 stdio: ['ignore', 'ignore', 'ignore'],
                 detached: true,
@@ -163,7 +214,7 @@ export class UnityEditor {
             throw new Error('Failed to start Unity process!');
         }
 
-        onPid({ pid: processId, ppid: process.pid, name: command.editorPath });
+        onPid({ pid: processId, ppid: process.pid, name: this.editorPath });
         this.logger.debug(`Unity process started with pid: ${processId}`);
         // make sure the directory for the PID file exists
         const pidDir = path.dirname(this.pidFile);

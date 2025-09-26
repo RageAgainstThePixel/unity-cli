@@ -233,7 +233,7 @@ program.command('create-project')
         }
 
         await unityEditor.Run({
-            editorPath: editorPath,
+            projectPath: projectPath,
             args: [
                 '-quit',
                 '-nographics',
@@ -278,7 +278,6 @@ program.command('run')
 
         const unityEditor = new UnityEditor(editorPath);
         await unityEditor.Run({
-            editorPath: editorPath,
             args: [...args]
         });
     });
