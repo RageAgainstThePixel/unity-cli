@@ -222,7 +222,7 @@ program.command('create-project')
 
         Logger.instance.debug(JSON.stringify(options));
 
-        const editorPath = options.unityEditorPath?.toString()?.trim() || process.env.UNITY_EDITOR;
+        const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR;
 
         if (!editorPath || editorPath.length === 0) {
             throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR environment variable.');
@@ -230,9 +230,9 @@ program.command('create-project')
 
         const unityEditor = new UnityEditor(editorPath);
         const templatePath = unityEditor.GetTemplatePath(options.projectTemplate);
-        const projectName = options.projectName?.toString()?.trim();
+        const projectName = options.name?.toString()?.trim();
 
-        let projectPath = options.projectTemplate?.toString()?.trim() || process.cwd();
+        let projectPath = options.path?.toString()?.trim() || process.cwd();
 
         if (projectName && projectName.length > 0) {
             projectPath = path.join(projectPath, projectName);
@@ -269,14 +269,14 @@ program.command('run')
 
         Logger.instance.debug(JSON.stringify({ options, args }));
 
-        const editorPath = options.unityEditorPath?.toString()?.trim() || process.env.UNITY_EDITOR;
+        const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR;
 
         if (!editorPath || editorPath.length === 0) {
             throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR environment variable.');
         }
 
         const unityEditor = new UnityEditor(editorPath);
-        const projectPath = options.unityProjectPath?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || process.cwd();
+        const projectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || process.cwd();
         const unityProject = await UnityProject.GetProject(projectPath);
 
         if (!unityProject) {
