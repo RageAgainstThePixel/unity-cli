@@ -745,7 +745,7 @@ done
             args.push('-m', module);
         }
 
-        const editorRootPath = await UnityEditor.GetEditorRootPath(editorPath);
+        const editorRootPath = UnityEditor.GetEditorRootPath(editorPath);
         const modulesPath = path.join(editorRootPath, 'modules.json');
         this.logger.debug(`Editor Modules Manifest:\n  > "${modulesPath}"`);
 

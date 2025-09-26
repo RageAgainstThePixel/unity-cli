@@ -24,7 +24,7 @@ export async function CheckAndroidSdkInstalled(editorPath: string, projectPath: 
     logger.ci(`Checking Android SDK installation for:\n  > Editor: ${editorPath}\n  > Project: ${projectPath}`);
     let sdkPath = undefined;
     await createRepositoryCfg();
-    const rootEditorPath = await UnityEditor.GetEditorRootPath(editorPath);
+    const rootEditorPath = UnityEditor.GetEditorRootPath(editorPath);
     const projectSettingsPath = path.join(projectPath, 'ProjectSettings/ProjectSettings.asset');
     const projectSettingsContent = await ReadFileContents(projectSettingsPath);
     const matchResult = projectSettingsContent.match(/(?<=AndroidTargetSdkVersion: )\d+/);

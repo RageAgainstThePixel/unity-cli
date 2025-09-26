@@ -155,3 +155,57 @@ export function GetTempDir(): string {
     // fallback to current directory
     return os.tmpdir();
 }
+
+/**
+ * Get the value of a command line argument.
+ * @param value The name of the argument to retrieve.
+ * @param args The list of command line arguments.
+ * @returns The value of the argument or an error if not found.
+ */
+export function getArgumentValue(value: string, args: string[]): string | undefined {
+    const index = args.indexOf(value);
+    if (index === -1 || index === args.length - 1) {
+        throw Error(`Missing ${value} argument`);
+    }
+    return args[index + 1];
+}
+
+export interface ProcInfo {
+    pid: number;
+    ppid: number;
+    name: string;
+}
+
+/**
+ * Attempts to kill a process with the given PID read from a PID file.
+ * @param pidFilePath The path to the PID file.
+ * @returns The PID of the killed process, or null if no process was killed.
+ */
+export async function tryKillPid(pidFilePath: string): Promise<number | null> {
+    let pid: number | null = null;
+    try {
+        if (!fs.existsSync(pidFilePath)) {
+            logger.debug(`PID file does not exist: ${pidFilePath}`);
+            return null;
+        }
+        const fileHandle = await fs.promises.open(pidFilePath, 'r');
+        try {
+            pid = parseInt(await fileHandle.readFile('utf8'));
+            logger.debug(`Killing process pid: ${pid}`);
+            process.kill(pid);
+        } catch (error) {
+            const nodeJsException = error as NodeJS.ErrnoException;
+            const errorCode = nodeJsException?.code;
+            if (errorCode !== 'ENOENT' && errorCode !== 'ESRCH') {
+                logger.error(`Failed to kill process:\n${JSON.stringify(error)}`);
+            }
+        } finally {
+            await fileHandle.close();
+            await fs.promises.unlink(pidFilePath);
+        }
+
+    } catch (error) {
+        // ignored
+    }
+    return pid;
+}

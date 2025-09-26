@@ -12,6 +12,7 @@ import { Logger, LogLevel } from './logging';
 import { UnityVersion } from './unity-version';
 import { UnityProject } from './unity-project';
 import { CheckAndroidSdkInstalled } from './android-sdk';
+import { UnityEditor } from './unity-editor';
 
 const pkgPath = join(__dirname, '..', 'package.json');
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
@@ -192,6 +193,27 @@ program.command('setup-unity')
         if (options.json) {
             process.stdout.write(`$${JSON.stringify(output)}\n`);
         }
+    });
+
+program.command('run')
+    .description('Run command line args directly to the Unity Editor.')
+    .option('-e, --editor-path <editorPath>', 'The path to the Unity Editor executable.')
+    .allowUnknownOption(true)
+    .argument('<args...>', 'Arguments to pass to the Unity Editor executable.')
+    .option('--verbose', 'Enable verbose logging.')
+    .action(async (args: string[], options) => {
+        if (options.verbose) {
+            Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        const editorPath = options.editorPath?.toString()?.trim() || process.env.UNITY_EDITOR;
+
+        if (!editorPath || editorPath.length === 0) {
+            throw new Error('The Unity Editor path was not specified. Use -e or --editor-path to specify it, or set the UNITY_EDITOR environment variable.');
+        }
+
+        const unityEditor = new UnityEditor(editorPath);
+        await unityEditor.Exec(args);
     });
 
 program.parse(process.argv);
