@@ -1,10 +1,7 @@
-import { Logger } from './logging.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
 export class UnityEditor {
-    private static logger: Logger = Logger.instance;
-
     static async GetEditorRootPath(editorPath: string): Promise<string> {
         let editorRootPath = editorPath;
         switch (process.platform) {

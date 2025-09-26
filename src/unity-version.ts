@@ -1,11 +1,11 @@
+import * as os from 'os';
+import { Logger } from './logging';
 import {
     SemVer,
     coerce,
     compare,
     satisfies
 } from 'semver';
-import { Logger } from './logging';
-import { arch } from 'os';
 
 export class UnityVersion {
     public version: string;
@@ -32,7 +32,7 @@ export class UnityVersion {
         this.semVer = coercedVersion;
 
         // Default to current architecture if not specified
-        architecture = architecture || (arch() === 'arm64' ? 'ARM64' : 'X86_64');
+        architecture = architecture || (os.arch() === 'arm64' ? 'ARM64' : 'X86_64');
 
         if (architecture === 'ARM64' && !this.isArmCompatible()) {
             this.architecture = 'X86_64';
