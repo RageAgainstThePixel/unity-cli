@@ -229,7 +229,12 @@ program.command('create-project')
         }
 
         const unityEditor = new UnityEditor(editorPath);
-        const templatePath = unityEditor.GetTemplatePath(options.projectTemplate);
+
+        if (!options.template || options.template.length === 0) {
+            throw new Error('The project template name was not specified. Use -t or --template to specify it.');
+        }
+
+        const templatePath = unityEditor.GetTemplatePath(options.template);
         const projectName = options.name?.toString()?.trim();
 
         let projectPath = options.path?.toString()?.trim() || process.cwd();
