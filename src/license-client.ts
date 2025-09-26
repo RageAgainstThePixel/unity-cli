@@ -233,7 +233,6 @@ export class LicensingClient {
         function processOutput(data: Buffer) {
             const chunk = data.toString();
             output += chunk;
-            process.stdout.write(chunk);
         }
 
         this.logger.startGroup(`\x1b[34m${this.licenseClientPath} ${args.join(' ')}\x1b[0m`);
@@ -259,6 +258,14 @@ export class LicensingClient {
                 });
             });
         } finally {
+            const maskedOutput = this.maskSerialInOutput(output);
+            const splitLines = maskedOutput.split(/\r?\n/);
+
+            for (const line of splitLines) {
+                if (line === undefined || line.length === 0) { continue; }
+                this.logger.info(line);
+            }
+
             this.logger.endGroup();
 
             if (exitCode !== 0) {
@@ -268,6 +275,14 @@ export class LicensingClient {
         }
 
         return output;
+    }
+
+    private maskSerialInOutput(output: string): string {
+        return output.replace(/([\w-]+-XXXX)/g, (_, serial) => {
+            const maskedSerial = serial.slice(0, -4) + `XXXX`;
+            this.logger.mask(maskedSerial);
+            return serial;
+        });
     }
 
     public async Version(): Promise<void> {

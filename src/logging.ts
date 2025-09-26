@@ -136,4 +136,17 @@ export class Logger {
         const levelOrder = [LogLevel.DEBUG, LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR];
         return levelOrder.indexOf(level) >= levelOrder.indexOf(this.logLevel);
     }
+
+    /**
+     * Masks a string in the console output in CI environments that support it.
+     * @param message The string to mask.
+     */
+    public mask(message: string): void {
+        switch (this._ci) {
+            case 'GITHUB_ACTIONS': {
+                process.stdout.write(`::add-mask::${message}\n`);
+                break;
+            }
+        }
+    }
 }
