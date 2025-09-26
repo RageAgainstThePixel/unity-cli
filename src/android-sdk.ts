@@ -115,7 +115,7 @@ async function getAndroidSdkPath(rootEditorPath: string, androidTargetSdk: numbe
 }
 
 async function execSdkManager(sdkManagerPath: string, javaPath: string, args: string[]): Promise<void> {
-    const acceptBuffer = Buffer.from(Array(10).fill('y').join(os.EOL), 'utf8');
+    const acceptBuffer = Buffer.from(Array(10).fill('y').join('\n'), 'utf8');
     let output = '';
     let exitCode = 0;
 
@@ -155,7 +155,7 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
             });
 
             child.on('close', (code: number | null) => {
-                process.stdout.write(os.EOL);
+                process.stdout.write('\n');
                 resolve(code === null ? 0 : code);
             });
         });

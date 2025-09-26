@@ -101,7 +101,7 @@ program.command('hub-version')
     .action(async () => {
         const unityHub = new UnityHub();
         const version = await unityHub.Version();
-        process.stdout.write(`${version}${os.EOL}`);
+        process.stdout.write(`${version}\n`);
     });
 
 program.command('hub-install')
@@ -117,9 +117,9 @@ program.command('hub-install')
         const hubPath = await unityHub.Install();
 
         if (options.json) {
-            process.stdout.write(`$${JSON.stringify({ UNITY_HUB: hubPath })}${os.EOL}`);
+            process.stdout.write(`$${JSON.stringify({ UNITY_HUB: hubPath })}\n`);
         } else {
-            process.stdout.write(`${hubPath}${os.EOL}`);
+            process.stdout.write(`${hubPath}\n`);
         }
     });
 
@@ -127,7 +127,7 @@ program.command('hub-path')
     .description('Print the path to the Unity Hub executable.')
     .action(async () => {
         const hub = new UnityHub();
-        process.stdout.write(`${hub.executable}${os.EOL}`);
+        process.stdout.write(`${hub.executable}\n`);
     });
 
 program.command('hub')
@@ -190,7 +190,7 @@ program.command('setup-unity')
         }
 
         if (options.json) {
-            process.stdout.write(`$${JSON.stringify(output)}${os.EOL}`);
+            process.stdout.write(`$${JSON.stringify(output)}\n`);
         }
     });
 

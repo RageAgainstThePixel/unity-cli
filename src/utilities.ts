@@ -91,7 +91,7 @@ export async function Exec(command: string, args: string[], options: ExecOptions
             });
 
             child.on('close', (code) => {
-                process.stdout.write(os.EOL);
+                process.stdout.write('\n');
                 resolve(code === null ? 0 : code);
             });
         });

@@ -101,7 +101,7 @@ export class UnityHub {
                 });
 
                 child.on('close', (code) => {
-                    process.stdout.write(os.EOL);
+                    process.stdout.write('\n');
                     resolve(code === null ? 0 : code);
                 });
             });
@@ -136,10 +136,10 @@ export class UnityHub {
                 `Found package-type: deb`,
                 `XPC error for connection com.apple.backupd.sandbox.xpc: Connection invalid`
             ];
-            output = output.split(os.EOL)
+            output = output.split('\n')
                 .filter(line => line.trim().length > 0)
                 .filter(line => !ignoredLines.some(ignored => line.includes(ignored)))
-                .join(os.EOL);
+                .join('\n');
         }
 
         return output;
@@ -482,7 +482,7 @@ chmod -R 777 "$hubPath"`]);
      */
     public async ListInstalledEditors(): Promise<string[]> {
         const output = await this.Exec(['editors', '-i']);
-        return output.split(os.EOL)
+        return output.split('\n')
             .filter(line => line.trim().length > 0)
             .map(line => line.trim());
     }

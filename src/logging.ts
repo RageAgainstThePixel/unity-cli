@@ -1,5 +1,3 @@
-import * as os from 'os';
-
 export enum LogLevel {
     DEBUG = 'debug',
     CI = 'ci',
@@ -34,18 +32,18 @@ export class Logger {
                 case 'GITHUB_ACTIONS': {
                     switch (level) {
                         case LogLevel.DEBUG: {
-                            message.toString().split(os.EOL).forEach((line: string) => {
-                                process.stdout.write(`::debug::${line}${os.EOL}`, ...optionalParams);
+                            message.toString().split('\n').forEach((line: string) => {
+                                process.stdout.write(`::debug::${line}\n`, ...optionalParams);
                             });
                             break;
                         }
                         case LogLevel.CI:
                         case LogLevel.INFO: {
-                            process.stdout.write(`${message}${os.EOL}`, ...optionalParams);
+                            process.stdout.write(`${message}\n`, ...optionalParams);
                             break;
                         }
                         default: {
-                            process.stdout.write(`::${level}::${message}${os.EOL}`, ...optionalParams);
+                            process.stdout.write(`::${level}::${message}\n`, ...optionalParams);
                             break;
                         }
                     }
@@ -60,7 +58,7 @@ export class Logger {
                         [LogLevel.WARN]: '\x1b[33m',  // Yellow
                         [LogLevel.ERROR]: '\x1b[31m', // Red
                     }[level] || clear;                // Default to no color / White
-                    process.stdout.write(`${stringColor}${message}${clear}${os.EOL}`, ...optionalParams);
+                    process.stdout.write(`${stringColor}${message}${clear}\n`, ...optionalParams);
                     break;
                 }
             }
@@ -75,13 +73,13 @@ export class Logger {
             case 'GITHUB_ACTIONS': {
                 // if there is newline in message, only use the first line for group title
                 // then print the rest of the lines inside the group in cyan color
-                const firstLine: string = message.toString().split(os.EOL)[0];
-                const restLines: string[] = message.toString().split(os.EOL).slice(1);
+                const firstLine: string = message.toString().split('\n')[0];
+                const restLines: string[] = message.toString().split('\n').slice(1);
                 const cyan = '\x1b[36m';
                 const clear = '\x1b[0m';
-                process.stdout.write(`::group::${firstLine}${os.EOL}`, ...optionalParams);
+                process.stdout.write(`::group::${firstLine}\n`, ...optionalParams);
                 restLines.forEach(line => {
-                    process.stdout.write(`${cyan}${line}${clear}${os.EOL}`, ...optionalParams);
+                    process.stdout.write(`${cyan}${line}${clear}\n`, ...optionalParams);
                 });
                 break;
             }
@@ -99,7 +97,7 @@ export class Logger {
     public endGroup(): void {
         switch (this._ci) {
             case 'GITHUB_ACTIONS': {
-                process.stdout.write(`::endgroup::${os.EOL}`);
+                process.stdout.write(`::endgroup::\n`);
                 break;
             }
             default: {
