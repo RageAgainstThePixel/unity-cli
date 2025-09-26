@@ -282,6 +282,12 @@ program.command('run')
         }
 
         const unityEditor = new UnityEditor(editorPath);
+
+        if (!args.includes('-logFile')) {
+            const logPath = unityEditor.GenerateLogFilePath(unityProject.projectPath, options.logName || 'Unity');
+            args.push('-logFile', logPath);
+        }
+
         await unityEditor.Run({
             args: [...args]
         });

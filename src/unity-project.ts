@@ -80,6 +80,10 @@ export class UnityProject {
             projectPath = path.join(versionFilePath, '..', '..');
         }
 
+        if (process.platform === `win32` && projectPath.endsWith(`\\`)) {
+            projectPath = projectPath.slice(0, -1);
+        }
+
         return new UnityProject(projectPath);
     }
 }

@@ -143,6 +143,27 @@ export class UnityEditor {
         }
     }
 
+    public GetLogsDirectory(projectPath: string | undefined): string {
+        const logsDir = projectPath !== undefined
+            ? path.join(projectPath, 'Builds', 'Logs')
+            : path.join(process.env.GITHUB_WORKSPACE || process.cwd(), 'Logs');
+
+        try {
+            fs.accessSync(logsDir, fs.constants.R_OK);
+        } catch (error) {
+            this.logger.debug(`Creating Logs Directory:\n  > "${logsDir}"`);
+            fs.mkdirSync(logsDir, { recursive: true });
+        }
+
+        return logsDir;
+    }
+
+    public GenerateLogFilePath(projectPath: string | undefined, prefix: string | undefined = undefined): string {
+        const logsDir = this.GetLogsDirectory(projectPath);
+        const timestamp = new Date().toISOString().replace(/[-:]/g, ``).replace(/\..+/, ``);
+        return path.join(logsDir, `${prefix ? prefix + '-' : ''}Unity-${timestamp}.log`);
+    }
+
     private async exec(command: EditorCommand, onPid: (pid: ProcInfo) => void): Promise<number> {
         if (!command.args || command.args.length === 0) {
             throw Error('No command arguments provided for Unity execution');
@@ -163,21 +184,7 @@ export class UnityEditor {
         }
 
         if (!command.args.includes('-logFile')) {
-            const logsDir = command.projectPath !== undefined
-                ? path.join(command.projectPath, 'Builds', 'Logs')
-                : path.join(process.env.GITHUB_WORKSPACE || process.cwd(), 'Logs');
-
-            try {
-                await fs.promises.access(logsDir, fs.constants.R_OK);
-            } catch (error) {
-                this.logger.debug(`Creating Logs Directory:\n  > "${logsDir}"`);
-                await fs.promises.mkdir(logsDir, { recursive: true });
-            }
-
-            const timestamp = new Date().toISOString().replace(/[-:]/g, ``).replace(/\..+/, ``);
-            const generatedLogPath = path.join(logsDir, `Unity-${timestamp}.log`);
-            this.logger.debug(`Log File Path:\n  > "${generatedLogPath}"`);
-            command.args.push('-logFile', generatedLogPath);
+            command.args.push('-logFile', this.GenerateLogFilePath(command.projectPath));
         }
 
         const logPath: string = getArgumentValueAsString('-logFile', command.args);
