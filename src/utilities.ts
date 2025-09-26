@@ -245,7 +245,17 @@ export async function killChildProcesses(procInfo: ProcInfo): Promise<void> {
             await Exec('cmd', ['/c', pwshCommand]);
         } else { // linux and macos
             const unixCommand = `pgrep -P ${procInfo.pid} | xargs -r kill`;
-            await Exec('sudo', ['sh', '-c', unixCommand]);
+            try {
+                await Exec('sudo', ['sh', '-c', unixCommand]);
+            } catch (error: any) {
+                // Accept exit code 5 (no child processes found) as non-error
+                if (error.message &&
+                    error.message.includes('exit code 5')) {
+                    logger.debug(`No child processes found for pid ${procInfo.pid}.`);
+                } else {
+                    throw error;
+                }
+            }
         }
     } catch (error) {
         logger.error(`Failed to kill child processes of pid ${procInfo.pid}:\n${JSON.stringify(error)}`);
