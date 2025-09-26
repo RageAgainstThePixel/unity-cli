@@ -64,17 +64,25 @@ export async function Exec(command: string, args: string[], options: ExecOptions
     let output: string = '';
     let exitCode: number = 0;
 
+    const isSilent = options.silent || logger.logLevel !== LogLevel.DEBUG;
+
     function processOutput(data: Buffer) {
         const chunk = data.toString();
         output += chunk;
 
-        if (!options.silent || logger.logLevel === LogLevel.DEBUG) {
+        if (!isSilent) {
             process.stdout.write(chunk);
         }
     }
 
     if (options.showCommand || logger.logLevel === LogLevel.DEBUG) {
-        logger.startGroup(`\x1b[34m${command} ${args.join(' ')}\x1b[0m`);
+        const commandStr = `\x1b[34m${command} ${args.join(' ')}\x1b[0m`;
+
+        if (isSilent) {
+            logger.info(commandStr);
+        } else {
+            logger.startGroup(commandStr);
+        }
     }
 
     if (command.includes(path.sep)) {
@@ -99,7 +107,9 @@ export async function Exec(command: string, args: string[], options: ExecOptions
         });
     } finally {
         if (options.showCommand || logger.logLevel === LogLevel.DEBUG) {
-            logger.endGroup();
+            if (!isSilent) {
+                logger.endGroup();
+            }
         }
 
         if (exitCode !== 0) {
@@ -244,16 +254,19 @@ export async function killChildProcesses(procInfo: ProcInfo): Promise<void> {
             const pwshCommand = 'powershell -Command "Get-CimInstance Win32_Process -Filter \'ParentProcessId=' + procInfo.pid + '\' | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"';
             await Exec('cmd', ['/c', pwshCommand]);
         } else { // linux and macos
-            const unixCommand = `pgrep -P ${procInfo.pid} | xargs -r kill`;
-            try {
-                await Exec('sudo', ['sh', '-c', unixCommand]);
-            } catch (error: any) {
-                // Accept exit code 5 (no child processes found) as non-error
-                if (error.message &&
-                    error.message.includes('exit code 5')) {
-                    logger.debug(`No child processes found for pid ${procInfo.pid}.`);
-                } else {
-                    throw error;
+            const psOutput = await Exec('ps', ['-eo', 'pid,ppid,comm']);
+            const lines = psOutput.split('\n').slice(1); // Skip header line
+
+            for (const line of lines) {
+                const parts = line.trim().split(/\s+/, 3);
+                if (parts.length === 3) {
+                    const pid = parseInt(parts[0]!, 10);
+                    const ppid = parseInt(parts[1]!, 10);
+                    const name = parts[2]!;
+
+                    if (ppid === procInfo.pid) {
+                        await tryKillProcess({ pid, ppid, name });
+                    }
                 }
             }
         }
