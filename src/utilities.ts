@@ -252,7 +252,7 @@ export async function killChildProcesses(procInfo: ProcInfo): Promise<void> {
     try {
         if (process.platform === 'win32') {
             const pwshCommand = 'powershell -Command "Get-CimInstance Win32_Process -Filter \'ParentProcessId=' + procInfo.pid + '\' | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"';
-            await Exec('cmd', ['/c', pwshCommand]);
+            await Exec('cmd', ['/c', pwshCommand], { silent: true });
         } else { // linux and macos
             const psOutput = await Exec('ps', ['-eo', 'pid,ppid,comm']);
             const lines = psOutput.split('\n').slice(1); // Skip header line
