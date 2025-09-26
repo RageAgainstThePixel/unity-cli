@@ -120,7 +120,8 @@ export class UnityEditor {
         process.once('SIGTERM', onCancel);
         let exitCode: number | undefined;
         try {
-            this.logger.info(`[command]"${this.editorPath}" ${command.args.join(' ')}`);
+            const commandStr = `\x1b[34m${this.editorPath} ${command.args.join(' ')}\x1b[0m`;
+            this.logger.startGroup(commandStr);
             exitCode = await this.exec(command, pInfo => { this.procInfo = pInfo; });
         } catch (error) {
             if (error instanceof Error) {
@@ -131,6 +132,7 @@ export class UnityEditor {
                 exitCode = 1;
             }
         } finally {
+            this.logger.endGroup();
             if (!isCancelled) {
                 await this.tryKillEditorProcess();
 
