@@ -5,6 +5,7 @@ import {
     getArgumentValueAsString,
     killChildProcesses,
     ProcInfo,
+    readPidFile,
     tryKillProcess
 } from './utilities';
 import {
@@ -231,9 +232,9 @@ export class UnityEditor {
             fs.mkdirSync(pidDir, { recursive: true });
         } else {
             try {
-                await fs.promises.access(this.pidFile, fs.constants.R_OK | fs.constants.W_OK);
-                if (this.procInfo) {
-                    const killedPid = await tryKillProcess(this.procInfo);
+                var existingProcInfo = await readPidFile(this.pidFile);
+                if (existingProcInfo) {
+                    const killedPid = await tryKillProcess(existingProcInfo);
                     if (killedPid) {
                         this.logger.warn(`Killed existing Unity process with pid: ${killedPid}`);
                     }

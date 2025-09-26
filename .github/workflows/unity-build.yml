@@ -39,16 +39,16 @@ jobs:
           setup_output=$(unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-targets }}" --json)
           unity_editor_path=$(echo "$setup_output" | tail -n 1 | jq -r '.UNITY_EDITOR')
           echo "$unity_editor_path"
-          create_project_output=$(unity-cli create-project --name "Unity Project" --unity-editor "$unity_editor_path" --json)
+          create_project_output=$(unity-cli create-project --name "Unity Project" --unity-editor "${unity_editor_path}" --json)
           project_path=$(echo "$create_project_output" | tail -n 1 | jq -r '.UNITY_PROJECT_PATH')
-          echo "$project_path"
+          echo "${project_path}"
           npm install -g openupm-cli
-          cd "$project_path"
+          cd "${project_path}"
           openupm add com.utilities.buildpipeline
           cd ${{ github.workspace }}
-          validate_output=$(unity-cli run -e "$unity_editor_path" -p "$project_path" -l Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset)
+          validate_output=$(unity-cli run --unity-editor "${unity_editor_path}" --unity-project "${project_path}" -l Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset)
           echo "$validate_output"
-          build_output=$(unity-cli run -e "$unity_editor_path" -p "$project_path" -l Build -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity)
+          build_output=$(unity-cli run --unity-editor "${unity_editor_path}" --unity-project "${project_path}" -l Build -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity)
           echo "$build_output"
       - name: Post Run
         if: always()

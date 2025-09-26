@@ -221,7 +221,7 @@ program.command('create-project')
 
         Logger.instance.debug(JSON.stringify(options));
 
-        const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR;
+        const editorPath = options.unityEditorPath?.toString()?.trim() || process.env.UNITY_EDITOR;
 
         if (!editorPath || editorPath.length === 0) {
             throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR environment variable.');
@@ -255,7 +255,7 @@ program.command('create-project')
 
 program.command('run')
     .description('Run command line args directly to the Unity Editor.')
-    .option('-e, --editor-path <editorPath>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR environment variable must be set.')
+    .option('-e, --unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR environment variable must be set.')
     .option('-p, --unity-project <unityProjectPath>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
     .option('-l, --log-name <logName>', 'The name of the log file.')
     .allowUnknownOption(true)
@@ -268,20 +268,19 @@ program.command('run')
 
         Logger.instance.debug(JSON.stringify({ options, args }));
 
-        const editorPath = options.editorPath?.toString()?.trim() || process.env.UNITY_EDITOR;
+        const editorPath = options.unityEditorPath?.toString()?.trim() || process.env.UNITY_EDITOR;
 
         if (!editorPath || editorPath.length === 0) {
-            throw new Error('The Unity Editor path was not specified. Use -e or --editor-path to specify it, or set the UNITY_EDITOR environment variable.');
+            throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR environment variable.');
         }
 
+        const unityEditor = new UnityEditor(editorPath);
         const unityProjectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || process.cwd();
         const unityProject = await UnityProject.GetProject(unityProjectPath);
 
         if (!unityProject) {
             throw new Error(`The specified path is not a valid Unity project: ${unityProjectPath}`);
         }
-
-        const unityEditor = new UnityEditor(editorPath);
 
         if (!args.includes('-logFile')) {
             const logPath = unityEditor.GenerateLogFilePath(unityProject.projectPath, options.logName || 'Unity');
