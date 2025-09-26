@@ -64,7 +64,9 @@ export async function Exec(command: string, args: string[], options: ExecOptions
     let output: string = '';
     let exitCode: number = 0;
 
-    const isSilent = options.silent || logger.logLevel !== LogLevel.DEBUG;
+    const isDebug = logger.logLevel === LogLevel.DEBUG;
+    const isSilent = isDebug ? false : !!options.silent;
+    const mustShowCommand = isDebug ? true : !!options.showCommand;
 
     function processOutput(data: Buffer) {
         const chunk = data.toString();
@@ -75,7 +77,7 @@ export async function Exec(command: string, args: string[], options: ExecOptions
         }
     }
 
-    if (options.showCommand || logger.logLevel === LogLevel.DEBUG) {
+    if (mustShowCommand) {
         const commandStr = `\x1b[34m${command} ${args.join(' ')}\x1b[0m`;
 
         if (isSilent) {
@@ -106,7 +108,7 @@ export async function Exec(command: string, args: string[], options: ExecOptions
             });
         });
     } finally {
-        if (options.showCommand || logger.logLevel === LogLevel.DEBUG) {
+        if (mustShowCommand) {
             if (!isSilent) {
                 logger.endGroup();
             }
