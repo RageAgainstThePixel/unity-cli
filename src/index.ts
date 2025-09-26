@@ -186,6 +186,7 @@ program.command('setup-unity')
 
         const unityVersion = unityProject?.version ?? new UnityVersion(options.unityVersion, options.changeset);
         const modules: string[] = options.modules ? options.modules.split(/[ ,]+/).filter(Boolean) : [];
+        // todo support build-targets to modules mapping
         const unityHub = new UnityHub();
         const editorPath = await unityHub.GetEditor(unityVersion, modules);
         const output: { [key: string]: string } = {
@@ -228,10 +229,10 @@ program.command('create-project')
         }
 
         const unityEditor = new UnityEditor(editorPath);
-        const templatePath = unityEditor.GetTemplatePath(options.template);
-        const projectName = options.name?.toString()?.trim();
+        const templatePath = unityEditor.GetTemplatePath(options.projectTemplate);
+        const projectName = options.projectName?.toString()?.trim();
 
-        let projectPath = options.path?.toString()?.trim() || process.cwd();
+        let projectPath = options.projectTemplate?.toString()?.trim() || process.cwd();
 
         if (projectName && projectName.length > 0) {
             projectPath = path.join(projectPath, projectName);
@@ -275,11 +276,11 @@ program.command('run')
         }
 
         const unityEditor = new UnityEditor(editorPath);
-        const unityProjectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || process.cwd();
-        const unityProject = await UnityProject.GetProject(unityProjectPath);
+        const projectPath = options.unityProjectPath?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || process.cwd();
+        const unityProject = await UnityProject.GetProject(projectPath);
 
         if (!unityProject) {
-            throw new Error(`The specified path is not a valid Unity project: ${unityProjectPath}`);
+            throw new Error(`The specified path is not a valid Unity project: ${projectPath}`);
         }
 
         if (!args.includes('-logFile')) {
