@@ -97,13 +97,22 @@ export async function Exec(command: string, args: string[], options: ExecOptions
                 env: process.env,
                 stdio: ['ignore', 'pipe', 'pipe'],
             });
-            process.once('SIGINT', () => child.kill('SIGINT'));
-            process.once('SIGTERM', () => child.kill('SIGTERM'));
+            const sigintHandler = () => child.kill('SIGINT');
+            const sigtermHandler = () => child.kill('SIGTERM');
+            process.once('SIGINT', sigintHandler);
+            process.once('SIGTERM', sigtermHandler);
             child.stdout.on('data', processOutput);
             child.stderr.on('data', processOutput);
-            child.on('error', (error) => reject(error));
+            child.on('error', (error) => {
+                process.stdout.write('\n');
+                process.removeListener('SIGINT', sigintHandler);
+                process.removeListener('SIGTERM', sigtermHandler);
+                reject(error);
+            });
             child.on('close', (code) => {
                 process.stdout.write('\n');
+                process.removeListener('SIGINT', sigintHandler);
+                process.removeListener('SIGTERM', sigtermHandler);
                 resolve(code === null ? 0 : code);
             });
         });

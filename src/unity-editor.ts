@@ -121,6 +121,7 @@ export class UnityEditor {
             isCancelled = true;
             await this.tryKillEditorProcess();
         };
+
         process.once('SIGINT', onCancel);
         process.once('SIGTERM', onCancel);
         let exitCode: number | undefined;
