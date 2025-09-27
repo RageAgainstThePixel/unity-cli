@@ -186,7 +186,30 @@ program.command('setup-unity')
 
         const unityVersion = unityProject?.version ?? new UnityVersion(options.unityVersion, options.changeset);
         const modules: string[] = options.modules ? options.modules.split(/[ ,]+/).filter(Boolean) : [];
-        // todo support build-targets to modules mapping
+        const buildTargets: string[] = options.buildTargets ? options.buildTargets.split(/[ ,]+/).filter(Boolean) : [];
+        const moduleBuildTargetMap = UnityHub.GetPlatformTargetModuleMap();
+
+        for (const target of buildTargets) {
+            const module = moduleBuildTargetMap[target];
+
+            if (module === undefined) {
+                if (target.toLowerCase() !== 'none') {
+                    Logger.instance.warn(`${target} is not a valid build target for ${os.type()}`);
+                }
+
+                continue;
+            }
+
+            if (!modules.includes(module)) {
+                modules.push(module);
+            }
+        }
+
+        if (modules.includes('none') ||
+            modules.includes('None')) {
+            modules.length = 0;
+        }
+
         const unityHub = new UnityHub();
         const editorPath = await unityHub.GetEditor(unityVersion, modules);
         const output: { [key: string]: string } = {

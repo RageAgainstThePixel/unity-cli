@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import * as yaml from 'yaml';
 import { spawn } from 'child_process';
@@ -939,5 +940,48 @@ done
             default:
                 throw new Error(`Unity ${unityVersion.toString()} is not supported on ${process.platform}`);
         }
+    }
+
+    public static GetPlatformTargetModuleMap(): { [key: string]: string } {
+        const osType = os.type();
+        let moduleMap: { [key: string]: string };
+
+        switch (osType) {
+            case 'Linux':
+                moduleMap = {
+                    "StandaloneLinux64": "linux-il2cpp",
+                    "Android": "android",
+                    "WebGL": "webgl",
+                    "iOS": "ios",
+                };
+                break;
+            case 'Darwin':
+                moduleMap = {
+                    "StandaloneOSX": "mac-il2cpp",
+                    "iOS": "ios",
+                    "Android": "android",
+                    "tvOS": "appletv",
+                    "StandaloneLinux64": "linux-il2cpp",
+                    "WebGL": "webgl",
+                    "VisionOS": "visionos"
+                };
+                break;
+            case 'Windows_NT':
+                moduleMap = {
+                    "StandaloneWindows64": "windows-il2cpp",
+                    "WSAPlayer": "universal-windows-platform",
+                    "Android": "android",
+                    "iOS": "ios",
+                    "tvOS": "appletv",
+                    "StandaloneLinux64": "linux-il2cpp",
+                    "Lumin": "lumin",
+                    "WebGL": "webgl",
+                };
+                break;
+            default:
+                throw Error(`${osType} not supported`);
+        }
+
+        return moduleMap;
     }
 }
