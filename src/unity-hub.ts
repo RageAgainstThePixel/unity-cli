@@ -209,7 +209,9 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
                 try {
                     await Exec(downloadPath, ['/S'], { silent: true });
                 } finally {
-                    fs.promises.unlink(downloadPath);
+                    if (fs.statSync(downloadPath).isFile()) {
+                        await fs.promises.unlink(downloadPath);
+                    }
                 }
 
                 break;
@@ -255,7 +257,9 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
                             await Exec('hdiutil', ['detach', mountPoint, '-quiet'], { silent: true });
                         }
                     } finally {
-                        await fs.promises.unlink(downloadPath);
+                        if (fs.statSync(downloadPath).isFile()) {
+                            await fs.promises.unlink(downloadPath);
+                        }
                     }
                 }
                 break;
