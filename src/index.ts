@@ -289,7 +289,7 @@ program.command('run')
         }
 
         if (!args.includes('-logFile')) {
-            const logPath = unityEditor.GenerateLogFilePath(unityProject.projectPath, options.logName || 'Unity');
+            const logPath = unityEditor.GenerateLogFilePath(unityProject.projectPath, options.logName);
             args.push('-logFile', logPath);
         }
 
