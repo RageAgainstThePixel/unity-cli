@@ -22,9 +22,10 @@ export class UnityEditor {
     public readonly editorRootPath: string;
 
     private readonly logger: Logger = Logger.instance;
-    private readonly procInfo: ProcInfo | undefined;
     private readonly pidFile: string;
     private readonly autoAddNoGraphics: boolean;
+
+    private procInfo: ProcInfo | undefined;
 
     /**
      * Initializes a new instance of the UnityEditor class.
