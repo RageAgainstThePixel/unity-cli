@@ -45,10 +45,8 @@ jobs:
           npm install -g openupm-cli
           cd "${project_path}"
           openupm add com.utilities.buildpipeline
-          validate_output=$(unity-cli run --unity-editor "${unity_editor_path}" --unity-project "${project_path}" --log-name Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset)
-          echo "$validate_output"
-          build_output=$(unity-cli run --unity-editor "${unity_editor_path}" --unity-project "${project_path}" --log-name Build -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity)
-          echo "$build_output"
+          unity-cli run --unity-editor "${unity_editor_path}" --unity-project "${project_path}" --log-name Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
+          unity-cli run --unity-editor "${unity_editor_path}" --unity-project "${project_path}" --log-name Build -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity
       - name: Post Run
         if: always()
         shell: bash
