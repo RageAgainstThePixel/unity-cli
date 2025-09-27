@@ -1,0 +1,42 @@
+name: tests
+on:
+  push:
+    branches: ['main']
+  pull_request:
+    branches: ['*']
+    types: [opened, reopened, synchronize, ready_for_review]
+  workflow_dispatch: # Allows you to run this workflow manually from the Actions tab
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  setup:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/
+      - uses: RageAgainstThePixel/job-builder@v1
+        id: setup-jobs
+        with:
+          build-options: ./.github/workflows/build-options.json
+          group-by: 'unity-version'
+    outputs:
+      jobs: ${{ steps.setup-jobs.outputs.jobs }}
+  validate:
+    if: ${{ needs.setup.outputs.jobs }}
+    needs: setup
+    name: build ${{ matrix.jobs.name }}
+    permissions:
+      contents: read
+    strategy:
+      matrix: ${{ fromJSON(needs.setup.outputs.jobs) }}
+      fail-fast: false
+      max-parallel: 1
+    secrets: inherit
+    uses: ./.github/workflows/unity-build.yml
+    with:
+      matrix: ${{ toJSON(matrix.jobs.matrix) }}

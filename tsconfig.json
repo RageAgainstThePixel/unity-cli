@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "esnext",
+    "types": [
+      "node"
+    ],
+    "sourceMap": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "strict": true,
+    "verbatimModuleSyntax": false,
+    "isolatedModules": true,
+    "noUncheckedSideEffectImports": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "emitDeclarationOnly": false,
+    "declaration": true
+  },
+  "include": [
+    "src"
+  ]
+}

@@ -1,0 +1,14 @@
+.git/
+.github/
+.idea/
+.vscode/
+src/
+tests/
+node_modules/
+.env
+.env.local
+*.log
+*.tsbuildinfo
+tsconfig*.json
+package-lock.json
+jest.config.mjs
