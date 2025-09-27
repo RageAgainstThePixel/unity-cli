@@ -201,6 +201,7 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
     }
 
     private async installHub(): Promise<void> {
+        this.logger.ci(`Installing Unity Hub...`);
         switch (process.platform) {
             case 'win32': {
                 const url = 'https://public-cdn.cloud.unity3d.com/hub/prod/UnityHubSetup.exe';
@@ -210,7 +211,7 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
                 this.logger.info(`Running Unity Hub installer...`);
 
                 try {
-                    await Exec(downloadPath, ['/S'], { silent: true });
+                    await Exec(downloadPath, ['/S'], { silent: true, showCommand: true });
                 } finally {
                     if (fs.statSync(downloadPath).isFile()) {
                         await fs.promises.unlink(downloadPath);
@@ -223,7 +224,6 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
                 const baseUrl = 'https://public-cdn.cloud.unity3d.com/hub/prod';
                 const url = `${baseUrl}/UnityHubSetup-${process.arch}.dmg`;
                 const downloadPath = path.join(GetTempDir(), `UnityHubSetup-${process.arch}.dmg`);
-                this.logger.info(`Downloading Unity Hub from ${url} to ${downloadPath}`);
 
                 await DownloadFile(url, downloadPath);
                 await fs.promises.chmod(downloadPath, 0o777);
@@ -232,7 +232,7 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
                 this.logger.debug(`Mounting DMG...`);
 
                 try {
-                    const output = await Exec('hdiutil', ['attach', downloadPath, '-nobrowse'], { silent: true });
+                    const output = await Exec('hdiutil', ['attach', downloadPath, '-nobrowse'], { silent: true, showCommand: true });
                     // can be "/Volumes/Unity Hub 3.13.1-arm64" or "/Volumes/Unity Hub 3.13.1"
                     const mountPointMatch = output.match(/\/Volumes\/Unity Hub.*$/m);
 
@@ -248,16 +248,16 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
 
                     await fs.promises.access(appPath, fs.constants.R_OK | fs.constants.X_OK);
                     if (fs.existsSync('/Applications/Unity Hub.app')) {
-                        await Exec('sudo', ['rm', '-rf', '/Applications/Unity Hub.app'], { silent: true });
+                        await Exec('sudo', ['rm', '-rf', '/Applications/Unity Hub.app'], { silent: true, showCommand: true });
                     }
-                    await Exec('sudo', ['cp', '-R', appPath, '/Applications/Unity Hub.app'], { silent: true });
-                    await Exec('sudo', ['chmod', '777', '/Applications/Unity Hub.app/Contents/MacOS/Unity Hub'], { silent: true });
-                    await Exec('sudo', ['mkdir', '-p', '/Library/Application Support/Unity'], { silent: true });
-                    await Exec('sudo', ['chmod', '777', '/Library/Application Support/Unity'], { silent: true });
+                    await Exec('sudo', ['cp', '-R', appPath, '/Applications/Unity Hub.app'], { silent: true, showCommand: true });
+                    await Exec('sudo', ['chmod', '777', '/Applications/Unity Hub.app/Contents/MacOS/Unity Hub'], { silent: true, showCommand: true });
+                    await Exec('sudo', ['mkdir', '-p', '/Library/Application Support/Unity'], { silent: true, showCommand: true });
+                    await Exec('sudo', ['chmod', '777', '/Library/Application Support/Unity'], { silent: true, showCommand: true });
                 } finally {
                     try {
                         if (mountPoint && mountPoint.length > 0) {
-                            await Exec('hdiutil', ['detach', mountPoint, '-quiet'], { silent: true });
+                            await Exec('hdiutil', ['detach', mountPoint, '-quiet'], { silent: true, showCommand: true });
                         }
                     } finally {
                         if (fs.statSync(downloadPath).isFile()) {
@@ -295,7 +295,7 @@ chmod -R 777 "$hubPath"`]);
         }
 
         await fs.promises.access(this.executable, fs.constants.X_OK);
-        this.logger.info(`Unity Hub installed successfully.`);
+        this.logger.debug(`Unity Hub install complete`);
     }
 
     private async getInstalledHubVersion(): Promise<SemVer> {
@@ -861,7 +861,7 @@ done
                     this.logger.info(`Running Unity ${unityVersion.toString()} installer...`);
 
                     try {
-                        await Exec(installerPath, ['/S', `/D=${installPath}`, '-Wait', '-NoNewWindow'], { silent: true });
+                        await Exec(installerPath, ['/S', `/D=${installPath}`, '-Wait', '-NoNewWindow'], { silent: true, showCommand: true });
                     } catch (error) {
                         this.logger.error(`Failed to install Unity ${unityVersion.toString()}: ${error}`);
                     } finally {
@@ -885,7 +885,7 @@ done
                     let mountPoint = '';
 
                     try {
-                        const output = await Exec('hdiutil', ['attach', installerPath, '-nobrowse'], { silent: true });
+                        const output = await Exec('hdiutil', ['attach', installerPath, '-nobrowse'], { silent: true, showCommand: true });
                         const mountPointMatch = output.match(/\/Volumes\/Unity Installer.*$/m);
 
                         if (!mountPointMatch || mountPointMatch.length === 0) {
@@ -899,7 +899,7 @@ done
                         await fs.promises.access(pkgPath, fs.constants.R_OK);
 
                         this.logger.debug(`Found .pkg installer: ${pkgPath}`);
-                        await Exec('sudo', ['installer', '-pkg', pkgPath, '-target', '/', '-verboseR'], { silent: true });
+                        await Exec('sudo', ['installer', '-pkg', pkgPath, '-target', '/', '-verboseR'], { silent: true, showCommand: true });
                         const unityAppPath = path.join('/Applications', 'Unity');
                         const targetPath = path.join(installDir, `Unity ${unityVersion.version}`);
 
@@ -928,7 +928,7 @@ done
                     } finally {
                         try {
                             if (mountPoint && mountPoint.length > 0) {
-                                await Exec('hdiutil', ['detach', mountPoint, '-quiet'], { silent: true });
+                                await Exec('hdiutil', ['detach', mountPoint, '-quiet'], { silent: true, showCommand: true });
                             }
                         } finally {
                             await fs.promises.unlink(installerPath);

@@ -129,7 +129,7 @@ export async function Exec(command: string, args: string[], options: ExecOptions
  * @throws An error if the download fails or the file is not accessible after download.
  */
 export async function DownloadFile(url: string, downloadPath: string): Promise<void> {
-    logger.debug(`Downloading from ${url} to ${downloadPath}...`);
+    logger.ci(`Downloading from ${url} to ${downloadPath}...`);
     await fs.promises.mkdir(path.dirname(downloadPath), { recursive: true });
     await new Promise<void>((resolve, reject) => {
         const file = fs.createWriteStream(downloadPath, { mode: 0o755 });

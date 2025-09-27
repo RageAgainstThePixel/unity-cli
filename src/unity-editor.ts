@@ -22,7 +22,6 @@ export class UnityEditor {
     public readonly editorRootPath: string;
 
     private readonly logger: Logger = Logger.instance;
-    private readonly pidFile: string;
     private readonly autoAddNoGraphics: boolean;
 
     private procInfo: ProcInfo | undefined;
@@ -39,7 +38,6 @@ export class UnityEditor {
 
         fs.accessSync(editorPath, fs.constants.X_OK);
         this.editorRootPath = UnityEditor.GetEditorRootPath(editorPath);
-        this.pidFile = path.join(process.env.RUNNER_TEMP || process.env.USERPROFILE || '.', '.unity', 'unity-editor-process-id.txt');
 
         const match = editorPath.match(/(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)/);
 
@@ -231,26 +229,6 @@ export class UnityEditor {
 
         onPid({ pid: processId, ppid: process.pid, name: this.editorPath });
         this.logger.debug(`Unity process started with pid: ${processId}`);
-        // make sure the directory for the PID file exists
-        const pidDir = path.dirname(this.pidFile);
-
-        if (!fs.existsSync(pidDir)) {
-            fs.mkdirSync(pidDir, { recursive: true });
-        } else {
-            try {
-                var existingProcInfo = await ReadPidFile(this.pidFile);
-                if (existingProcInfo) {
-                    const killedPid = await TryKillProcess(existingProcInfo);
-                    if (killedPid) {
-                        this.logger.warn(`Killed existing Unity process with pid: ${killedPid}`);
-                    }
-                }
-            } catch {
-                // PID file does not exist, continue
-            }
-        }
-        // Write the PID to the PID file
-        fs.writeFileSync(this.pidFile, String(processId));
         const logPollingInterval = 100; // milliseconds
         // Wait for log file to appear
         while (!fs.existsSync(logPath)) {
