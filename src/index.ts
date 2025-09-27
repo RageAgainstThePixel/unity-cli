@@ -14,6 +14,16 @@ import { UnityProject } from './unity-project';
 import { CheckAndroidSdkInstalled } from './android-sdk';
 import { UnityEditor } from './unity-editor';
 
+// export public API
+export * from './license-client';
+export * from './utilities';
+export * from './unity-hub';
+export * from './logging';
+export * from './unity-version';
+export * from './unity-project';
+export * from './android-sdk';
+export * from './unity-editor';
+
 const pkgPath = join(__dirname, '..', 'package.json');
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
 const program = new Command();
