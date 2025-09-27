@@ -138,7 +138,10 @@ export class UnityEditor {
                 exitCode = 1;
             }
         } finally {
+            process.removeListener('SIGINT', onCancel);
+            process.removeListener('SIGTERM', onCancel);
             this.logger.endGroup();
+
             if (!isCancelled) {
                 await this.tryKillEditorProcess();
 
