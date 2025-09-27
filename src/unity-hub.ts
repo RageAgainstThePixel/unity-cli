@@ -24,31 +24,30 @@ import { UnityReleasesClient } from '@rage-against-the-pixel/unity-releases-api/
 import { UnityEditor } from './unity-editor';
 
 export class UnityHub {
-    public executable: string;
-    public rootDirectory: string;
-    public editorInstallationDirectory: string;
-    public editorFileExtension: string;
+    /** The path to the Unity Hub executable. */
+    public readonly executable: string;
+    /** The root directory of the Unity Hub installation. */
+    public readonly rootDirectory: string;
+    /** The file extension for the Unity editor executable. */
+    public readonly editorFileExtension: string;
 
-    private logger: Logger = Logger.instance;
+    private readonly logger: Logger = Logger.instance;
 
     constructor() {
         switch (process.platform) {
             case 'win32':
                 this.executable = process.env.UNITY_HUB_PATH || 'C:\\Program Files\\Unity Hub\\Unity Hub.exe';
                 this.rootDirectory = path.join(this.executable, '../');
-                this.editorInstallationDirectory = 'C:\\Program Files\\Unity\\Hub\\Editor\\';
                 this.editorFileExtension = '\\Editor\\Unity.exe';
                 break;
             case 'darwin':
                 this.executable = process.env.UNITY_HUB_PATH || '/Applications/Unity Hub.app/Contents/MacOS/Unity Hub';
                 this.rootDirectory = path.join(this.executable, '../../../');
-                this.editorInstallationDirectory = '/Applications/Unity/Hub/Editor/';
                 this.editorFileExtension = '/Unity.app/Contents/MacOS/Unity';
                 break;
             case 'linux':
                 this.executable = process.env.UNITY_HUB_PATH || '/opt/unityhub/unityhub';
                 this.rootDirectory = path.join(this.executable, '../');
-                this.editorInstallationDirectory = `${process.env.HOME}/Unity/Hub/Editor/`;
                 this.editorFileExtension = '/Editor/Unity';
                 break;
             default:
@@ -145,6 +144,7 @@ export class UnityHub {
 
     /**
      * Prints the installed Unity Hub version.
+     * @returns The installed Unity Hub version.
      */
     public async Version(): Promise<string> {
         const version = await this.getInstalledHubVersion();
@@ -154,6 +154,7 @@ export class UnityHub {
     /**
      * Installs or updates the Unity Hub.
      * If the Unity Hub is already installed, it will be updated to the latest version.
+     * @returns The path to the Unity Hub executable.
      */
     public async Install(): Promise<string> {
         let isInstalled = false;
@@ -195,6 +196,7 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
             }
         }
 
+        await fs.promises.access(this.executable, fs.constants.X_OK);
         return this.executable;
     }
 
@@ -354,7 +356,7 @@ chmod -R 777 "$hubPath"`]);
 
     /**
      * Returns the path where the Unity editors will be installed.
-     * @returns {Promise<string>} The install path.
+     * @returns The editor install path.
      */
     public async GetInstallPath(): Promise<string> {
         const result = (await this.Exec(['install-path', '--get'])).trim();
@@ -368,7 +370,7 @@ chmod -R 777 "$hubPath"`]);
 
     /**
      * Sets the path where Unity editors will be installed.
-     * @param installPath The path to set.
+     * @param installPath The install path to set when installing Unity editors.
      */
     public async SetInstallPath(installPath: string): Promise<void> {
         await fs.promises.mkdir(installPath, { recursive: true });
@@ -377,7 +379,7 @@ chmod -R 777 "$hubPath"`]);
 
     /**
      * Locate and associate an installed editor from a stipulated path.
-     * @param editorPath
+     * @param editorPath The path to the Unity Editor installation.
      */
     public async AddEditor(editorPath: string): Promise<void> {
         await fs.promises.access(editorPath, fs.constants.R_OK | fs.constants.X_OK);
@@ -942,6 +944,10 @@ done
         }
     }
 
+    /**
+     * Get the mapping of Unity platform targets to their corresponding module identifiers for the current OS.
+     * @returns A map of Unity platform targets to their corresponding module identifiers for the current OS.
+     */
     public static GetPlatformTargetModuleMap(): { [key: string]: string } {
         const osType = os.type();
         let moduleMap: { [key: string]: string };

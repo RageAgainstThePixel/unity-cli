@@ -1,11 +1,11 @@
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
-import { Logger } from './logging';
 import { ResolveGlobToPath } from './utilities';
 import { UnityVersion } from './unity-version';
 
 export class UnityProject {
+    /** The default modules to include in a new Unity project. */
     public static readonly DefaultModules: string[] = (() => {
         switch (os.type()) {
             case 'Linux': return ['linux-il2cpp'];
@@ -15,6 +15,7 @@ export class UnityProject {
         }
     })();
 
+    /** A map of build targets to their corresponding Unity Hub module names. */
     public static readonly BuildTargetModuleMap: { [key: string]: string } = (() => {
         switch (os.type()) {
             case 'Linux': return {
@@ -46,11 +47,17 @@ export class UnityProject {
         }
     })();
 
-    private logger: Logger = Logger.instance;
-
+    /** The path to the ProjectVersion.txt file within the Unity project. */
     public readonly projectVersionPath: string;
+
+    /** The Unity version used by the project. */
     public readonly version: UnityVersion;
 
+    /**
+     * Initializes a new instance of the UnityProject class.
+     * @param projectPath The path to the Unity project.
+     * @throws Will throw an error if the project path is invalid or if the ProjectVersion.txt file cannot be found or read.
+     */
     constructor(public readonly projectPath: string) {
         fs.accessSync(projectPath, fs.constants.R_OK);
         this.projectVersionPath = path.join(this.projectPath, 'ProjectSettings', 'ProjectVersion.txt');
@@ -73,6 +80,12 @@ export class UnityProject {
         this.version = new UnityVersion(match.groups.version, match.groups.changeset, undefined);
     }
 
+    /**
+     * Gets the Unity project located at the specified path, or the current working directory if no path is provided.
+     * @param projectPath The path to the Unity project. If undefined, the current working directory is used.
+     * @returns The UnityProject instance representing the project at the specified path.
+     * @throws Will throw an error if the project path is invalid or if the ProjectVersion.txt file cannot be found or read.
+     */
     public static async GetProject(projectPath: string | undefined = undefined): Promise<UnityProject> {
         if (!projectPath) {
             projectPath = process.cwd();

@@ -122,6 +122,12 @@ export async function Exec(command: string, args: string[], options: ExecOptions
     return output;
 }
 
+/**
+ * Downloads a file from a URL to a specified path.
+ * @param url The URL to download from.
+ * @param downloadPath The path to save the downloaded file.
+ * @throws An error if the download fails or the file is not accessible after download.
+ */
 export async function DownloadFile(url: string, downloadPath: string): Promise<void> {
     logger.debug(`Downloading from ${url} to ${downloadPath}...`);
     await fs.promises.mkdir(path.dirname(downloadPath), { recursive: true });
@@ -142,6 +148,11 @@ export async function DownloadFile(url: string, downloadPath: string): Promise<v
     await fs.promises.access(downloadPath, fs.constants.R_OK | fs.constants.X_OK);
 }
 
+/**
+ * Deletes a directory and its contents if it exists.
+ * @param targetPath The path of the directory to delete.
+ * @throws An error if the deletion fails.
+ */
 export async function DeleteDirectory(targetPath: string | undefined): Promise<void> {
     logger.debug(`Attempting to delete directory: ${targetPath}...`);
     if (targetPath && targetPath.length > 0 && fs.existsSync(targetPath)) {
@@ -149,6 +160,12 @@ export async function DeleteDirectory(targetPath: string | undefined): Promise<v
     }
 }
 
+/**
+ * Reads the contents of a file.
+ * @param filePath The path of the file to read.
+ * @returns The contents of the file as a string.
+ * @throws An error if the file cannot be read.
+ */
 export async function ReadFileContents(filePath: string): Promise<string> {
     const fileHandle = await fs.promises.open(filePath, 'r');
     try {
@@ -159,6 +176,11 @@ export async function ReadFileContents(filePath: string): Promise<string> {
     }
 }
 
+/**
+ * Gets the path to a temporary directory.
+ * @returns The path to a temporary directory.
+ * @remarks Falls back to the system temp directory if no environment variables are set.
+ */
 export function GetTempDir(): string {
     if (process.env['RUNNER_TEMP']) {
         return process.env['RUNNER_TEMP']!;
@@ -179,7 +201,7 @@ export function GetTempDir(): string {
  * @param args The list of command line arguments.
  * @returns The value of the argument or an error if not found.
  */
-export function getArgumentValueAsString(value: string, args: string[]): string {
+export function GetArgumentValueAsString(value: string, args: string[]): string {
     const index = args.indexOf(value);
 
     if (index === -1 || index === args.length - 1) {
@@ -200,7 +222,7 @@ export interface ProcInfo {
  * @param procInfo The process information containing the PID.
  * @returns The PID of the killed process, or undefined if no process was killed.
  */
-export async function tryKillProcess(procInfo: ProcInfo): Promise<number | undefined> {
+export async function TryKillProcess(procInfo: ProcInfo): Promise<number | undefined> {
     let pid: number | undefined;
 
     try {
@@ -219,7 +241,13 @@ export async function tryKillProcess(procInfo: ProcInfo): Promise<number | undef
     return pid;
 }
 
-export async function readPidFile(pidFilePath: string): Promise<ProcInfo | undefined> {
+/**
+ * Reads a PID file and returns the process information.
+ * @param pidFilePath The path to the PID file.
+ * @returns The process information, or undefined if the file does not exist or cannot be read.
+ * @remarks The PID file is deleted after reading.
+ */
+export async function ReadPidFile(pidFilePath: string): Promise<ProcInfo | undefined> {
     let procInfo: ProcInfo | undefined;
     try {
         if (!fs.existsSync(pidFilePath)) {
@@ -250,7 +278,11 @@ export async function readPidFile(pidFilePath: string): Promise<ProcInfo | undef
     return procInfo;
 }
 
-export async function killChildProcesses(procInfo: ProcInfo): Promise<void> {
+/**
+ * Kills all child processes of the given process.
+ * @param procInfo The process information of the parent process.
+ */
+export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
     logger.debug(`Killing child processes of ${procInfo.name} with pid: ${procInfo.pid}...`);
     try {
         if (process.platform === 'win32') {
@@ -268,7 +300,7 @@ export async function killChildProcesses(procInfo: ProcInfo): Promise<void> {
                     const name: string = parts[2]!;
 
                     if (ppid === procInfo.pid) {
-                        await tryKillProcess({ pid, ppid, name });
+                        await TryKillProcess({ pid, ppid, name });
                     }
                 }
             }

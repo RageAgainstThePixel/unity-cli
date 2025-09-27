@@ -2,15 +2,12 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawn } from 'child_process';
+import { Logger } from './logging';
 import { UnityEditor } from './unity-editor';
 import {
     ReadFileContents,
     ResolveGlobToPath
 } from './utilities';
-import {
-    Logger,
-    LogLevel
-} from './logging';
 
 const logger = Logger.instance;
 

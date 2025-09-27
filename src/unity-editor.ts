@@ -2,11 +2,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Logger } from './logging';
 import {
-    getArgumentValueAsString,
-    killChildProcesses,
+    GetArgumentValueAsString,
+    KillChildProcesses,
     ProcInfo,
-    readPidFile,
-    tryKillProcess
+    ReadPidFile,
+    TryKillProcess
 } from './utilities';
 import {
     spawn,
@@ -19,14 +19,19 @@ export interface EditorCommand {
 }
 
 export class UnityEditor {
-    public editorRootPath: string;
+    public readonly editorRootPath: string;
 
-    private procInfo: ProcInfo | undefined;
-    private pidFile: string;
-    private logger: Logger = Logger.instance;
-    private autoAddNoGraphics: boolean;
+    private readonly logger: Logger = Logger.instance;
+    private readonly procInfo: ProcInfo | undefined;
+    private readonly pidFile: string;
+    private readonly autoAddNoGraphics: boolean;
 
-    constructor(public editorPath: string) {
+    /**
+     * Initializes a new instance of the UnityEditor class.
+     * @param editorPath The path to the Unity Editor installation.
+     * @throws Will throw an error if the editor path is invalid or not executable.
+     */
+    constructor(public readonly editorPath: string) {
         if (!fs.existsSync(editorPath)) {
             throw new Error(`The Unity Editor path does not exist: ${editorPath}`);
         }
@@ -188,7 +193,7 @@ export class UnityEditor {
             command.args.push('-logFile', this.GenerateLogFilePath(command.projectPath));
         }
 
-        const logPath: string = getArgumentValueAsString('-logFile', command.args);
+        const logPath: string = GetArgumentValueAsString('-logFile', command.args);
 
         let unityProcess: ChildProcessByStdio<null, null, null>;
 
@@ -232,9 +237,9 @@ export class UnityEditor {
             fs.mkdirSync(pidDir, { recursive: true });
         } else {
             try {
-                var existingProcInfo = await readPidFile(this.pidFile);
+                var existingProcInfo = await ReadPidFile(this.pidFile);
                 if (existingProcInfo) {
-                    const killedPid = await tryKillProcess(existingProcInfo);
+                    const killedPid = await TryKillProcess(existingProcInfo);
                     if (killedPid) {
                         this.logger.warn(`Killed existing Unity process with pid: ${killedPid}`);
                     }
@@ -318,8 +323,8 @@ export class UnityEditor {
 
     private async tryKillEditorProcess(): Promise<void> {
         if (this.procInfo) {
-            await tryKillProcess(this.procInfo);
-            await killChildProcesses(this.procInfo);
+            await TryKillProcess(this.procInfo);
+            await KillChildProcesses(this.procInfo);
         } else {
             this.logger.debug('No Unity process info available to kill.');
         }

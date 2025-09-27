@@ -13,11 +13,16 @@ export enum LicenseType {
 }
 
 export class LicensingClient {
-    private unityHub: UnityHub = new UnityHub();
+    private readonly unityHub: UnityHub = new UnityHub();
+    private readonly logger: Logger = Logger.instance;
+
     private licenseClientPath: string | undefined;
     private licenseVersion: string | undefined;
-    private logger: Logger = Logger.instance;
 
+    /**
+     * Creates an instance of LicensingClient.
+     * @param licenseVersion The license version to use (e.g., '4.x', '5.x', '6.x'). If undefined, defaults to '6.x'.
+     */
     constructor(licenseVersion: string | undefined = undefined) {
         this.licenseVersion = licenseVersion;
     }
@@ -283,10 +288,22 @@ export class LicensingClient {
         });
     }
 
+    /**
+     * Displays the version of the licensing client to the console.
+     */
     public async Version(): Promise<void> {
         await this.exec(['--version']);
     }
 
+    /**
+     * Activates a Unity license.
+     * @param licenseType The type of license to activate.
+     * @param servicesConfig The services config path for floating licenses.
+     * @param serial The license serial number.
+     * @param username The Unity ID username.
+     * @param password The Unity ID password.
+     * @throws Error if activation fails or required parameters are missing.
+     */
     public async Activate(licenseType: LicenseType, servicesConfig: string | undefined = undefined, serial: string | undefined = undefined, username: string | undefined = undefined, password: string | undefined = undefined): Promise<void> {
         let activeLicenses = await this.showEntitlements();
 
@@ -356,6 +373,12 @@ export class LicensingClient {
         }
     }
 
+    /**
+     * Deactivates a Unity license.
+     * @param licenseType The type of license to deactivate.
+     * @returns A promise that resolves when the license is deactivated.
+     * @throws Error if deactivation fails.
+     */
     public async Deactivate(licenseType: LicenseType): Promise<void> {
         if (licenseType === LicenseType.floating) {
             return;

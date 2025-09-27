@@ -8,16 +8,14 @@ export enum LogLevel {
 
 export class Logger {
     public logLevel: LogLevel = LogLevel.INFO;
-    private _ci: string | undefined;
-    static instance: Logger = new Logger();
+    private readonly _ci: string | undefined;
+    static readonly instance: Logger = new Logger();
 
     private constructor() {
         if (process.env.GITHUB_ACTIONS) {
             this._ci = 'GITHUB_ACTIONS';
             this.logLevel = process.env.ACTIONS_STEP_DEBUG === 'true' ? LogLevel.DEBUG : LogLevel.CI;
         }
-
-        Logger.instance = this;
     }
 
     /**
