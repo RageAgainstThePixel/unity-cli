@@ -15,7 +15,7 @@ jobs:
           node-version: 22.x
           registry-url: "https://registry.npmjs.org"
       - run: |
-          npm ci
+          npm i
           npm run build
           # check if the last release is the same as the current version
           lastVersion=$(npm show @rage-against-the-pixel/unity-releases-api version)
