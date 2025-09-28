@@ -2,15 +2,12 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { spawn } from 'child_process';
+import { Logger } from './logging';
 import { UnityEditor } from './unity-editor';
 import {
     ReadFileContents,
     ResolveGlobToPath
 } from './utilities';
-import {
-    Logger,
-    LogLevel
-} from './logging';
 
 const logger = Logger.instance;
 
@@ -132,8 +129,10 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
                 env: { ...process.env, JAVA_HOME: javaPath }
             });
 
-            process.once('SIGINT', () => child.kill('SIGINT'));
-            process.once('SIGTERM', () => child.kill('SIGTERM'));
+            const sigintHandler = () => child.kill('SIGINT');
+            const sigtermHandler = () => child.kill('SIGTERM');
+            process.once('SIGINT', sigintHandler);
+            process.once('SIGTERM', sigtermHandler);
             child.stdout.on('data', (data: Buffer) => {
                 const chunk = data.toString();
                 output += chunk;
@@ -150,9 +149,16 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
                 output += chunk;
                 process.stderr.write(chunk);
             });
-            child.on('error', (error: Error) => reject(error));
+            child.on('error', (error: Error) => {
+                process.stdout.write('\n');
+                process.removeListener('SIGINT', sigintHandler);
+                process.removeListener('SIGTERM', sigtermHandler);
+                reject(error);
+            });
             child.on('close', (code: number | null) => {
                 process.stdout.write('\n');
+                process.removeListener('SIGINT', sigintHandler);
+                process.removeListener('SIGTERM', sigtermHandler);
                 resolve(code === null ? 0 : code);
             });
         });

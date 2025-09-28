@@ -24,31 +24,30 @@ import { UnityReleasesClient } from '@rage-against-the-pixel/unity-releases-api/
 import { UnityEditor } from './unity-editor';
 
 export class UnityHub {
-    public executable: string;
-    public rootDirectory: string;
-    public editorInstallationDirectory: string;
-    public editorFileExtension: string;
+    /** The path to the Unity Hub executable. */
+    public readonly executable: string;
+    /** The root directory of the Unity Hub installation. */
+    public readonly rootDirectory: string;
+    /** The file extension for the Unity editor executable. */
+    public readonly editorFileExtension: string;
 
-    private logger: Logger = Logger.instance;
+    private readonly logger: Logger = Logger.instance;
 
     constructor() {
         switch (process.platform) {
             case 'win32':
                 this.executable = process.env.UNITY_HUB_PATH || 'C:\\Program Files\\Unity Hub\\Unity Hub.exe';
                 this.rootDirectory = path.join(this.executable, '../');
-                this.editorInstallationDirectory = 'C:\\Program Files\\Unity\\Hub\\Editor\\';
                 this.editorFileExtension = '\\Editor\\Unity.exe';
                 break;
             case 'darwin':
                 this.executable = process.env.UNITY_HUB_PATH || '/Applications/Unity Hub.app/Contents/MacOS/Unity Hub';
                 this.rootDirectory = path.join(this.executable, '../../../');
-                this.editorInstallationDirectory = '/Applications/Unity/Hub/Editor/';
                 this.editorFileExtension = '/Unity.app/Contents/MacOS/Unity';
                 break;
             case 'linux':
                 this.executable = process.env.UNITY_HUB_PATH || '/opt/unityhub/unityhub';
                 this.rootDirectory = path.join(this.executable, '../');
-                this.editorInstallationDirectory = `${process.env.HOME}/Unity/Hub/Editor/`;
                 this.editorFileExtension = '/Editor/Unity';
                 break;
             default:
@@ -93,13 +92,22 @@ export class UnityHub {
                     stdio: ['ignore', 'pipe', 'pipe'],
                 });
 
-                process.once('SIGINT', () => child.kill('SIGINT'));
-                process.once('SIGTERM', () => child.kill('SIGTERM'));
+                const sigintHandler = () => child.kill('SIGINT');
+                const sigtermHandler = () => child.kill('SIGTERM');
+                process.once('SIGINT', sigintHandler);
+                process.once('SIGTERM', sigtermHandler);
                 child.stdout.on('data', processOutput);
                 child.stderr.on('data', processOutput);
-                child.on('error', (error) => reject(error));
+                child.on('error', (error) => {
+                    process.stdout.write('\n');
+                    process.removeListener('SIGINT', sigintHandler);
+                    process.removeListener('SIGTERM', sigtermHandler);
+                    reject(error);
+                });
                 child.on('close', (code) => {
                     process.stdout.write('\n');
+                    process.removeListener('SIGINT', sigintHandler);
+                    process.removeListener('SIGTERM', sigtermHandler);
                     resolve(code === null ? 0 : code);
                 });
             });
@@ -145,6 +153,7 @@ export class UnityHub {
 
     /**
      * Prints the installed Unity Hub version.
+     * @returns The installed Unity Hub version.
      */
     public async Version(): Promise<string> {
         const version = await this.getInstalledHubVersion();
@@ -154,6 +163,7 @@ export class UnityHub {
     /**
      * Installs or updates the Unity Hub.
      * If the Unity Hub is already installed, it will be updated to the latest version.
+     * @returns The path to the Unity Hub executable.
      */
     public async Install(): Promise<string> {
         let isInstalled = false;
@@ -195,10 +205,12 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
             }
         }
 
+        await fs.promises.access(this.executable, fs.constants.X_OK);
         return this.executable;
     }
 
     private async installHub(): Promise<void> {
+        this.logger.ci(`Installing Unity Hub...`);
         switch (process.platform) {
             case 'win32': {
                 const url = 'https://public-cdn.cloud.unity3d.com/hub/prod/UnityHubSetup.exe';
@@ -208,7 +220,7 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
                 this.logger.info(`Running Unity Hub installer...`);
 
                 try {
-                    await Exec(downloadPath, ['/S'], { silent: true });
+                    await Exec(downloadPath, ['/S'], { silent: true, showCommand: true });
                 } finally {
                     if (fs.statSync(downloadPath).isFile()) {
                         await fs.promises.unlink(downloadPath);
@@ -221,7 +233,6 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
                 const baseUrl = 'https://public-cdn.cloud.unity3d.com/hub/prod';
                 const url = `${baseUrl}/UnityHubSetup-${process.arch}.dmg`;
                 const downloadPath = path.join(GetTempDir(), `UnityHubSetup-${process.arch}.dmg`);
-                this.logger.info(`Downloading Unity Hub from ${url} to ${downloadPath}`);
 
                 await DownloadFile(url, downloadPath);
                 await fs.promises.chmod(downloadPath, 0o777);
@@ -230,7 +241,7 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
                 this.logger.debug(`Mounting DMG...`);
 
                 try {
-                    const output = await Exec('hdiutil', ['attach', downloadPath, '-nobrowse'], { silent: true });
+                    const output = await Exec('hdiutil', ['attach', downloadPath, '-nobrowse'], { silent: true, showCommand: true });
                     // can be "/Volumes/Unity Hub 3.13.1-arm64" or "/Volumes/Unity Hub 3.13.1"
                     const mountPointMatch = output.match(/\/Volumes\/Unity Hub.*$/m);
 
@@ -246,16 +257,16 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
 
                     await fs.promises.access(appPath, fs.constants.R_OK | fs.constants.X_OK);
                     if (fs.existsSync('/Applications/Unity Hub.app')) {
-                        await Exec('sudo', ['rm', '-rf', '/Applications/Unity Hub.app'], { silent: true });
+                        await Exec('sudo', ['rm', '-rf', '/Applications/Unity Hub.app'], { silent: true, showCommand: true });
                     }
-                    await Exec('sudo', ['cp', '-R', appPath, '/Applications/Unity Hub.app'], { silent: true });
-                    await Exec('sudo', ['chmod', '777', '/Applications/Unity Hub.app/Contents/MacOS/Unity Hub'], { silent: true });
-                    await Exec('sudo', ['mkdir', '-p', '/Library/Application Support/Unity'], { silent: true });
-                    await Exec('sudo', ['chmod', '777', '/Library/Application Support/Unity'], { silent: true });
+                    await Exec('sudo', ['cp', '-R', appPath, '/Applications/Unity Hub.app'], { silent: true, showCommand: true });
+                    await Exec('sudo', ['chmod', '777', '/Applications/Unity Hub.app/Contents/MacOS/Unity Hub'], { silent: true, showCommand: true });
+                    await Exec('sudo', ['mkdir', '-p', '/Library/Application Support/Unity'], { silent: true, showCommand: true });
+                    await Exec('sudo', ['chmod', '777', '/Library/Application Support/Unity'], { silent: true, showCommand: true });
                 } finally {
                     try {
                         if (mountPoint && mountPoint.length > 0) {
-                            await Exec('hdiutil', ['detach', mountPoint, '-quiet'], { silent: true });
+                            await Exec('hdiutil', ['detach', mountPoint, '-quiet'], { silent: true, showCommand: true });
                         }
                     } finally {
                         if (fs.statSync(downloadPath).isFile()) {
@@ -293,7 +304,7 @@ chmod -R 777 "$hubPath"`]);
         }
 
         await fs.promises.access(this.executable, fs.constants.X_OK);
-        this.logger.info(`Unity Hub installed successfully.`);
+        this.logger.debug(`Unity Hub install complete`);
     }
 
     private async getInstalledHubVersion(): Promise<SemVer> {
@@ -354,7 +365,7 @@ chmod -R 777 "$hubPath"`]);
 
     /**
      * Returns the path where the Unity editors will be installed.
-     * @returns {Promise<string>} The install path.
+     * @returns The editor install path.
      */
     public async GetInstallPath(): Promise<string> {
         const result = (await this.Exec(['install-path', '--get'])).trim();
@@ -368,7 +379,7 @@ chmod -R 777 "$hubPath"`]);
 
     /**
      * Sets the path where Unity editors will be installed.
-     * @param installPath The path to set.
+     * @param installPath The install path to set when installing Unity editors.
      */
     public async SetInstallPath(installPath: string): Promise<void> {
         await fs.promises.mkdir(installPath, { recursive: true });
@@ -377,7 +388,7 @@ chmod -R 777 "$hubPath"`]);
 
     /**
      * Locate and associate an installed editor from a stipulated path.
-     * @param editorPath
+     * @param editorPath The path to the Unity Editor installation.
      */
     public async AddEditor(editorPath: string): Promise<void> {
         await fs.promises.access(editorPath, fs.constants.R_OK | fs.constants.X_OK);
@@ -859,7 +870,7 @@ done
                     this.logger.info(`Running Unity ${unityVersion.toString()} installer...`);
 
                     try {
-                        await Exec(installerPath, ['/S', `/D=${installPath}`, '-Wait', '-NoNewWindow'], { silent: true });
+                        await Exec(installerPath, ['/S', `/D=${installPath}`, '-Wait', '-NoNewWindow'], { silent: true, showCommand: true });
                     } catch (error) {
                         this.logger.error(`Failed to install Unity ${unityVersion.toString()}: ${error}`);
                     } finally {
@@ -883,7 +894,7 @@ done
                     let mountPoint = '';
 
                     try {
-                        const output = await Exec('hdiutil', ['attach', installerPath, '-nobrowse'], { silent: true });
+                        const output = await Exec('hdiutil', ['attach', installerPath, '-nobrowse'], { silent: true, showCommand: true });
                         const mountPointMatch = output.match(/\/Volumes\/Unity Installer.*$/m);
 
                         if (!mountPointMatch || mountPointMatch.length === 0) {
@@ -897,7 +908,7 @@ done
                         await fs.promises.access(pkgPath, fs.constants.R_OK);
 
                         this.logger.debug(`Found .pkg installer: ${pkgPath}`);
-                        await Exec('sudo', ['installer', '-pkg', pkgPath, '-target', '/', '-verboseR'], { silent: true });
+                        await Exec('sudo', ['installer', '-pkg', pkgPath, '-target', '/', '-verboseR'], { silent: true, showCommand: true });
                         const unityAppPath = path.join('/Applications', 'Unity');
                         const targetPath = path.join(installDir, `Unity ${unityVersion.version}`);
 
@@ -926,7 +937,7 @@ done
                     } finally {
                         try {
                             if (mountPoint && mountPoint.length > 0) {
-                                await Exec('hdiutil', ['detach', mountPoint, '-quiet'], { silent: true });
+                                await Exec('hdiutil', ['detach', mountPoint, '-quiet'], { silent: true, showCommand: true });
                             }
                         } finally {
                             await fs.promises.unlink(installerPath);
@@ -942,6 +953,10 @@ done
         }
     }
 
+    /**
+     * Get the mapping of Unity platform targets to their corresponding module identifiers for the current OS.
+     * @returns A map of Unity platform targets to their corresponding module identifiers for the current OS.
+     */
     public static GetPlatformTargetModuleMap(): { [key: string]: string } {
         const osType = os.type();
         let moduleMap: { [key: string]: string };

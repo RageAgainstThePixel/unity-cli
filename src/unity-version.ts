@@ -8,12 +8,12 @@ import {
 } from 'semver';
 
 export class UnityVersion {
-    public version: string;
-    public changeset: string | null | undefined;
-    public architecture: 'X86_64' | 'ARM64';
+    public readonly version: string;
+    public readonly changeset: string | null | undefined;
+    public readonly architecture: 'X86_64' | 'ARM64';
 
-    private semVer: SemVer;
-    private logger = Logger.instance;
+    private readonly semVer: SemVer;
+    private readonly logger = Logger.instance;
 
     constructor(
         version: string,

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 import 'source-map-support/register';
+import * as fs from 'fs';
 import * as os from 'os';
 import { Command } from 'commander';
-import { readFileSync } from 'fs';
 import path, { join } from 'path';
 import { LicenseType, LicensingClient } from './license-client';
 import { PromptForSecretInput } from './utilities';
@@ -14,8 +14,18 @@ import { UnityProject } from './unity-project';
 import { CheckAndroidSdkInstalled } from './android-sdk';
 import { UnityEditor } from './unity-editor';
 
+// export public API
+export * from './license-client';
+export * from './utilities';
+export * from './unity-hub';
+export * from './logging';
+export * from './unity-version';
+export * from './unity-project';
+export * from './android-sdk';
+export * from './unity-editor';
+
 const pkgPath = join(__dirname, '..', 'package.json');
-const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
 const program = new Command();
 
 program.name('unity-cli')
