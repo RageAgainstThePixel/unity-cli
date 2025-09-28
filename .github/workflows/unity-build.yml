@@ -34,7 +34,7 @@ jobs:
           npm run build
           npm run link
           unity-cli --version
-          unity-cli hub-install
+          unity-cli hub-install --auto-update
           unity-cli activate-license --license personal --email "${{ secrets.UNITY_USERNAME }}" --password "${{ secrets.UNITY_PASSWORD }}"
           setup_output=$(unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-targets }}" --json)
           unity_editor_path=$(echo "$setup_output" | tail -n 1 | jq -r '.UNITY_EDITOR')
