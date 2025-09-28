@@ -12,7 +12,7 @@ export class Logger {
     static readonly instance: Logger = new Logger();
 
     private constructor() {
-        if (process.env.GITHUB_ACTIONS) {
+        if (process.env.GITHUB_ACTIONS === 'true') {
             this._ci = 'GITHUB_ACTIONS';
             this.logLevel = process.env.ACTIONS_STEP_DEBUG === 'true' ? LogLevel.DEBUG : LogLevel.CI;
         }

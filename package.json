@@ -1,6 +1,6 @@
 {
   "name": "@rage-against-the-pixel/unity-cli",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A command line utility for the Unity Game Engine.",
   "author": "RageAgainstThePixel",
   "license": "MIT",
@@ -12,9 +12,29 @@
     "url": "https://github.com/RageAgainstThePixel/unity-cli/issues"
   },
   "homepage": "https://github.com/RageAgainstThePixel/unity-cli#readme",
+  "keywords": [
+    "unity",
+    "cli",
+    "command-line",
+    "command line",
+    "tool",
+    "utility",
+    "game development",
+    "devOps",
+    "automation",
+    "build",
+    "continuous integration",
+    "ci",
+    "cd",
+    "development",
+    "gameDev",
+    "game dev",
+    "rage-against-the-pixel",
+    "rage against the pixel"
+  ],
   "main": "dist/index.js",
   "bin": {
-    "unity-cli": "./dist/index.js"
+    "unity-cli": "dist/index.js"
   },
   "files": [
     "dist"
