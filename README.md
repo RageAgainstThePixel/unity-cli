@@ -31,19 +31,19 @@ unity-cli [command] [options]
 - `unity-cli hub-install`: Install Unity Hub
 - `unity-cli hub-version`: Print Unity Hub version
 - `unity-cli hub-path`: Print Unity Hub executable path
-- `unity-cli hub [args...]`: Run Unity Hub commands directly
-- `unity-cli activate-license`: Activate a Unity license
-- `unity-cli return-license`: Return a Unity license
+- `unity-cli hub [options] <args...>`: Run [Unity Hub command line arguments](https://docs.unity3d.com/hub/manual/HubCLI.html)
+- `unity-cli activate-license [options]`: Activate a Unity license
+- `unity-cli return-license [options]`: Return a Unity license
 - `unity-cli license-version`: Print Unity License Client version
-- `unity-cli setup-unity`: Find or install Unity Editor for a project/version
-- `unity-cli create-project`: Create a new Unity project from a template
-- `unity-cli run [args...]`: Run commands in [Unity Editor Command Line Arguments](https://docs.unity3d.com/Manual/EditorCommandLineArguments.html)
+- `unity-cli setup-unity [options]`: Find or install Unity Editor for a project/version
+- `unity-cli create-project [options]`: Create a new Unity project from a [template](https://docs.unity3d.com/hub/manual/Templates.html)
+- `unity-cli run [options] <args...>`: Run [Unity Editor Command Line Arguments](https://docs.unity3d.com/Manual/EditorCommandLineArguments.html)
 
 #### Install Unity Hub and Editor
 
 ```bash
 unity-cli hub-install
-unity-cli setup-unity --unity-version 2022.3.x --modules android,ios --json
+unity-cli setup-unity --unity-version 2022.3.x --modules android,ios
 ```
 
 #### Activate a Unity License
@@ -61,5 +61,5 @@ unity-cli create-project --name "MyGame" --template com.unity.template.3d --unit
 #### Build a Project
 
 ```bash
-unity-cli run --unity-editor <path-to-editor> --unity-project <path-to-project> -quit -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild
+unity-cli run --unity-editor <path-to-editor> --unity-project <path-to-project> -quit -batchmode -executeMethod StartCommandLineBuild
 ```

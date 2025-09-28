@@ -402,7 +402,7 @@ chmod -R 777 "$hubPath"`]);
      * @param modules The modules to install alongside the editor.
      * @returns The path to the Unity Editor executable.
      */
-    public async GetEditor(unityVersion: UnityVersion, modules: string[]): Promise<string> {
+    public async GetEditor(unityVersion: UnityVersion, modules: string[]): Promise<UnityEditor> {
         const retryErrorMessages = [
             'Editor already installed in this location',
             'failed to download. Error given: Request timeout'
@@ -442,6 +442,7 @@ chmod -R 777 "$hubPath"`]);
                     if (installPath) {
                         await DeleteDirectory(installPath);
                     }
+
                     installPath = await this.installUnity(unityVersion, modules);
                 } else {
                     throw error;
@@ -459,7 +460,7 @@ chmod -R 777 "$hubPath"`]);
         await this.patchBeeBackend(editorPath);
 
         if (unityVersion.isLegacy() || modules.length === 0) {
-            return editorPath;
+            return new UnityEditor(path.normalize(editorPath), unityVersion);
         }
 
         try {
@@ -487,7 +488,7 @@ chmod -R 777 "$hubPath"`]);
             }
         }
 
-        return path.normalize(editorPath);
+        return new UnityEditor(path.normalize(editorPath), unityVersion);
     }
 
     /**
@@ -503,6 +504,7 @@ chmod -R 777 "$hubPath"`]);
 
     private async checkInstalledEditors(unityVersion: UnityVersion, failOnEmpty: boolean, installPath: string | undefined = undefined): Promise<string | undefined> {
         let editorPath = undefined;
+
         if (!installPath) {
             const paths: string[] = await this.ListInstalledEditors();
 
@@ -578,7 +580,7 @@ chmod -R 777 "$hubPath"`]);
             throw new Error(`Failed to find installed Unity Editor: ${unityVersion.toString()}\n  > ${error}`);
         }
 
-        this.logger.ci(`Found installed Unity Editor: ${editorPath}`);
+        this.logger.debug(`Found installed editor: "${editorPath}"`);
         return editorPath;
     }
 
@@ -799,6 +801,8 @@ done
     }
 
     private async installUnity(unityVersion: UnityVersion, modules: string[]): Promise<string | undefined> {
+        this.logger.ci(`Installing Unity ${unityVersion.toString()}...`);
+
         if (unityVersion.isLegacy()) {
             return await this.installUnity4x(unityVersion);
         }
@@ -848,7 +852,6 @@ done
             args.push('--cm');
         }
 
-        this.logger.info(`Installing Unity ${unityVersion.toString()}...`);
         const output = await this.Exec(args, { showCommand: true, silent: false });
 
         if (output.includes(`Error while installing an editor or a module from changeset`)) {
@@ -871,7 +874,7 @@ done
                     this.logger.info(`Running Unity ${unityVersion.toString()} installer...`);
 
                     try {
-                        await Exec(installerPath, ['/S', `/D=${installPath}`, '-Wait', '-NoNewWindow'], { silent: true, showCommand: true });
+                        await Exec('powershell', ['-Command', `Start-Process -FilePath \"${installerPath}\" -ArgumentList \"/S /D=${installPath}\" -Wait -NoNewWindow`], { silent: true, showCommand: true });
                     } catch (error) {
                         this.logger.error(`Failed to install Unity ${unityVersion.toString()}: ${error}`);
                     } finally {

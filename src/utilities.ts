@@ -236,7 +236,7 @@ export async function TryKillProcess(procInfo: ProcInfo): Promise<number | undef
 
     try {
         pid = procInfo.pid;
-        logger.ci(`Killing process '${procInfo.name}' with pid: ${pid}`);
+        logger.ci(`Killing process "${procInfo.name}" with pid: ${pid}`);
         process.kill(pid);
     } catch (error) {
         const nodeJsException = error as NodeJS.ErrnoException;
@@ -295,10 +295,10 @@ export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
     logger.debug(`Killing child processes of ${procInfo.name} with pid: ${procInfo.pid}...`);
     try {
         if (process.platform === 'win32') {
-            const pwshCommand = 'powershell -Command "Get-CimInstance Win32_Process -Filter \'ParentProcessId=' + procInfo.pid + '\' | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"';
-            await Exec('cmd', ['/c', pwshCommand], { silent: true });
+            const command = `Get-CimInstance Win32_Process -Filter "ParentProcessId=${procInfo.pid}" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
+            await Exec('powershell', ['-Command', command], { silent: true, showCommand: true });
         } else { // linux and macos
-            const psOutput = await Exec('ps', ['-eo', 'pid,ppid,comm'], { silent: true });
+            const psOutput = await Exec('ps', ['-eo', 'pid,ppid,comm'], { silent: true, showCommand: false });
             const lines = psOutput.split('\n').slice(1); // Skip header line
 
             for (const line of lines) {
