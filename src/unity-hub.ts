@@ -851,7 +851,6 @@ done
             args.push('--cm');
         }
 
-        this.logger.info(`Installing Unity ${unityVersion.toString()}...`);
         const output = await this.Exec(args, { showCommand: true, silent: false });
 
         if (output.includes(`Error while installing an editor or a module from changeset`)) {
