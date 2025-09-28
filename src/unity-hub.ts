@@ -504,6 +504,7 @@ chmod -R 777 "$hubPath"`]);
 
     private async checkInstalledEditors(unityVersion: UnityVersion, failOnEmpty: boolean, installPath: string | undefined = undefined): Promise<string | undefined> {
         let editorPath = undefined;
+
         if (!installPath) {
             const paths: string[] = await this.ListInstalledEditors();
 
@@ -579,7 +580,7 @@ chmod -R 777 "$hubPath"`]);
             throw new Error(`Failed to find installed Unity Editor: ${unityVersion.toString()}\n  > ${error}`);
         }
 
-        this.logger.ci(`Found installed Unity Editor: ${editorPath}`);
+        this.logger.debug(`Found installed editor: "${editorPath}"`);
         return editorPath;
     }
 
