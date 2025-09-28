@@ -100,21 +100,23 @@ export class UnityHub {
                 function processOutput(data: Buffer) {
                     try {
                         const chunk = data.toString();
-                        output += chunk;
+                        let outputLines: string[] = [];
+                        const lines = chunk.split('\n');
 
-                        if (!options.silent) {
-                            let outputLines: string[] = [];
-                            const lines = chunk.split('\n');
-
-                            for (const line of lines) {
-                                if (line.trim().length === 0 || ignoredLines.some(ignored => line.includes(ignored))) {
-                                    continue;
-                                }
-
-                                outputLines.push(line);
+                        for (const line of lines) {
+                            if (line.trim().length === 0 ||
+                                ignoredLines.some(ignored => line.includes(ignored))) {
+                                continue;
                             }
 
-                            process.stdout.write(`${outputLines.join('\n')}\n`);
+                            outputLines.push(line);
+                        }
+
+                        const outputLine = outputLines.join('\n');
+                        output += `${outputLine}\n`;
+
+                        if (!options.silent) {
+                            process.stdout.write(`${outputLine}\n`);
                         }
 
                         if (output.includes(tasksComplete)) {

@@ -73,7 +73,7 @@ export async function Exec(command: string, args: string[], options: ExecOptions
             const chunk = data.toString();
             output += chunk;
 
-            if (!isSilent) {
+            if (!isSilent && chunk.trim().length > 0) {
                 process.stdout.write(chunk);
             }
         } catch (error: any) {
