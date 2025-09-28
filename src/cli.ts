@@ -121,9 +121,8 @@ program.command('hub-install')
 
         Logger.instance.debug(JSON.stringify(options));
 
-        let autoUpdate: boolean = options.autoUpdate === undefined ? false : true;
         const unityHub = new UnityHub();
-        const hubPath = await unityHub.Install(autoUpdate);
+        const hubPath = await unityHub.Install(options.autoUpdate === true);
 
         if (options.json) {
             process.stdout.write(`\n${JSON.stringify({ UNITY_HUB_PATH: hubPath })}\n`);
