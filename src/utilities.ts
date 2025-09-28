@@ -69,11 +69,17 @@ export async function Exec(command: string, args: string[], options: ExecOptions
     const mustShowCommand = isDebug ? true : options.showCommand ? options.showCommand : false;
 
     function processOutput(data: Buffer) {
-        const chunk = data.toString();
-        output += chunk;
+        try {
+            const chunk = data.toString();
+            output += chunk;
 
-        if (!isSilent) {
-            process.stdout.write(chunk);
+            if (!isSilent && chunk.trim().length > 0) {
+                process.stdout.write(chunk);
+            }
+        } catch (error: any) {
+            if (error.code !== 'EPIPE') {
+                throw error;
+            }
         }
     }
 
@@ -235,7 +241,7 @@ export async function TryKillProcess(procInfo: ProcInfo): Promise<number | undef
     try {
         pid = procInfo.pid;
         logger.ci(`Killing process "${procInfo.name}" with pid: ${pid}`);
-        process.kill(pid);
+        process.kill(pid, 'SIGTERM');
     } catch (error) {
         const nodeJsException = error as NodeJS.ErrnoException;
         const errorCode = nodeJsException?.code;
