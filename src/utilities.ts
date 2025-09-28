@@ -104,13 +104,11 @@ export async function Exec(command: string, args: string[], options: ExecOptions
             child.stdout.on('data', processOutput);
             child.stderr.on('data', processOutput);
             child.on('error', (error) => {
-                process.stdout.write('\n');
                 process.removeListener('SIGINT', sigintHandler);
                 process.removeListener('SIGTERM', sigtermHandler);
                 reject(error);
             });
             child.on('close', (code) => {
-                process.stdout.write('\n');
                 process.removeListener('SIGINT', sigintHandler);
                 process.removeListener('SIGTERM', sigtermHandler);
                 resolve(code === null ? 0 : code);

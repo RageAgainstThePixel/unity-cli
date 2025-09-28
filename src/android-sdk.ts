@@ -150,13 +150,11 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
                 process.stderr.write(chunk);
             });
             child.on('error', (error: Error) => {
-                process.stdout.write('\n');
                 process.removeListener('SIGINT', sigintHandler);
                 process.removeListener('SIGTERM', sigtermHandler);
                 reject(error);
             });
             child.on('close', (code: number | null) => {
-                process.stdout.write('\n');
                 process.removeListener('SIGINT', sigintHandler);
                 process.removeListener('SIGTERM', sigtermHandler);
                 resolve(code === null ? 0 : code);
