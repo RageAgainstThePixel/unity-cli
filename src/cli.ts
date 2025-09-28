@@ -217,7 +217,7 @@ program.command('setup-unity')
         const unityEditor = await unityHub.GetEditor(unityVersion, modules);
         const output: { [key: string]: string } = {
             'UNITY_HUB_PATH': unityHub.executable,
-            'UNITY_EDITOR': unityEditor.editorPath
+            'UNITY_EDITOR_PATH': unityEditor.editorPath
         };
 
         if (unityProject) {
@@ -238,7 +238,7 @@ program.command('create-project')
     .option('--name <projectName>', 'The name of the new Unity project. If unspecified, the project will be created in the specified path or the current working directory.')
     .option('--path <projectPath>', 'The path to create the new Unity project. If unspecified, the current working directory will be used.')
     .option('--template <projectTemplate>', 'The name of the template package to use for creating the unity project. Supports regex patterns.', 'com.unity.template.3d(-cross-platform)?')
-    .option('--unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR environment variable must be set.')
+    .option('--unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR_PATH environment variable must be set.')
     .option('--verbose', 'Enable verbose logging.')
     .option('--json', 'Prints the last line of output as JSON string.')
     .action(async (options) => {
@@ -248,10 +248,10 @@ program.command('create-project')
 
         Logger.instance.debug(JSON.stringify(options));
 
-        const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR;
+        const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH;
 
         if (!editorPath || editorPath.length === 0) {
-            throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR environment variable.');
+            throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR_PATH environment variable.');
         }
 
         const unityEditor = new UnityEditor(editorPath);
@@ -287,7 +287,7 @@ program.command('create-project')
 
 program.command('run')
     .description('Run command line args directly to the Unity Editor.')
-    .option('--unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR environment variable must be set.')
+    .option('--unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR_PATH environment variable must be set.')
     .option('--unity-project <unityProjectPath>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
     .option('--log-name <logName>', 'The name of the log file.')
     .allowUnknownOption(true)
@@ -300,10 +300,10 @@ program.command('run')
 
         Logger.instance.debug(JSON.stringify({ options, args }));
 
-        const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR;
+        const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH;
 
         if (!editorPath || editorPath.length === 0) {
-            throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR environment variable.');
+            throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR_PATH environment variable.');
         }
 
         const unityEditor = new UnityEditor(editorPath);

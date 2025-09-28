@@ -1,6 +1,6 @@
 {
   "name": "@rage-against-the-pixel/unity-cli",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "A command line utility for the Unity Game Engine.",
   "author": "RageAgainstThePixel",
   "license": "MIT",
@@ -13,6 +13,7 @@
   },
   "homepage": "https://github.com/RageAgainstThePixel/unity-cli#readme",
   "keywords": [
+    "unity-cli",
     "unity",
     "cli",
     "command-line",
