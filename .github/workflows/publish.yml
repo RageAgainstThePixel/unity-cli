@@ -18,7 +18,7 @@ jobs:
           npm i
           npm run build
           # check if the last release is the same as the current version
-          lastVersion=$(npm show @rage-against-the-pixel/unity-releases-api version)
+          lastVersion=$(npm show @rage-against-the-pixel/unity-cli version)
           version=$(node -p "require('./package.json').version")
           if [ "$version" = "$lastVersion" ]; then
             echo "No changes detected"
