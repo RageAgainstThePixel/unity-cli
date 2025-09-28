@@ -112,14 +112,17 @@ program.command('hub-version')
 program.command('hub-install')
     .description('Install the Unity Hub.')
     .option('--verbose', 'Enable verbose logging.')
+    .option('--auto-update', 'Automatically updates the Unity Hub if it is already installed.')
     .option('--json', 'Prints the last line of output as JSON string.')
     .action(async (options) => {
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
+        Logger.instance.debug(JSON.stringify(options));
+
         const unityHub = new UnityHub();
-        const hubPath = await unityHub.Install();
+        const hubPath = await unityHub.Install(options.autoUpdate === true);
 
         if (options.json) {
             process.stdout.write(`\n${JSON.stringify({ UNITY_HUB_PATH: hubPath })}\n`);

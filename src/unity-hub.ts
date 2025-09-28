@@ -163,9 +163,10 @@ export class UnityHub {
     /**
      * Installs or updates the Unity Hub.
      * If the Unity Hub is already installed, it will be updated to the latest version.
+     * @param autoUpdate If true, automatically updates the Unity Hub if it is already installed. Default is true.
      * @returns The path to the Unity Hub executable.
      */
-    public async Install(): Promise<string> {
+    public async Install(autoUpdate: boolean = true): Promise<string> {
         let isInstalled = false;
         try {
             await fs.promises.access(this.executable, fs.constants.X_OK);
@@ -174,7 +175,7 @@ export class UnityHub {
             await this.installHub();
         }
 
-        if (isInstalled) {
+        if (isInstalled && autoUpdate) {
             const installedVersion: SemVer = await this.getInstalledHubVersion();
             this.logger.ci(`Installed Unity Hub version: ${installedVersion.version}`);
             let latestVersion: SemVer | undefined = undefined;
