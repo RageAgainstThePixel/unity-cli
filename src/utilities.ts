@@ -295,8 +295,8 @@ export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
     logger.debug(`Killing child processes of ${procInfo.name} with pid: ${procInfo.pid}...`);
     try {
         if (process.platform === 'win32') {
-            const pwshCommand = 'powershell -Command "Get-CimInstance Win32_Process -Filter \'ParentProcessId=' + procInfo.pid + '\' | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"';
-            await Exec('cmd', ['/c', pwshCommand], { silent: true });
+            const command = `Get-CimInstance Win32_Process -Filter "ParentProcessId=${procInfo.pid}" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
+            await Exec('powershell', ['-Command', command], { silent: true });
         } else { // linux and macos
             const psOutput = await Exec('ps', ['-eo', 'pid,ppid,comm'], { silent: true });
             const lines = psOutput.split('\n').slice(1); // Skip header line

@@ -442,6 +442,7 @@ chmod -R 777 "$hubPath"`]);
                     if (installPath) {
                         await DeleteDirectory(installPath);
                     }
+
                     installPath = await this.installUnity(unityVersion, modules);
                 } else {
                     throw error;
@@ -799,6 +800,8 @@ done
     }
 
     private async installUnity(unityVersion: UnityVersion, modules: string[]): Promise<string | undefined> {
+        this.logger.ci(`Installing Unity ${unityVersion.toString()}...`);
+
         if (unityVersion.isLegacy()) {
             return await this.installUnity4x(unityVersion);
         }
@@ -871,7 +874,7 @@ done
                     this.logger.info(`Running Unity ${unityVersion.toString()} installer...`);
 
                     try {
-                        await Exec(installerPath, ['/S', `/D=${installPath}`, '-Wait', '-NoNewWindow'], { silent: true, showCommand: true });
+                        await Exec('powershell', ['-Command', `Start-Process -FilePath \"${installerPath}\" -ArgumentList \"/S /D=${installPath}\" -Wait -NoNewWindow`], { silent: true, showCommand: true });
                     } catch (error) {
                         this.logger.error(`Failed to install Unity ${unityVersion.toString()}: ${error}`);
                     } finally {
