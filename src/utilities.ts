@@ -69,11 +69,17 @@ export async function Exec(command: string, args: string[], options: ExecOptions
     const mustShowCommand = isDebug ? true : options.showCommand ? options.showCommand : false;
 
     function processOutput(data: Buffer) {
-        const chunk = data.toString();
-        output += chunk;
+        try {
+            const chunk = data.toString();
+            output += chunk;
 
-        if (!isSilent) {
-            process.stdout.write(chunk);
+            if (!isSilent) {
+                process.stdout.write(chunk);
+            }
+        } catch (error: any) {
+            if (error.code !== 'EPIPE') {
+                throw error;
+            }
         }
     }
 

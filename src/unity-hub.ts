@@ -98,26 +98,32 @@ export class UnityHub {
                 process.once('SIGINT', sigintHandler);
                 process.once('SIGTERM', sigtermHandler);
                 function processOutput(data: Buffer) {
-                    const chunk = data.toString();
-                    output += chunk;
+                    try {
+                        const chunk = data.toString();
+                        output += chunk;
 
-                    if (!options.silent) {
-                        let outputLines: string[] = [];
-                        const lines = chunk.split('\n');
+                        if (!options.silent) {
+                            let outputLines: string[] = [];
+                            const lines = chunk.split('\n');
 
-                        for (const line of lines) {
-                            if (line.trim().length === 0 || ignoredLines.some(ignored => line.includes(ignored))) {
-                                continue;
+                            for (const line of lines) {
+                                if (line.trim().length === 0 || ignoredLines.some(ignored => line.includes(ignored))) {
+                                    continue;
+                                }
+
+                                outputLines.push(line);
                             }
 
-                            outputLines.push(line);
+                            process.stdout.write(`${outputLines.join('\n')}\n`);
                         }
 
-                        process.stdout.write(`${outputLines.join('\n')}\n`);
-                    }
-
-                    if (output.includes(tasksComplete)) {
-                        child.kill('SIGTERM');
+                        if (output.includes(tasksComplete)) {
+                            child.kill('SIGTERM');
+                        }
+                    } catch (error: any) {
+                        if (error.code !== 'EPIPE') {
+                            throw error;
+                        }
                     }
                 }
                 child.stdout.on('data', processOutput);
