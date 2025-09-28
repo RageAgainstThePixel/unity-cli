@@ -235,7 +235,7 @@ export async function TryKillProcess(procInfo: ProcInfo): Promise<number | undef
     try {
         pid = procInfo.pid;
         logger.ci(`Killing process "${procInfo.name}" with pid: ${pid}`);
-        process.kill(pid);
+        process.kill(pid, 'SIGTERM');
     } catch (error) {
         const nodeJsException = error as NodeJS.ErrnoException;
         const errorCode = nodeJsException?.code;

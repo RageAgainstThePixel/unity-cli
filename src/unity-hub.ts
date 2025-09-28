@@ -113,11 +113,11 @@ export class UnityHub {
                             outputLines.push(line);
                         }
 
-                        process.stdout.write(outputLines.join('\n'));
+                        process.stdout.write(`${outputLines.join('\n')}\n`);
                     }
 
                     if (output.includes(tasksComplete)) {
-                        child.kill();
+                        child.kill('SIGTERM');
                     }
                 }
                 child.stdout.on('data', processOutput);
