@@ -1,6 +1,6 @@
 {
   "name": "@rage-against-the-pixel/unity-cli",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A command line utility for the Unity Game Engine.",
   "author": "RageAgainstThePixel",
   "license": "MIT",
@@ -34,7 +34,7 @@
   ],
   "main": "dist/index.js",
   "bin": {
-    "unity-cli": "dist/index.js"
+    "unity-cli": "dist/cli.js"
   },
   "files": [
     "dist"
