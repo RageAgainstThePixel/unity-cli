@@ -214,17 +214,17 @@ program.command('setup-unity')
         }
 
         const unityHub = new UnityHub();
-        const editorPath = await unityHub.GetEditor(unityVersion, modules);
+        const unityEditor = await unityHub.GetEditor(unityVersion, modules);
         const output: { [key: string]: string } = {
             'UNITY_HUB_PATH': unityHub.executable,
-            'UNITY_EDITOR': editorPath
+            'UNITY_EDITOR': unityEditor.editorPath
         };
 
         if (unityProject) {
             output['UNITY_PROJECT_PATH'] = unityProject.projectPath;
 
             if (modules.includes('android')) {
-                await CheckAndroidSdkInstalled(editorPath, unityProject.projectPath);
+                await CheckAndroidSdkInstalled(unityEditor.editorPath, unityProject.projectPath);
             }
         }
 

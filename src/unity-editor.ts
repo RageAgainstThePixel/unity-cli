@@ -12,6 +12,7 @@ import {
     spawn,
     ChildProcessByStdio,
 } from 'child_process';
+import { UnityVersion } from './unity-version';
 
 export interface EditorCommand {
     args: string[];
@@ -31,7 +32,10 @@ export class UnityEditor {
      * @param editorPath The path to the Unity Editor installation.
      * @throws Will throw an error if the editor path is invalid or not executable.
      */
-    constructor(public readonly editorPath: string) {
+    constructor(
+        public readonly editorPath: string,
+        public readonly version: UnityVersion | undefined = undefined
+    ) {
         if (!fs.existsSync(editorPath)) {
             throw new Error(`The Unity Editor path does not exist: ${editorPath}`);
         }
@@ -39,19 +43,25 @@ export class UnityEditor {
         fs.accessSync(editorPath, fs.constants.X_OK);
         this.editorRootPath = UnityEditor.GetEditorRootPath(editorPath);
 
-        const match = editorPath.match(/(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)/);
+        if (!version) {
+            const match = editorPath.match(/(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\w+)/);
 
-        if (!match) {
-            throw Error(`Invalid Unity Editor Path: ${editorPath}`);
+            if (!match || !match.groups) {
+                throw Error(`Invalid Unity Editor Path: ${editorPath}`);
+            }
+
+            const unityMajorVersion = match.groups!.major;
+
+            if (!unityMajorVersion) {
+                throw Error(`Invalid Unity Major Version: ${editorPath}`);
+            }
+
+            this.version = new UnityVersion(`${match.groups!.major}.${match.groups!.minor}.${match.groups!.patch}`);
+        } else {
+            this.version = version;
         }
 
-        const unityMajorVersion = match.groups?.major;
-
-        if (!unityMajorVersion) {
-            throw Error(`Invalid Unity Major Version: ${editorPath}`);
-        }
-
-        this.autoAddNoGraphics = parseInt(unityMajorVersion, 10) > 2018;
+        this.autoAddNoGraphics = this.version.satisfies('>2018.0.0');
     }
 
     /**
