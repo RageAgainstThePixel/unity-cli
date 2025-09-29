@@ -88,7 +88,8 @@ export class UnityHub {
             `Checking for beta autoupdate feature for deb/rpm distributions`,
             `Found package-type: deb`,
             `XPC error for connection com.apple.backupd.sandbox.xpc: Connection invalid`,
-            `Error: No modules found to install.`
+            `Error: No modules found to install.`,
+            `Failed to execute the command due the following, please see '-- --headless help' for assistance.`
         ];
 
         try {
