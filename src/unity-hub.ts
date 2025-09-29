@@ -118,7 +118,7 @@ export class UnityHub {
                         }
 
                         const outputLine = outputLines.join('\n');
-                        output += outputLine;
+                        output += `${outputLine}\n`;
 
                         if (!options.silent) {
                             process.stdout.write(`${outputLine}\n`);
