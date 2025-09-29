@@ -123,8 +123,10 @@ export class UnityHub {
                         }
 
                         if (outputLine.includes(tasksComplete)) {
-                            Logger.instance.warn(`Unity Hub reported all tasks completed, terminating process...`);
-                            process.kill(child.pid!);
+                            if (child?.pid) {
+                                Logger.instance.warn(`Unity Hub reported all tasks completed, terminating process...`);
+                                process.kill(child.pid);
+                            }
                         }
                     } catch (error: any) {
                         if (error.code !== 'EPIPE') {
