@@ -87,7 +87,8 @@ export class UnityHub {
             `Failed to connect to the bus:`,
             `Checking for beta autoupdate feature for deb/rpm distributions`,
             `Found package-type: deb`,
-            `XPC error for connection com.apple.backupd.sandbox.xpc: Connection invalid`
+            `XPC error for connection com.apple.backupd.sandbox.xpc: Connection invalid`,
+            `Error: No modules found to install.`
         ];
 
         try {
@@ -116,7 +117,7 @@ export class UnityHub {
                         }
 
                         const outputLine = outputLines.join('\n');
-                        output += `${outputLine}\n`;
+                        output += outputLine;
 
                         if (!options.silent) {
                             process.stdout.write(`${outputLine}\n`);
@@ -124,7 +125,7 @@ export class UnityHub {
 
                         if (outputLine.includes(tasksComplete)) {
                             if (child?.pid) {
-                                Logger.instance.warn(`Unity Hub reported all tasks completed, terminating process...`);
+                                Logger.instance.debug(`Unity Hub reported all tasks completed, terminating process...`);
                                 process.kill(child.pid, 0);
                             }
                         }
