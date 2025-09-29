@@ -124,7 +124,7 @@ export class UnityHub {
 
                         if (outputLine.includes(tasksComplete)) {
                             Logger.instance.warn(`Unity Hub reported all tasks completed, terminating process...`);
-                            child.kill('SIGTERM');
+                            process.kill(child.pid!);
                         }
                     } catch (error: any) {
                         if (error.code !== 'EPIPE') {
