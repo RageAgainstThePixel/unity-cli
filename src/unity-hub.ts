@@ -115,14 +115,14 @@ export class UnityHub {
                             }
 
                             outputLines.push(line);
+
+                            if (!options.silent) {
+                                process.stdout.write(`${line}\n`);
+                            }
                         }
 
                         const outputLine = outputLines.join('\n');
                         output += `${outputLine}\n`;
-
-                        if (!options.silent) {
-                            process.stdout.write(`${outputLine}\n`);
-                        }
 
                         if (outputLine.includes(tasksComplete)) {
                             if (child?.pid) {
