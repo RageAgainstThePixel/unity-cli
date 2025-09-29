@@ -1,8 +1,8 @@
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
-import { ResolveGlobToPath } from './utilities';
 import { UnityVersion } from './unity-version';
+import { ResolveGlobToPath } from './utilities';
 
 export class UnityProject {
     /** The default modules to include in a new Unity project. */

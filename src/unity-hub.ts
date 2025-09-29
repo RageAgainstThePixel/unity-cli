@@ -4,6 +4,8 @@ import * as path from 'path';
 import * as yaml from 'yaml';
 import { spawn } from 'child_process';
 import { Logger, LogLevel } from './logging';
+import { UnityEditor } from './unity-editor';
+import { UnityVersion } from './unity-version';
 import {
     SemVer,
     coerce,
@@ -18,10 +20,11 @@ import {
     ReadFileContents,
     GetTempDir
 } from './utilities';
-import { UnityVersion } from './unity-version';
-import { GetUnityReleasesData, UnityRelease } from '@rage-against-the-pixel/unity-releases-api/dist/unity-releases-api/types.gen';
-import { UnityReleasesClient } from '@rage-against-the-pixel/unity-releases-api/dist/client';
-import { UnityEditor } from './unity-editor';
+import {
+    UnityReleasesClient,
+    GetUnityReleasesData,
+    UnityRelease
+} from '@rage-against-the-pixel/unity-releases-api';
 
 export class UnityHub {
     /** The path to the Unity Hub executable. */
@@ -119,8 +122,11 @@ export class UnityHub {
                             process.stdout.write(`${outputLine}\n`);
                         }
 
-                        if (output.includes(tasksComplete)) {
-                            child.kill('SIGTERM');
+                        if (outputLine.includes(tasksComplete)) {
+                            if (child?.pid) {
+                                Logger.instance.warn(`Unity Hub reported all tasks completed, terminating process...`);
+                                process.kill(child.pid, 0);
+                            }
                         }
                     } catch (error: any) {
                         if (error.code !== 'EPIPE') {

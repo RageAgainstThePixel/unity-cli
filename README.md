@@ -54,8 +54,10 @@ unity-cli activate-license --email <your-email> --password <your-password> --ser
 
 #### Create a New Project from a Template
 
+> [!NOTE] Regex patterns are supported for the `--template` option. For example, to create a 3D project with either the standard or cross-platform template, you can use `com.unity.template.3d(-cross-platform)?`.
+
 ```bash
-unity-cli create-project --name "MyGame" --template com.unity.template.3d --unity-editor <path-to-editor>
+unity-cli create-project --name "MyGame" --template com.unity.template.3d(-cross-platform)? --unity-editor <path-to-editor>
 ```
 
 #### Build a Project
