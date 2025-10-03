@@ -95,7 +95,8 @@ export class UnityHub {
             'Invalid key: The GraphQL query at the field at',
             'You have to request `id` or `_id` fields for all selection sets or create a custom `keys` config for `UnityReleaseLabel`.',
             'Entities without keys will be embedded directly on the parent entity. If this is intentional, create a `keys` config for `UnityReleaseLabel` that always returns null.',
-            'https://bit.ly/2XbVrpR#15'
+            'https://bit.ly/2XbVrpR#15',
+            'Interaction is not allowed with the Security Server." (-25308)'
         ];
 
         try {
@@ -453,24 +454,32 @@ chmod -R 777 "$hubPath"`]);
         ];
 
         this.logger.ci(`Getting release info for Unity ${unityVersion.toString()}...`);
-        let editorPath = await this.checkInstalledEditors(unityVersion, false);
+        let resolvedVersion = unityVersion;
 
-        // attempt to resolve the full version with the changeset if we don't have one already
-        if (!unityVersion.isLegacy() && !editorPath && !unityVersion.changeset) {
+        if (!resolvedVersion.isLegacy()) {
             try {
-                const releases = await this.getLatestHubReleases();
-                unityVersion = unityVersion.findMatch(releases);
-                const unityReleaseInfo: UnityRelease = await this.getEditorReleaseInfo(unityVersion);
-                unityVersion = new UnityVersion(unityReleaseInfo.version, unityReleaseInfo.shortRevision, unityVersion.architecture);
+                if (!resolvedVersion.isFullyQualified()) {
+                    const releases = await this.getLatestHubReleases();
+                    resolvedVersion = resolvedVersion.findMatch(releases);
+                }
+
+                if (!resolvedVersion.changeset) {
+                    const unityReleaseInfo: UnityRelease = await this.getEditorReleaseInfo(resolvedVersion);
+                    resolvedVersion = new UnityVersion(unityReleaseInfo.version, unityReleaseInfo.shortRevision, resolvedVersion.architecture);
+                }
             } catch (error) {
-                this.logger.warn(`Failed to get Unity release info for ${unityVersion.toString()}! falling back to legacy search...\n${error}`);
+                this.logger.warn(`Failed to get Unity release info for ${resolvedVersion.toString()}! falling back to legacy search...\n${error}`);
                 try {
-                    unityVersion = await this.fallbackVersionLookup(unityVersion);
+                    resolvedVersion = await this.fallbackVersionLookup(resolvedVersion);
                 } catch (fallbackError) {
-                    this.logger.warn(`Failed to lookup changeset for Unity ${unityVersion.toString()}!\n${fallbackError}`);
+                    this.logger.warn(`Failed to lookup changeset for Unity ${resolvedVersion.toString()}!\n${fallbackError}`);
                 }
             }
         }
+
+        const allowPartialMatches = !resolvedVersion.isFullyQualified();
+        let editorPath = await this.checkInstalledEditors(resolvedVersion, false, undefined, allowPartialMatches);
+        unityVersion = resolvedVersion;
 
         let installPath: string | undefined = undefined;
 
@@ -546,7 +555,23 @@ chmod -R 777 "$hubPath"`]);
             .map(line => line.trim());
     }
 
-    private async checkInstalledEditors(unityVersion: UnityVersion, failOnEmpty: boolean, installPath: string | undefined = undefined): Promise<string | undefined> {
+    /**
+     * Lists the available Unity releases.
+     * @returns A list of available Unity release versions.
+     */
+    public async ListAvailableReleases(): Promise<string[]> {
+        const output = await this.Exec(['editors', '--releases']);
+        return output.split('\n')
+            .filter(line => line.trim().length > 0)
+            .map(line => line.trim());
+    }
+
+    private async checkInstalledEditors(
+        unityVersion: UnityVersion,
+        failOnEmpty: boolean,
+        installPath: string | undefined = undefined,
+        allowPartialMatches: boolean = true
+    ): Promise<string | undefined> {
         let editorPath = undefined;
 
         if (!installPath) {
@@ -565,7 +590,7 @@ chmod -R 777 "$hubPath"`]);
 
                 if (exactMatch) {
                     editorPath = exactMatch.groups!.editorPath;
-                } else {
+                } else if (allowPartialMatches) {
                     // Fallback: semver satisfies
                     const versionMatches = matches.filter(match => match?.groups?.version && unityVersion.satisfies(match.groups.version));
 
@@ -578,21 +603,32 @@ chmod -R 777 "$hubPath"`]);
                         'X86_64': 'Intel',
                     };
 
-                    for (const match of versionMatches) {
-                        if (!match || !match.groups || !match.groups.version || !match.groups.editorPath) {
+                    const sortedMatches = versionMatches
+                        .map(match => ({
+                            match: match!,
+                            parsed: new UnityVersion(match!.groups!.version!, null, undefined)
+                        }))
+                        .sort((a, b) => UnityVersion.compare(b.parsed, a.parsed));
+
+                    for (const candidate of sortedMatches) {
+                        const match = candidate.match;
+                        if (!match.groups || !match.groups.version || !match.groups.editorPath) {
                             continue;
                         }
-                        // If no architecture is set, or no arch in match, accept the version match
+
                         if (!unityVersion.architecture || !match.groups.arch) {
                             editorPath = match.groups.editorPath;
+                            break;
                         }
-                        // If architecture is set and present in match, check for match
-                        else if (archMap[unityVersion.architecture] === match.groups.arch) {
+
+                        if (archMap[unityVersion.architecture] === match.groups.arch) {
                             editorPath = match.groups.editorPath;
+                            break;
                         }
-                        // Fallback: check if editorPath includes architecture string (case-insensitive)
-                        else if (unityVersion.architecture && match.groups.editorPath.toLowerCase().includes(`-${unityVersion.architecture.toLowerCase()}`)) {
+
+                        if (unityVersion.architecture && match.groups.editorPath.toLowerCase().includes(`-${unityVersion.architecture.toLowerCase()}`)) {
                             editorPath = match.groups.editorPath;
+                            break;
                         }
                     }
                 }
