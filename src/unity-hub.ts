@@ -83,15 +83,19 @@ export class UnityHub {
         }
 
         const ignoredLines = [
-            `This error originated either by throwing inside of an async function without a catch block`,
-            `Unexpected error attempting to determine if executable file exists`,
-            `dri3 extension not supported`,
-            `Failed to connect to the bus:`,
-            `Checking for beta autoupdate feature for deb/rpm distributions`,
-            `Found package-type: deb`,
-            `XPC error for connection com.apple.backupd.sandbox.xpc: Connection invalid`,
-            `Error: No modules found to install.`,
-            `Failed to execute the command due the following, please see '-- --headless help' for assistance.`
+            'This error originated either by throwing inside of an async function without a catch block',
+            'Unexpected error attempting to determine if executable file exists',
+            'dri3 extension not supported',
+            'Failed to connect to the bus:',
+            'Checking for beta autoupdate feature for deb/rpm distributions',
+            'Found package-type: deb',
+            'XPC error for connection com.apple.backupd.sandbox.xpc: Connection invalid',
+            'Error: No modules found to install.',
+            'Failed to execute the command due the following, please see \'-- --headless help\' for assistance.',
+            'Invalid key: The GraphQL query at the field at',
+            'You have to request `id` or `_id` fields for all selection sets or create a custom `keys` config for `UnityReleaseLabel`.',
+            'Entities without keys will be embedded directly on the parent entity. If this is intentional, create a `keys` config for `UnityReleaseLabel` that always returns null.',
+            'https://bit.ly/2XbVrpR#15'
         ];
 
         try {
