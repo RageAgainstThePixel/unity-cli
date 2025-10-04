@@ -327,116 +327,82 @@ export interface LogTailResult {
  */
 export function tailLogFile(logPath: string): LogTailResult {
     let logEnded = false;
-    let lastPosition = 0;
-    let logWatcher: fs.FSWatcher | null = null;
-    let logStream: fs.ReadStream | null = null;
+    let lastSize = 0;
+    const logPollingInterval = 250;
 
-    function cleanup(): void {
+    const readNewLogContent = () => {
         try {
-            if (logWatcher) {
-                logWatcher.close();
-                logWatcher = null;
+            const stats = fs.statSync(logPath);
+
+            if (stats.size < lastSize) {
+                lastSize = 0;
+            }
+
+            if (stats.size > lastSize) {
+                const bytesToRead = stats.size - lastSize;
+                const buffer = Buffer.alloc(bytesToRead);
+                let fd: number | null = null;
+
+                try {
+                    fd = fs.openSync(logPath, 'r');
+                    fs.readSync(fd, buffer, 0, bytesToRead, lastSize);
+                } finally {
+                    if (fd !== null) {
+                        try {
+                            fs.closeSync(fd);
+                        } catch (error) {
+                            logger.debug(`Failed to close log file descriptor: ${error}`);
+                        }
+                    }
+                }
+
+                lastSize = stats.size;
+
+                if (bytesToRead > 0) {
+                    const chunk = buffer.toString('utf8');
+
+                    try {
+                        process.stdout.write(chunk);
+                    } catch (error: any) {
+                        if (error.code !== 'EPIPE') {
+                            logger.error(`Error writing log output: ${error}`);
+                        }
+                    }
+                }
             }
         } catch (error) {
-            logger.error(`Failed to close log watcher: ${error}`);
+            // Ignore errors while polling unless tailing has been intentionally ended
+            if (!logEnded) {
+                logger.debug(`Error while polling log file: ${error}`);
+            }
+        }
+    };
+
+    const promise = (async () => {
+        while (!logEnded) {
+            readNewLogContent();
+            await delay(logPollingInterval);
         }
 
+        // Final read to capture any remaining content after tailing stops
+        readNewLogContent();
+
         try {
-            if (logStream) {
-                logStream.destroy();
-                logStream = null;
+            process.stdout.write('\n');
+        } catch (error: any) {
+            if (error.code !== 'EPIPE') {
+                logger.error(`Error writing final newline: ${error}`);
             }
-        } catch (error) {
-            logger.error(`Failed to destroy log stream: ${error}`);
         }
-    }
+    })();
 
     function signalEnd(): void {
         logEnded = true;
     }
 
-    const promise = new Promise<void>((resolve, reject) => {
-        const checkAndReadLog = () => {
-            if (logEnded) { return; }
-
-            try {
-                const stats = fs.statSync(logPath);
-                if (stats.size > lastPosition) {
-                    // Create a read stream from the last position
-                    logStream = fs.createReadStream(logPath, {
-                        start: lastPosition,
-                        encoding: 'utf8'
-                    });
-
-                    logStream.on('data', (chunk: string | Buffer) => {
-                        try {
-                            process.stdout.write(chunk);
-                        } catch (error: any) {
-                            // Handle EPIPE errors when parent process dies
-                            if (error.code !== 'EPIPE') {
-                                logger.error(`Error writing log output: ${error}`);
-                            }
-                        }
-                    });
-
-                    logStream.on('end', () => {
-                        lastPosition = stats.size;
-                        logStream = null;
-                    });
-
-                    logStream.on('error', (error) => {
-                        logger.error(`Error reading log stream: ${error}`);
-                        logStream = null;
-                    });
-                }
-            } catch (error) {
-                if (!logEnded) {
-                    logger.error(`Error checking log file: ${error}`);
-                }
-            }
-        };
-
-        // Initial read
-        checkAndReadLog();
-
-        // Watch for file changes using fs.watch
-        try {
-            logWatcher = fs.watch(logPath, (eventType) => {
-                if (eventType === 'change') {
-                    checkAndReadLog();
-                }
-            });
-
-            logWatcher.on('error', (error) => {
-                if (!logEnded) {
-                    logger.error(`Log watcher error: ${error}`);
-                }
-            });
-        } catch (error) {
-            logger.error(`Failed to watch log file: ${error}`);
-            reject(error);
-            return;
-        }
-
-        // Resolve when log tailing completes
-        const checkCompletion = setInterval(() => {
-            if (logEnded) {
-                clearInterval(checkCompletion);
-                // Do one final read to catch any remaining content
-                checkAndReadLog();
-                setTimeout(() => {
-                    try {
-                        process.stdout.write('\n');
-                    } catch (error: any) {
-                        if (error.code !== 'EPIPE') {
-                            logger.error(`Error writing final newline: ${error}`);
-                        }
-                    }
-                    resolve();
-                }, 1000); // Allow 1 second for final writes
-            }
-        }, 100);
-    });
+    function cleanup(): void {
+        logEnded = true;
+    }
 
     return { promise, signalEnd, cleanup };
 }
@@ -446,88 +412,24 @@ export function tailLogFile(logPath: string): LogTailResult {
  * @param filePath The path of the file to wait for.
  * @param timeout The maximum time to wait in milliseconds. Default is 30000 (30 seconds).
  */
-export function waitForFileToBeCreatedAndReadable(filePath: string, timeout: number = 30000): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-        // Quick path: if the file already exists and is readable, resolve immediately
+export async function waitForFileToBeCreatedAndReadable(filePath: string, timeout: number = 30000): Promise<void> {
+    const pollInterval = 100;
+    const deadline = Date.now() + timeout;
+
+    while (Date.now() <= deadline) {
         try {
             if (fs.existsSync(filePath)) {
                 fs.accessSync(filePath, fs.constants.R_OK);
-                resolve();
                 return;
             }
         } catch (error) {
-            // fall through to watcher if file exists but not yet readable
+            // File exists but not yet readable; keep polling until timeout expires
         }
 
-        const dir = path.dirname(filePath);
+        await delay(pollInterval);
+    }
 
-        // Find an existing directory to watch. If none found, reject immediately.
-        let watchDir = dir;
-        while (watchDir && !fs.existsSync(watchDir)) {
-            const parent = path.dirname(watchDir);
-            if (parent === watchDir) { // reached filesystem root
-                break;
-            }
-            watchDir = parent;
-        }
-
-        if (!watchDir || !fs.existsSync(watchDir)) {
-            reject(new Error(`Directory to watch does not exist for file: ${filePath}`));
-            return;
-        }
-
-        let watcher: fs.FSWatcher | null = null;
-        const timer = setTimeout(() => {
-            if (watcher) {
-                try { watcher.close(); } catch { }
-            }
-            reject(new Error(`Timed out waiting for file to become readable: ${filePath}`));
-        }, timeout);
-
-        const checkFile = () => {
-            try {
-                if (fs.existsSync(filePath)) {
-                    fs.accessSync(filePath, fs.constants.R_OK);
-                    clearTimeout(timer);
-                    if (watcher) { try { watcher.close(); } catch { } }
-                    resolve();
-                    return true;
-                }
-            } catch (err) {
-                // not readable yet
-            }
-            return false;
-        };
-
-        try {
-            watcher = fs.watch(watchDir, (eventType, filename) => {
-                try {
-                    // If filename is provided, only react to matching base name; otherwise re-check
-                    if (!filename || filename === path.basename(filePath)) {
-                        checkFile();
-                    }
-                } catch (err) {
-                    clearTimeout(timer);
-                    if (watcher) { try { watcher.close(); } catch { } }
-                    reject(err);
-                }
-            });
-
-            watcher.on('error', (err) => {
-                clearTimeout(timer);
-                if (watcher) { try { watcher.close(); } catch { } }
-                reject(err);
-            });
-
-            // As a safety, perform a check once after watcher is established in case
-            // file appeared between the initial check and watcher creation.
-            setImmediate(() => { checkFile(); });
-        } catch (err) {
-            clearTimeout(timer);
-            if (watcher) { try { watcher.close(); } catch { } }
-            reject(err);
-        }
-    });
+    throw new Error(`Timed out waiting for file to become readable: ${filePath}`);
 }
 
 /**
@@ -539,118 +441,49 @@ export function waitForFileToBeCreatedAndReadable(filePath: string, timeout: num
  * @param timeout The maximum time to wait in milliseconds. Default is 30000 (30 seconds).
  * @returns A promise that resolves when the file is unlocked.
  */
-export function waitForFileToBeUnlocked(filePath: string, flags: number = fs.constants.O_RDWR, timeout: number = 30000): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
+export async function waitForFileToBeUnlocked(filePath: string, flags: number = fs.constants.O_RDWR, timeout: number = 30000): Promise<void> {
+    const pollInterval = 100;
+    const deadline = Date.now() + timeout;
+
+    const tryOpen = (): boolean => {
         try {
-            // If file doesn't exist, treat as unlocked
+            const fd = fs.openSync(filePath, flags);
+            try {
+                fs.closeSync(fd);
+            } catch {
+                // ignore close errors
+            }
+            return true;
+        } catch (error: any) {
+            const code = error && error.code ? error.code : null;
+            if (code === 'EACCES' || code === 'EPERM' || code === 'EBUSY' || code === 'ETXTBSY') {
+                return false;
+            }
+            throw error;
+        }
+    };
+
+    while (Date.now() <= deadline) {
+        try {
             if (!fs.existsSync(filePath)) {
-                resolve();
                 return;
             }
         } catch (error) {
-            // proceed to watcher if exists check fails
+            // If exists check fails unexpectedly, continue polling until timeout or success
         }
-
-        const tryOpen = (): boolean => {
-            try {
-                // Try opening read/write. If it succeeds, file isn't exclusively locked.
-                const fd = fs.openSync(filePath, flags);
-                try {
-                    fs.closeSync(fd);
-                } catch {
-                    // ignore
-                }
-                return true;
-            } catch (error: any) {
-                // On Windows, exclusive locks commonly surface as EBUSY, EPERM or EACCES
-                // On POSIX, ETXTBSY or EBUSY may appear. Treat these as locked and retry.
-                const code = error && error.code ? error.code : null;
-                if (code === 'EACCES' || code === 'EPERM' || code === 'EBUSY' || code === 'ETXTBSY') {
-                    return false;
-                }
-                // For other errors (ENOENT etc) rethrow
-                throw error;
-            }
-        };
 
         try {
             if (tryOpen()) {
-                resolve();
                 return;
             }
         } catch (error) {
-            // If opening failed with unexpected error, reject
-            reject(error);
-            return;
+            throw error;
         }
 
-        const dir = path.dirname(filePath);
-        let watchDir = dir;
+        await delay(pollInterval);
+    }
 
-        while (watchDir && !fs.existsSync(watchDir)) {
-            const parent = path.dirname(watchDir);
-            if (parent === watchDir) { break; }
-            watchDir = parent;
-        }
-
-        if (!watchDir || !fs.existsSync(watchDir)) {
-            reject(new Error(`Directory to watch does not exist for file: ${filePath}`));
-            return;
-        }
-
-        let watcher: fs.FSWatcher | null = null;
-        const closeWatcher = () => {
-            if (watcher) {
-                try { watcher.close(); } catch { }
-                watcher = null;
-            }
-        };
-        const timer = setTimeout(() => {
-            closeWatcher();
-            reject(new Error(`Timed out waiting for file to be unlocked: ${filePath}`));
-        }, timeout);
-        const checkAndResolve = () => {
-            try {
-                if (tryOpen()) {
-                    clearTimeout(timer);
-                    closeWatcher();
-                    resolve();
-                }
-            } catch (error) {
-                clearTimeout(timer);
-                closeWatcher();
-                reject(error);
-            }
-        };
-
-        try {
-            watcher = fs.watch(watchDir, (eventType, filename) => {
-                try {
-                    if (!filename ||
-                        filename === path.basename(filePath)) {
-                        checkAndResolve();
-                    }
-                } catch (error) {
-                    clearTimeout(timer);
-                    closeWatcher();
-                    reject(error);
-                }
-            });
-
-            watcher.on('error', (error) => {
-                clearTimeout(timer);
-                closeWatcher();
-                reject(error);
-            });
-
-            // Safety re-check in case file unlocked between initial try and watcher creation
-            setImmediate(() => checkAndResolve());
-        } catch (error) {
-            clearTimeout(timer);
-            closeWatcher();
-            reject(error);
-        }
-    });
+    throw new Error(`Timed out waiting for file to be unlocked: ${filePath}`);
 }
 
 /**
