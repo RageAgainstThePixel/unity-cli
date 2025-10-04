@@ -46,8 +46,12 @@ jobs:
             shift
             tmpfile=$(mktemp 2>/dev/null || echo "${RUNNER_TEMP}/${name}_output.txt")
             set +e
-            # Run the command and tee its output to the tmpfile so logs appear in real time.
-            "$@" | tee "$tmpfile"
+            # Run the command and tee both stdout/stderr to the tmpfile so logs
+            # appear in real time and any JSON printed on stderr is captured.
+            "$@" 2>&1 | tee "$tmpfile"
+            # Capture the exit code of the command on the left side of the pipe
+            # (PIPESTATUS is a bash-only array available here because the
+            # workflow step uses bash as its shell).
             rc=${PIPESTATUS[0]}
             set -e
             if [ "$rc" -ne 0 ]; then
@@ -56,9 +60,15 @@ jobs:
               rm -f "$tmpfile"
               exit $rc
             fi
-            # Export the full captured output to a shell variable named CAPTURE_<NAME>
-            # so callers in this step can access it directly if needed.
-            export "CAPTURE_${name}"="$(cat "$tmpfile")"
+            # Make a safe environment variable name: uppercase and replace
+            # non-alphanumeric characters with underscores so export doesn't fail
+            # (e.g. names with dashes). This becomes CAPTURE_<SAFE_NAME>.
+            capname=$(echo "$name" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9_]/_/g')
+            # Shell variables can't start with a digit; prefix an underscore if needed.
+            case "$capname" in
+              [0-9]*) capname="_${capname}" ;;
+            esac
+            export "CAPTURE_${capname}"="$(cat "$tmpfile")"
             # Print the tmpfile path so callers can capture and parse it (e.g. with jq).
             printf '%s' "$tmpfile"
           }
