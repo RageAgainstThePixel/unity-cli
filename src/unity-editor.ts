@@ -128,7 +128,7 @@ export class UnityEditor {
         let isCancelled = false;
         const onCancel = async () => {
             isCancelled = true;
-            await this.tryKillEditorProcess();
+            await this.tryKillEditorProcesses();
         };
 
         let exitCode: number | undefined;
@@ -149,11 +149,14 @@ export class UnityEditor {
         } finally {
             process.removeListener('SIGINT', onCancel);
             process.removeListener('SIGTERM', onCancel);
-            await this.tryKillEditorProcess();
             this.logger.endGroup();
 
-            if (!isCancelled && exitCode !== 0) {
-                throw Error(`Unity failed with exit code ${exitCode}`);
+            if (!isCancelled) {
+                await this.tryKillEditorProcesses();
+
+                if (exitCode !== 0) {
+                    throw Error(`Unity failed with exit code ${exitCode}`);
+                }
             }
         }
     }
@@ -310,7 +313,7 @@ export class UnityEditor {
         return exitCode;
     }
 
-    private async tryKillEditorProcess(): Promise<void> {
+    private async tryKillEditorProcesses(): Promise<void> {
         try {
             if (this.procInfo) {
                 const proc = this.procInfo;

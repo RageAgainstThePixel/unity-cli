@@ -267,6 +267,48 @@ export interface ProcInfo {
     name: string;
 }
 
+
+/**
+ * Reads a PID file and returns the process information.
+ * @param pidFilePath The path to the PID file.
+ * @returns The process information, or undefined if the file does not exist or cannot be read.
+ * @remarks The PID file is deleted after reading.
+ */
+export async function ReadPidFile(pidFilePath: string): Promise<ProcInfo | undefined> {
+    let procInfo: ProcInfo | undefined;
+    try {
+        if (!fs.existsSync(pidFilePath)) {
+            logger.debug(`PID file does not exist: ${pidFilePath}`);
+            return procInfo;
+        }
+
+        const fileHandle = await fs.promises.open(pidFilePath, 'r');
+        try {
+            const pid = parseInt(await fileHandle.readFile('utf8'));
+
+            if (isNaN(pid)) {
+                logger.error(`Invalid PID in file: ${pidFilePath}`);
+                return procInfo;
+            }
+
+            procInfo = { pid, ppid: 0, name: '' };
+        } catch (error) {
+            logger.error(`Failed to read PID file: ${pidFilePath}\n${error}`);
+        } finally {
+            await fileHandle.close();
+            await fs.promises.unlink(pidFilePath);
+        }
+    } catch (error) {
+        // ignored
+    }
+
+    return procInfo;
+}
+
+async function delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 /**
  * Attempts to kill a process with the given ProcInfo.
  * Escalates to SIGKILL or taskkill if the process does not exit after 5 seconds.
@@ -320,53 +362,12 @@ export async function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = '
     }
 }
 
-async function delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/**
- * Reads a PID file and returns the process information.
- * @param pidFilePath The path to the PID file.
- * @returns The process information, or undefined if the file does not exist or cannot be read.
- * @remarks The PID file is deleted after reading.
- */
-export async function ReadPidFile(pidFilePath: string): Promise<ProcInfo | undefined> {
-    let procInfo: ProcInfo | undefined;
-    try {
-        if (!fs.existsSync(pidFilePath)) {
-            logger.debug(`PID file does not exist: ${pidFilePath}`);
-            return procInfo;
-        }
-
-        const fileHandle = await fs.promises.open(pidFilePath, 'r');
-        try {
-            const pid = parseInt(await fileHandle.readFile('utf8'));
-
-            if (isNaN(pid)) {
-                logger.error(`Invalid PID in file: ${pidFilePath}`);
-                return procInfo;
-            }
-
-            procInfo = { pid, ppid: 0, name: '' };
-        } catch (error) {
-            logger.error(`Failed to read PID file: ${pidFilePath}\n${error}`);
-        } finally {
-            await fileHandle.close();
-            await fs.promises.unlink(pidFilePath);
-        }
-    } catch (error) {
-        // ignored
-    }
-
-    return procInfo;
-}
-
 /**
  * Kills all child processes of the given process.
  * @param procInfo The process information of the parent process.
  */
 export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
-    logger.info(`Killing child processes of [${procInfo.pid}] ${procInfo.name}...`);
+    logger.debug(`Killing child processes of [${procInfo.pid}] ${procInfo.name}...`);
     try {
         if (process.platform === 'win32') {
             const command = `Get-CimInstance Win32_Process -Filter "ParentProcessId=${procInfo.pid}" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
