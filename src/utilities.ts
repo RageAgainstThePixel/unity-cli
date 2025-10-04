@@ -110,7 +110,9 @@ export async function Exec(command: string, args: string[], options: ExecOptions
                 try {
                     const chunk = data.toString();
                     const fullChunk = lineBuffer + chunk;
-                    const lines = fullChunk.split('\n');
+                    const lines = fullChunk.split('\n') // split by newline
+                        .map(line => line.replace(/\r$/, '')) // remove trailing carriage return
+                        .filter(line => line.length > 0); // filter out empty lines
 
                     if (!chunk.endsWith('\n')) {
                         lineBuffer = lines.pop() || '';
@@ -143,10 +145,16 @@ export async function Exec(command: string, args: string[], options: ExecOptions
 
                 // Flush any remaining buffered content
                 if (lineBuffer.length > 0) {
-                    output += `${lineBuffer}\n`;
+                    const lines = lineBuffer.split('\n') // split by newline
+                        .map(line => line.replace(/\r$/, '')) // remove trailing carriage return
+                        .filter(line => line.length > 0); // filter out empty lines
 
-                    if (!isSilent) {
-                        process.stdout.write(`${lineBuffer}\n`);
+                    for (const line of lines) {
+                        output += `${line}\n`;
+
+                        if (!isSilent) {
+                            process.stdout.write(`${line}\n`);
+                        }
                     }
                 }
 

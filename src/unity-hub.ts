@@ -129,7 +129,9 @@ export class UnityHub {
                     try {
                         const chunk = data.toString();
                         const fullChunk = lineBuffer + chunk;
-                        const lines = fullChunk.split('\n');
+                        const lines = fullChunk.split('\n') // split by newline
+                            .map(line => line.replace(/\r$/, '')) // remove trailing carriage return
+                            .filter(line => line.length > 0); // filter out empty lines
 
                         if (!chunk.endsWith('\n')) {
                             lineBuffer = lines.pop() || '';
@@ -137,7 +139,7 @@ export class UnityHub {
                             lineBuffer = '';
                         }
 
-                        const outputLines = lines.filter(line => line.length > 0 && !ignoredLines.some(ignored => line.includes(ignored)));
+                        const outputLines = lines.filter(line => !ignoredLines.some(ignored => line.includes(ignored)));
 
                         if (outputLines.includes(tasksCompleteMessage)) {
                             tasksComplete = true;
@@ -171,8 +173,10 @@ export class UnityHub {
 
                     // Flush any remaining buffered content
                     if (lineBuffer.length > 0) {
-                        const lines = lineBuffer.split('\n');
-                        const outputLines = lines.filter(line => line.length > 0 && !ignoredLines.some(ignored => line.includes(ignored)));
+                        const lines = lineBuffer.split('\n') // split by newline
+                            .map(line => line.replace(/\r$/, '')) // remove trailing carriage return
+                            .filter(line => line.length > 0); // filter out empty lines
+                        const outputLines = lines.filter(line => !ignoredLines.some(ignored => line.includes(ignored)));
 
                         if (outputLines.includes(tasksCompleteMessage)) {
                             tasksComplete = true;
