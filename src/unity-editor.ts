@@ -128,13 +128,13 @@ export class UnityEditor {
         let isCancelled = false;
         const onCancel = async () => {
             isCancelled = true;
-            this.tryKillEditorProcess();
+            await this.tryKillEditorProcess();
         };
 
-        process.once('SIGINT', onCancel);
-        process.once('SIGTERM', onCancel);
         let exitCode: number | undefined;
         try {
+            process.once('SIGINT', onCancel);
+            process.once('SIGTERM', onCancel);
             const commandStr = `\x1b[34m${this.editorPath} ${command.args.join(' ')}\x1b[0m`;
             this.logger.startGroup(commandStr);
             exitCode = await this.exec(command, pInfo => { this.procInfo = pInfo; });
@@ -149,14 +149,11 @@ export class UnityEditor {
         } finally {
             process.removeListener('SIGINT', onCancel);
             process.removeListener('SIGTERM', onCancel);
+            await this.tryKillEditorProcess();
             this.logger.endGroup();
 
-            if (!isCancelled) {
-                this.tryKillEditorProcess();
-
-                if (exitCode !== 0) {
-                    throw Error(`Unity failed with exit code ${exitCode}`);
-                }
+            if (!isCancelled && exitCode !== 0) {
+                throw Error(`Unity failed with exit code ${exitCode}`);
             }
         }
     }
@@ -313,14 +310,17 @@ export class UnityEditor {
         return exitCode;
     }
 
-    private tryKillEditorProcess(): void {
-        if (this.procInfo) {
-            const proc = this.procInfo;
-            KillProcess(proc).then(() => {
-                KillChildProcesses(proc);
-            });
-        } else {
-            this.logger.debug('No Unity process info available to kill.');
+    private async tryKillEditorProcess(): Promise<void> {
+        try {
+            if (this.procInfo) {
+                const proc = this.procInfo;
+                await KillProcess(proc);
+                await KillChildProcesses(proc);
+            } else {
+                this.logger.debug('No Unity process info available to kill.');
+            }
+        } catch (error) {
+            this.logger.error(`Failed to kill Unity process: ${error}`);
         }
     }
 

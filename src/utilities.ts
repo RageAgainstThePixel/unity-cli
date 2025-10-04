@@ -275,14 +275,14 @@ export interface ProcInfo {
  */
 export async function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = 'SIGTERM'): Promise<void> {
     try {
-        logger.info(`Killing process [${procInfo.pid}] ${procInfo.name}...`);
+        logger.debug(`Killing process [${procInfo.pid}] ${procInfo.name}...`);
         process.kill(procInfo.pid, signal);
 
         // Immediately check if the process has exited
         try {
             process.kill(procInfo.pid, 0);
         } catch {
-            logger.info(`Process [${procInfo.pid}] ${procInfo.name} has exited successfully.`);
+            logger.debug(`Process [${procInfo.pid}] ${procInfo.name} has exited successfully.`);
             return; // Process has exited
         }
 
@@ -292,12 +292,12 @@ export async function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = '
             // Check if the process is still running
             process.kill(procInfo.pid, 0);
         } catch {
-            logger.info(`Process [${procInfo.pid}] ${procInfo.name} has exited successfully.`);
+            logger.debug(`Process [${procInfo.pid}] ${procInfo.name} has exited successfully.`);
             return; // Process has exited
         }
 
-        // If the process is still running, escalate to SIGKILL or taskkill
-        logger.info(`Process [${procInfo.pid}] ${procInfo.name} did not exit after ${signal}, attempting to force kill...`);
+        // If the process is still running, escalate to SIGKILL or taskkill to force quit.
+        logger.debug(`Process [${procInfo.pid}] ${procInfo.name} did not exit after ${signal}, attempting to force quit...`);
 
         try {
             if (process.platform === 'win32') {
@@ -320,7 +320,7 @@ export async function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = '
     }
 }
 
-async function delay(ms: number) {
+async function delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
