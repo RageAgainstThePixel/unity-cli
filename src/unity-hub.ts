@@ -20,7 +20,7 @@ import {
     ReadFileContents,
     GetTempDir,
     KillChildProcesses,
-    TryKillProcess
+    KillProcess,
 } from './utilities';
 import {
     UnityReleasesClient,
@@ -111,54 +111,49 @@ export class UnityHub {
                 const sigtermHandler = () => child.kill('SIGTERM');
                 process.once('SIGINT', sigintHandler);
                 process.once('SIGTERM', sigtermHandler);
+
+                let hasCleanedUpListeners = false;
                 function removeListeners() {
+                    if (hasCleanedUpListeners) { return; }
+                    hasCleanedUpListeners = true;
                     process.removeListener('SIGINT', sigintHandler);
                     process.removeListener('SIGTERM', sigtermHandler);
+
+                    if (child?.pid) {
+                        KillChildProcesses({ pid: child.pid, name: child.spawnfile, ppid: process.pid });
+                    }
                 }
-                let forceCloseTimeout: NodeJS.Timeout | undefined;
+
+                let lineBuffer = ''; // Buffer for incomplete lines
                 function processOutput(data: Buffer) {
                     try {
                         const chunk = data.toString();
-                        let outputLines: string[] = [];
-                        const lines = chunk.split('\n');
+                        const fullChunk = lineBuffer + chunk;
+                        const lines = fullChunk.split('\n') // split by newline
+                            .map(line => line.replace(/\r$/, '')) // remove trailing carriage return
+                            .filter(line => line.length > 0); // filter out empty lines
 
-                        for (const line of lines) {
-                            if (line.trim().length === 0 ||
-                                ignoredLines.some(ignored => line.includes(ignored))) {
-                                continue;
-                            }
-
-                            outputLines.push(line);
-
-                            if (!options.silent) {
-                                process.stdout.write(`${line}\n`);
-                            }
+                        if (!chunk.endsWith('\n')) {
+                            lineBuffer = lines.pop() || '';
+                        } else {
+                            lineBuffer = '';
                         }
 
-                        const outputLine = outputLines.join('\n');
-                        output += `${outputLine}\n`;
+                        const outputLines = lines.filter(line => !ignoredLines.some(ignored => line.includes(ignored)));
 
-                        if (outputLine.includes(tasksCompleteMessage)) {
+                        if (outputLines.includes(tasksCompleteMessage)) {
                             tasksComplete = true;
 
                             if (child?.pid) {
-                                Logger.instance.debug(`Unity Hub reported all tasks completed, terminating process...`);
-                                const childProcInfo = { pid: child.pid, name: child.spawnfile, ppid: process.pid };
-                                KillChildProcesses(childProcInfo).then(async () => {
-                                    const killedPid = await TryKillProcess(childProcInfo, 'SIGTERM');
+                                KillProcess({ pid: child.pid, name: child.spawnfile, ppid: process.pid });
+                            }
+                        }
 
-                                    if (!killedPid) {
-                                        Logger.instance.error(`Failed to terminate Unity Hub process!`);
-                                    }
+                        for (const line of outputLines) {
+                            output += `${line}\n`;
 
-                                    // In case the process doesn't close itself, force kill after 5 seconds
-                                    forceCloseTimeout = setTimeout(() => {
-                                        Logger.instance.info(`Force closing Unity Hub process after timeout...`);
-                                        TryKillProcess(childProcInfo, 'SIGKILL');
-                                        removeListeners();
-                                        resolve(0);
-                                    }, 5000);
-                                });
+                            if (!options.silent) {
+                                process.stdout.write(`${line}\n`);
                             }
                         }
                     } catch (error: any) {
@@ -170,19 +165,31 @@ export class UnityHub {
                 child.stdout.on('data', processOutput);
                 child.stderr.on('data', processOutput);
                 child.on('error', (error) => {
-                    if (forceCloseTimeout) {
-                        clearTimeout(forceCloseTimeout);
-                    }
-
                     removeListeners();
                     reject(error);
                 });
                 child.on('close', (code) => {
-                    if (forceCloseTimeout) {
-                        clearTimeout(forceCloseTimeout);
-                    }
-
                     removeListeners();
+
+                    // Flush any remaining buffered content
+                    if (lineBuffer.length > 0) {
+                        const lines = lineBuffer.split('\n') // split by newline
+                            .map(line => line.replace(/\r$/, '')) // remove trailing carriage return
+                            .filter(line => line.length > 0); // filter out empty lines
+                        const outputLines = lines.filter(line => !ignoredLines.some(ignored => line.includes(ignored)));
+
+                        if (outputLines.includes(tasksCompleteMessage)) {
+                            tasksComplete = true;
+                        }
+
+                        for (const line of outputLines) {
+                            output += `${line}\n`;
+
+                            if (!options.silent) {
+                                process.stdout.write(`${line}\n`);
+                            }
+                        }
+                    }
 
                     if (tasksComplete) {
                         resolve(0);

@@ -68,21 +68,6 @@ export async function Exec(command: string, args: string[], options: ExecOptions
     const isSilent = isDebug ? false : options.silent ? options.silent : false;
     const mustShowCommand = isDebug ? true : options.showCommand ? options.showCommand : false;
 
-    function processOutput(data: Buffer) {
-        try {
-            const chunk = data.toString();
-            output += chunk;
-
-            if (!isSilent && chunk.trim().length > 0) {
-                process.stdout.write(chunk);
-            }
-        } catch (error: any) {
-            if (error.code !== 'EPIPE') {
-                throw error;
-            }
-        }
-    }
-
     if (mustShowCommand) {
         const commandStr = `\x1b[34m${command} ${args.join(' ')}\x1b[0m`;
 
@@ -107,16 +92,72 @@ export async function Exec(command: string, args: string[], options: ExecOptions
             const sigtermHandler = () => child.kill('SIGTERM');
             process.once('SIGINT', sigintHandler);
             process.once('SIGTERM', sigtermHandler);
+
+            let hasCleanedUpListeners = false;
+            function removeListeners() {
+                if (hasCleanedUpListeners) { return; }
+                hasCleanedUpListeners = true;
+                process.removeListener('SIGINT', sigintHandler);
+                process.removeListener('SIGTERM', sigtermHandler);
+
+                if (child?.pid) {
+                    KillChildProcesses({ pid: child.pid, ppid: 0, name: command });
+                }
+            }
+
+            let lineBuffer = ''; // Buffer for incomplete lines
+            function processOutput(data: Buffer) {
+                try {
+                    const chunk = data.toString();
+                    const fullChunk = lineBuffer + chunk;
+                    const lines = fullChunk.split('\n') // split by newline
+                        .map(line => line.replace(/\r$/, '')) // remove trailing carriage return
+                        .filter(line => line.length > 0); // filter out empty lines
+
+                    if (!chunk.endsWith('\n')) {
+                        lineBuffer = lines.pop() || '';
+                    } else {
+                        lineBuffer = '';
+                    }
+
+                    for (const line of lines) {
+                        output += `${line}\n`;
+
+                        if (!isSilent) {
+                            process.stdout.write(`${line}\n`);
+                        }
+                    }
+                } catch (error: any) {
+                    if (error.code !== 'EPIPE') {
+                        throw error;
+                    }
+                }
+            }
+
             child.stdout.on('data', processOutput);
             child.stderr.on('data', processOutput);
             child.on('error', (error) => {
-                process.removeListener('SIGINT', sigintHandler);
-                process.removeListener('SIGTERM', sigtermHandler);
+                removeListeners();
                 reject(error);
             });
             child.on('close', (code) => {
-                process.removeListener('SIGINT', sigintHandler);
-                process.removeListener('SIGTERM', sigtermHandler);
+                removeListeners();
+
+                // Flush any remaining buffered content
+                if (lineBuffer.length > 0) {
+                    const lines = lineBuffer.split('\n') // split by newline
+                        .map(line => line.replace(/\r$/, '')) // remove trailing carriage return
+                        .filter(line => line.length > 0); // filter out empty lines
+
+                    for (const line of lines) {
+                        output += `${line}\n`;
+
+                        if (!isSilent) {
+                            process.stdout.write(`${line}\n`);
+                        }
+                    }
+                }
+
                 resolve(code === null ? 0 : code);
             });
         });
@@ -232,28 +273,67 @@ export interface ProcInfo {
 
 /**
  * Attempts to kill a process with the given ProcInfo.
+ * Escalates to SIGKILL or taskkill if the process does not exit after 5 seconds.
  * @param procInfo The process information containing the PID.
  * @param signal The signal to use for killing the process. Defaults to 'SIGTERM'.
- * @returns The PID of the killed process, or undefined if no process was killed.
  */
-export async function TryKillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = 'SIGTERM'): Promise<number | undefined> {
-    let pid: number | undefined;
-
+export async function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = 'SIGTERM'): Promise<void> {
     try {
-        logger.ci(`Killing process "${procInfo.name}" with pid: ${procInfo.pid}`);
+        logger.debug(`Killing process "${procInfo.name}" with pid: ${procInfo.pid}`);
         process.kill(procInfo.pid, signal);
-        pid = procInfo.pid;
-    } catch (error) {
-        const nodeJsException = error as NodeJS.ErrnoException;
-        const errorCode = nodeJsException?.code;
 
-        if (errorCode !== 'ENOENT' && errorCode !== 'ESRCH') {
+        // Immediately check if the process has exited
+        try {
+            process.kill(procInfo.pid, 0);
+        } catch {
+            logger.debug(`Process with pid ${procInfo.pid} has exited successfully.`);
+            return; // Process has exited
+        }
+
+        await delay(1000); // wait 1 second
+
+        try {
+            process.kill(procInfo.pid, 0);
+        } catch {
+            logger.debug(`Process with pid ${procInfo.pid} has exited successfully.`);
+            return; // Process has exited
+        }
+
+        await delay(4000); // wait 4 seconds
+
+        try {
+            // Check if the process is still running
+            process.kill(procInfo.pid, 0);
+        } catch {
+            logger.debug(`Process with pid ${procInfo.pid} has exited successfully.`);
+            return; // Process has exited
+        }
+
+        // If the process is still running, escalate to SIGKILL or taskkill
+        logger.debug(`Process with pid ${procInfo.pid} did not exit after ${signal}, attempting to force kill...`);
+
+        try {
+            if (process.platform === 'win32') {
+                const command = `taskkill /PID ${procInfo.pid} /F /T`;
+                await Exec('powershell', ['-Command', command], { silent: true, showCommand: false });
+            } else { // linux and macos
+                process.kill(procInfo.pid, 'SIGKILL');
+            }
+        } catch (error: NodeJS.ErrnoException | any) {
+            if (error.code !== 'ENOENT' && error.code !== 'ESRCH') {
+                logger.error(`Failed to kill process:\n${JSON.stringify(error)}`);
+                throw error;
+            }
+        }
+    } catch (error: NodeJS.ErrnoException | any) {
+        if (error.code !== 'ENOENT' && error.code !== 'ESRCH') {
             logger.error(`Failed to kill process:\n${JSON.stringify(error)}`);
+            throw error;
         }
     }
-
-    return pid;
 }
+
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
  * Reads a PID file and returns the process information.
@@ -305,19 +385,23 @@ export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
         } else { // linux and macos
             const psOutput = await Exec('ps', ['-eo', 'pid,ppid,comm'], { silent: true, showCommand: false });
             const lines = psOutput.split('\n').slice(1); // Skip header line
+            const killPromises: Promise<void>[] = [];
 
             for (const line of lines) {
-                const parts = line.trim().split(/\s+/, 3);
-                if (parts.length === 3) {
-                    const pid: number = parseInt(parts[0]!, 10);
-                    const ppid: number = parseInt(parts[1]!, 10);
-                    const name: string = parts[2]!;
+                const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/);
+
+                if (match) {
+                    const pid: number = parseInt(match[1]!, 10);
+                    const ppid: number = parseInt(match[2]!, 10);
+                    const name: string = match[3]!.trim();
 
                     if (ppid === procInfo.pid) {
-                        await TryKillProcess({ pid, ppid, name });
+                        killPromises.push(KillProcess({ pid, ppid, name }));
                     }
                 }
             }
+
+            await Promise.all(killPromises);
         }
     } catch (error) {
         logger.error(`Failed to kill child processes of pid ${procInfo.pid}:\n${JSON.stringify(error)}`);

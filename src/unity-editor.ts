@@ -5,7 +5,7 @@ import {
     GetArgumentValueAsString,
     KillChildProcesses,
     ProcInfo,
-    TryKillProcess
+    KillProcess
 } from './utilities';
 import {
     spawn,
@@ -128,7 +128,7 @@ export class UnityEditor {
         let isCancelled = false;
         const onCancel = async () => {
             isCancelled = true;
-            await this.tryKillEditorProcess();
+            this.tryKillEditorProcess();
         };
 
         process.once('SIGINT', onCancel);
@@ -152,7 +152,7 @@ export class UnityEditor {
             this.logger.endGroup();
 
             if (!isCancelled) {
-                await this.tryKillEditorProcess();
+                this.tryKillEditorProcess();
 
                 if (exitCode !== 0) {
                     throw Error(`Unity failed with exit code ${exitCode}`);
@@ -313,10 +313,12 @@ export class UnityEditor {
         return exitCode;
     }
 
-    private async tryKillEditorProcess(): Promise<void> {
+    private tryKillEditorProcess(): void {
         if (this.procInfo) {
-            await TryKillProcess(this.procInfo);
-            await KillChildProcesses(this.procInfo);
+            const proc = this.procInfo;
+            KillProcess(proc).then(() => {
+                KillChildProcesses(proc);
+            });
         } else {
             this.logger.debug('No Unity process info available to kill.');
         }
