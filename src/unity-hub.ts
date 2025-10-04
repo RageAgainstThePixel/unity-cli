@@ -118,10 +118,6 @@ export class UnityHub {
                     hasCleanedUpListeners = true;
                     process.removeListener('SIGINT', sigintHandler);
                     process.removeListener('SIGTERM', sigtermHandler);
-
-                    if (child?.pid) {
-                        KillChildProcesses({ pid: child.pid, name: child.spawnfile, ppid: process.pid });
-                    }
                 }
 
                 let lineBuffer = ''; // Buffer for incomplete lines

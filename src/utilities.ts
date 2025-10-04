@@ -99,10 +99,6 @@ export async function Exec(command: string, args: string[], options: ExecOptions
                 hasCleanedUpListeners = true;
                 process.removeListener('SIGINT', sigintHandler);
                 process.removeListener('SIGTERM', sigtermHandler);
-
-                if (child?.pid) {
-                    KillChildProcesses({ pid: child.pid, ppid: 0, name: command });
-                }
             }
 
             let lineBuffer = ''; // Buffer for incomplete lines
