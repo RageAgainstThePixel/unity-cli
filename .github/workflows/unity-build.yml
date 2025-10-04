@@ -37,17 +37,67 @@ jobs:
           unity-cli --version
           unity-cli hub-install --auto-update
           unity-cli activate-license --license personal --email "${{ secrets.UNITY_USERNAME }}" --password "${{ secrets.UNITY_PASSWORD }}"
-          setup_output=$(unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-targets }}" --json)
-          unity_editor_path=$(echo "$setup_output" | tail -n 1 | jq -r '.UNITY_EDITOR_PATH')
+          
+          # Helper to run commands while streaming output to the console and saving it to a temp file.
+          # Usage: tmp=$(run_and_capture NAME command args...)
+          # Returns: prints the temp file path to stdout so callers can capture it.
+          run_and_capture() {
+            name="$1"
+            shift
+            tmpfile=$(mktemp 2>/dev/null || echo "${RUNNER_TEMP}/${name}_output.txt")
+            set +e
+            # Run the command and tee its output to the tmpfile so logs appear in real time.
+            "$@" | tee "$tmpfile"
+            rc=${PIPESTATUS[0]}
+            set -e
+            if [ "$rc" -ne 0 ]; then
+              echo "$name failed with exit code $rc"
+              cat "$tmpfile"
+              rm -f "$tmpfile"
+              exit $rc
+            fi
+            # Export the full captured output to a shell variable named CAPTURE_<NAME>
+            # so callers in this step can access it directly if needed.
+            export "CAPTURE_${name}"="$(cat "$tmpfile")"
+            # Print the tmpfile path so callers can capture and parse it (e.g. with jq).
+            printf '%s' "$tmpfile"
+          }
+
+          # This helps when the command prints logs around the JSON payload
+          # and the JSON isn't guaranteed to be the final line.
+          find_json_in_output() {
+            file="$1"
+            json=""
+            while IFS= read -r line; do
+              # Use jq to validate the line as JSON; suppress errors. Prevent set -e from
+              # aborting by using || true.
+              echo "$line" | jq -e . >/dev/null 2>&1 && json="$line" || true
+            done < "$file"
+            if [ -z "$json" ]; then
+              echo "No JSON found in $file" >&2
+              return 1
+            fi
+            printf '%s' "$json"
+          }
+
+          # Run setup-unity and capture output
+          setup_output=$(run_and_capture setup_unity unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-targets }}" --json)
+          unity_editor_path=$(find_json_in_output "$setup_output" | jq -r '.UNITY_EDITOR_PATH')
           echo "$unity_editor_path"
-          create_project_output=$(unity-cli create-project --name "Unity Project" --unity-editor "${unity_editor_path}" --json)
-          project_path=$(echo "$create_project_output" | tail -n 1 | jq -r '.UNITY_PROJECT_PATH')
+          rm -f "$setup_output"
+
+          # Create project and capture output
+          project_output=$(run_and_capture create_project unity-cli create-project --name "Unity Project" --unity-editor "${unity_editor_path}" --json)
+          project_path=$(find_json_in_output "$project_output" | jq -r '.UNITY_PROJECT_PATH')
           echo "${project_path}"
+          rm -f "$project_output"
+
           npm install -g openupm-cli
           cd "${project_path}"
           openupm add com.utilities.buildpipeline
-          unity-cli run --unity-editor "${unity_editor_path}" --unity-project "${project_path}" --log-name Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
-          unity-cli run --unity-editor "${unity_editor_path}" --unity-project "${project_path}" --log-name Build -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity
+
+          run_and_capture validate_run unity-cli run --unity-editor "${unity_editor_path}" --unity-project "${project_path}" --log-name Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
+          run_and_capture build_run unity-cli run --unity-editor "${unity_editor_path}" --unity-project "${project_path}" --log-name Build -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity
       - name: Post Run
         if: always()
         shell: bash

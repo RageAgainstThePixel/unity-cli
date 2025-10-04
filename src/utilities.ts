@@ -378,23 +378,29 @@ export function tailLogFile(logPath: string): LogTailResult {
         }
     };
 
-    const promise = (async () => {
-        while (!logEnded) {
-            readNewLogContent();
-            await delay(logPollingInterval);
-        }
-
-        // Final read to capture any remaining content after tailing stops
-        readNewLogContent();
-
+    const promise = new Promise<void>(async (resolve, reject) => {
         try {
-            process.stdout.write('\n');
-        } catch (error: any) {
-            if (error.code !== 'EPIPE') {
-                logger.error(`Error writing final newline: ${error}`);
+            while (!logEnded) {
+                readNewLogContent();
+                await delay(logPollingInterval);
             }
+
+            // Final read to capture any remaining content after tailing stops
+            readNewLogContent();
+
+            try {
+                process.stdout.write('\n');
+            } catch (error: any) {
+                if (error.code !== 'EPIPE') {
+                    logger.error(`Error writing final newline: ${error}`);
+                }
+            }
+
+            resolve();
+        } catch (error) {
+            reject(error);
         }
-    })();
+    });
 
     function signalEnd(): void {
         logEnded = true;
