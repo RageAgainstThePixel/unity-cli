@@ -111,47 +111,47 @@ export class UnityHub {
                 const sigtermHandler = () => child.kill('SIGTERM');
                 process.once('SIGINT', sigintHandler);
                 process.once('SIGTERM', sigtermHandler);
-                let hasCleanedUpListeners = false;
 
+                let hasCleanedUpListeners = false;
                 function removeListeners() {
                     if (hasCleanedUpListeners) { return; }
                     hasCleanedUpListeners = true;
                     process.removeListener('SIGINT', sigintHandler);
                     process.removeListener('SIGTERM', sigtermHandler);
 
-                    if (child.pid) {
+                    if (child?.pid) {
                         KillChildProcesses({ pid: child.pid, name: child.spawnfile, ppid: process.pid });
                     }
                 }
 
+                let lineBuffer = ''; // Buffer for incomplete lines
                 function processOutput(data: Buffer) {
                     try {
                         const chunk = data.toString();
-                        let outputLines: string[] = [];
-                        const lines = chunk.split('\n');
+                        const fullChunk = lineBuffer + chunk;
+                        const lines = fullChunk.split('\n');
 
-                        for (const line of lines) {
-                            if (line.trim().length === 0 ||
-                                ignoredLines.some(ignored => line.includes(ignored))) {
-                                continue;
-                            }
-
-                            outputLines.push(line);
-
-                            if (!options.silent) {
-                                process.stdout.write(`${line}\n`);
-                            }
+                        if (!chunk.endsWith('\n')) {
+                            lineBuffer = lines.pop() || '';
+                        } else {
+                            lineBuffer = '';
                         }
 
-                        const outputLine = outputLines.join('\n');
-                        output += `${outputLine}\n`;
+                        const outputLines = lines.filter(line => line.length > 0 && !ignoredLines.some(ignored => line.includes(ignored)));
 
-                        if (outputLine.includes(tasksCompleteMessage)) {
+                        if (outputLines.includes(tasksCompleteMessage)) {
                             tasksComplete = true;
 
                             if (child?.pid) {
-                                Logger.instance.ci(`Unity Hub reported all tasks completed, terminating process...`);
                                 KillProcess({ pid: child.pid, name: child.spawnfile, ppid: process.pid });
+                            }
+                        }
+
+                        for (const line of outputLines) {
+                            output += `${line}\n`;
+
+                            if (!options.silent) {
+                                process.stdout.write(`${line}\n`);
                             }
                         }
                     } catch (error: any) {
@@ -168,6 +168,24 @@ export class UnityHub {
                 });
                 child.on('close', (code) => {
                     removeListeners();
+
+                    // Flush any remaining buffered content
+                    if (lineBuffer.length > 0) {
+                        const lines = lineBuffer.split('\n');
+                        const outputLines = lines.filter(line => line.length > 0 && !ignoredLines.some(ignored => line.includes(ignored)));
+
+                        if (outputLines.includes(tasksCompleteMessage)) {
+                            tasksComplete = true;
+                        }
+
+                        for (const line of outputLines) {
+                            output += `${line}\n`;
+
+                            if (!options.silent) {
+                                process.stdout.write(`${line}\n`);
+                            }
+                        }
+                    }
 
                     if (tasksComplete) {
                         resolve(0);

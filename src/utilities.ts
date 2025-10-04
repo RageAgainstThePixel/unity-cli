@@ -68,21 +68,6 @@ export async function Exec(command: string, args: string[], options: ExecOptions
     const isSilent = isDebug ? false : options.silent ? options.silent : false;
     const mustShowCommand = isDebug ? true : options.showCommand ? options.showCommand : false;
 
-    function processOutput(data: Buffer) {
-        try {
-            const chunk = data.toString();
-            output += chunk;
-
-            if (!isSilent && chunk.trim().length > 0) {
-                process.stdout.write(chunk);
-            }
-        } catch (error: any) {
-            if (error.code !== 'EPIPE') {
-                throw error;
-            }
-        }
-    }
-
     if (mustShowCommand) {
         const commandStr = `\x1b[34m${command} ${args.join(' ')}\x1b[0m`;
 
@@ -107,16 +92,64 @@ export async function Exec(command: string, args: string[], options: ExecOptions
             const sigtermHandler = () => child.kill('SIGTERM');
             process.once('SIGINT', sigintHandler);
             process.once('SIGTERM', sigtermHandler);
+
+            let hasCleanedUpListeners = false;
+            function removeListeners() {
+                if (hasCleanedUpListeners) { return; }
+                hasCleanedUpListeners = true;
+                process.removeListener('SIGINT', sigintHandler);
+                process.removeListener('SIGTERM', sigtermHandler);
+
+                if (child?.pid) {
+                    KillChildProcesses({ pid: child.pid, ppid: 0, name: command });
+                }
+            }
+
+            let lineBuffer = ''; // Buffer for incomplete lines
+            function processOutput(data: Buffer) {
+                try {
+                    const chunk = data.toString();
+                    const fullChunk = lineBuffer + chunk;
+                    const lines = fullChunk.split('\n');
+
+                    if (!chunk.endsWith('\n')) {
+                        lineBuffer = lines.pop() || '';
+                    } else {
+                        lineBuffer = '';
+                    }
+
+                    for (const line of lines) {
+                        output += `${line}\n`;
+
+                        if (!isSilent) {
+                            process.stdout.write(`${line}\n`);
+                        }
+                    }
+                } catch (error: any) {
+                    if (error.code !== 'EPIPE') {
+                        throw error;
+                    }
+                }
+            }
+
             child.stdout.on('data', processOutput);
             child.stderr.on('data', processOutput);
             child.on('error', (error) => {
-                process.removeListener('SIGINT', sigintHandler);
-                process.removeListener('SIGTERM', sigtermHandler);
+                removeListeners();
                 reject(error);
             });
             child.on('close', (code) => {
-                process.removeListener('SIGINT', sigintHandler);
-                process.removeListener('SIGTERM', sigtermHandler);
+                removeListeners();
+
+                // Flush any remaining buffered content
+                if (lineBuffer.length > 0) {
+                    output += `${lineBuffer}\n`;
+
+                    if (!isSilent) {
+                        process.stdout.write(`${lineBuffer}\n`);
+                    }
+                }
+
                 resolve(code === null ? 0 : code);
             });
         });
@@ -236,7 +269,7 @@ export interface ProcInfo {
  * @param procInfo The process information containing the PID.
  * @param signal The signal to use for killing the process. Defaults to 'SIGTERM'.
  */
-export function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = 'SIGTERM'): Promise<void> {
+export async function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = 'SIGTERM'): Promise<void> {
     return new Promise((resolve, reject) => {
         try {
             logger.debug(`Killing process "${procInfo.name}" with pid: ${procInfo.pid}`);
@@ -325,6 +358,7 @@ export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
         } else { // linux and macos
             const psOutput = await Exec('ps', ['-eo', 'pid,ppid,comm'], { silent: true, showCommand: false });
             const lines = psOutput.split('\n').slice(1); // Skip header line
+            let killPromises: Promise<void>[] = [];
 
             for (const line of lines) {
                 const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/);
@@ -335,12 +369,12 @@ export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
                     const name: string = match[3]!.trim();
 
                     if (ppid === procInfo.pid) {
-                        KillProcess({ pid, ppid, name }).catch((error) => {
-                            logger.error(`Failed to kill child process:\n${JSON.stringify(error)}`);
-                        });
+                        killPromises.push(KillProcess({ pid, ppid, name }));
                     }
                 }
             }
+
+            await Promise.all(killPromises);
         }
     } catch (error) {
         logger.error(`Failed to kill child processes of pid ${procInfo.pid}:\n${JSON.stringify(error)}`);
