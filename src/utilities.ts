@@ -279,38 +279,29 @@ export interface ProcInfo {
  */
 export async function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = 'SIGTERM'): Promise<void> {
     try {
-        logger.debug(`Killing process "${procInfo.name}" with pid: ${procInfo.pid}`);
+        logger.info(`Killing process [${procInfo.pid}] ${procInfo.name}...`);
         process.kill(procInfo.pid, signal);
 
         // Immediately check if the process has exited
         try {
             process.kill(procInfo.pid, 0);
         } catch {
-            logger.debug(`Process with pid ${procInfo.pid} has exited successfully.`);
+            logger.info(`Process [${procInfo.pid}] ${procInfo.name} has exited successfully.`);
             return; // Process has exited
         }
 
-        await delay(1000); // wait 1 second
-
-        try {
-            process.kill(procInfo.pid, 0);
-        } catch {
-            logger.debug(`Process with pid ${procInfo.pid} has exited successfully.`);
-            return; // Process has exited
-        }
-
-        await delay(4000); // wait 4 seconds
+        await delay(5000); // wait 5 seconds
 
         try {
             // Check if the process is still running
             process.kill(procInfo.pid, 0);
         } catch {
-            logger.debug(`Process with pid ${procInfo.pid} has exited successfully.`);
+            logger.info(`Process [${procInfo.pid}] ${procInfo.name} has exited successfully.`);
             return; // Process has exited
         }
 
         // If the process is still running, escalate to SIGKILL or taskkill
-        logger.debug(`Process with pid ${procInfo.pid} did not exit after ${signal}, attempting to force kill...`);
+        logger.info(`Process [${procInfo.pid}] ${procInfo.name} did not exit after ${signal}, attempting to force kill...`);
 
         try {
             if (process.platform === 'win32') {
@@ -333,7 +324,9 @@ export async function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = '
     }
 }
 
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+async function delay(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 /**
  * Reads a PID file and returns the process information.
@@ -377,7 +370,7 @@ export async function ReadPidFile(pidFilePath: string): Promise<ProcInfo | undef
  * @param procInfo The process information of the parent process.
  */
 export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
-    logger.debug(`Killing child processes of ${procInfo.name} with pid: ${procInfo.pid}...`);
+    logger.info(`Killing child processes of [${procInfo.pid}] ${procInfo.name}...`);
     try {
         if (process.platform === 'win32') {
             const command = `Get-CimInstance Win32_Process -Filter "ParentProcessId=${procInfo.pid}" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
