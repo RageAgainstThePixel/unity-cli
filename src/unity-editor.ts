@@ -5,7 +5,6 @@ import {
     GetArgumentValueAsString,
     KillChildProcesses,
     ProcInfo,
-    ReadPidFile,
     TryKillProcess
 } from './utilities';
 import {
