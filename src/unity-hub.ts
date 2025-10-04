@@ -151,9 +151,7 @@ export class UnityHub {
 
                             if (child?.pid) {
                                 Logger.instance.debug(`Unity Hub reported all tasks completed, terminating process...`);
-                                KillProcess({ pid: child.pid, name: child.spawnfile, ppid: process.pid }).catch((error) => {
-                                    throw error;
-                                });
+                                KillProcess({ pid: child.pid, name: child.spawnfile, ppid: process.pid });
                             }
                         }
                     } catch (error: any) {

@@ -262,9 +262,9 @@ export function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = 'SIGTER
                     }
                 } catch {
                     logger.info(`Process with pid ${procInfo.pid} has exited successfully.`);
-                } finally {
-                    resolve();
                 }
+
+                resolve();
             }, 5000);
         } catch (error: NodeJS.ErrnoException | any) {
             if (error.code !== 'ENOENT' && error.code !== 'ESRCH') {
