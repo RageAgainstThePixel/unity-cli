@@ -167,7 +167,6 @@ export class UnityHub {
                     reject(error);
                 });
                 child.on('close', (code) => {
-                    Logger.instance.ci(`Unity Hub process exited with code: ${code}`);
                     removeListeners();
 
                     if (tasksComplete) {

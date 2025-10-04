@@ -239,14 +239,14 @@ export interface ProcInfo {
 export function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = 'SIGTERM'): Promise<void> {
     return new Promise((resolve, reject) => {
         try {
-            logger.ci(`Killing process "${procInfo.name}" with pid: ${procInfo.pid}`);
+            logger.debug(`Killing process "${procInfo.name}" with pid: ${procInfo.pid}`);
             process.kill(procInfo.pid, signal);
             setTimeout(async () => {
                 try {
                     // Check if the process is still running
                     process.kill(procInfo.pid, 0);
                     // If the process is still running, escalate to SIGKILL or taskkill
-                    logger.warn(`Process with pid ${procInfo.pid} did not exit after ${signal}, attempting to force kill...`);
+                    logger.debug(`Process with pid ${procInfo.pid} did not exit after ${signal}, attempting to force kill...`);
                     try {
                         if (process.platform === 'win32') {
                             const command = `taskkill /PID ${procInfo.pid} /F /T`;
@@ -261,7 +261,7 @@ export function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = 'SIGTER
                         }
                     }
                 } catch {
-                    logger.info(`Process with pid ${procInfo.pid} has exited successfully.`);
+                    logger.debug(`Process with pid ${procInfo.pid} has exited successfully.`);
                 }
 
                 resolve();
@@ -317,7 +317,7 @@ export async function ReadPidFile(pidFilePath: string): Promise<ProcInfo | undef
  * @param procInfo The process information of the parent process.
  */
 export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
-    logger.ci(`Killing child processes of ${procInfo.name} with pid: ${procInfo.pid}...`);
+    logger.debug(`Killing child processes of ${procInfo.name} with pid: ${procInfo.pid}...`);
     try {
         if (process.platform === 'win32') {
             const command = `Get-CimInstance Win32_Process -Filter "ParentProcessId=${procInfo.pid}" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
