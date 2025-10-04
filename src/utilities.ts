@@ -233,15 +233,16 @@ export interface ProcInfo {
 /**
  * Attempts to kill a process with the given ProcInfo.
  * @param procInfo The process information containing the PID.
+ * @param signal The signal to use for killing the process. Defaults to 'SIGTERM'.
  * @returns The PID of the killed process, or undefined if no process was killed.
  */
-export async function TryKillProcess(procInfo: ProcInfo): Promise<number | undefined> {
+export async function TryKillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = 'SIGTERM'): Promise<number | undefined> {
     let pid: number | undefined;
 
     try {
+        logger.ci(`Killing process "${procInfo.name}" with pid: ${procInfo.pid}`);
+        process.kill(procInfo.pid, signal);
         pid = procInfo.pid;
-        logger.ci(`Killing process "${procInfo.name}" with pid: ${pid}`);
-        process.kill(pid, 'SIGTERM');
     } catch (error) {
         const nodeJsException = error as NodeJS.ErrnoException;
         const errorCode = nodeJsException?.code;
