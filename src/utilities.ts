@@ -251,7 +251,7 @@ export function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = 'SIGTER
                         if (process.platform === 'win32') {
                             const command = `taskkill /PID ${procInfo.pid} /F /T`;
                             await Exec('powershell', ['-Command', command], { silent: true, showCommand: false });
-                        } else {
+                        } else { // linux and macos
                             process.kill(procInfo.pid, 'SIGKILL');
                         }
                     } catch (error: NodeJS.ErrnoException | any) {
@@ -317,7 +317,7 @@ export async function ReadPidFile(pidFilePath: string): Promise<ProcInfo | undef
  * @param procInfo The process information of the parent process.
  */
 export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
-    logger.debug(`Killing child processes of ${procInfo.name} with pid: ${procInfo.pid}...`);
+    logger.ci(`Killing child processes of ${procInfo.name} with pid: ${procInfo.pid}...`);
     try {
         if (process.platform === 'win32') {
             const command = `Get-CimInstance Win32_Process -Filter "ParentProcessId=${procInfo.pid}" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;

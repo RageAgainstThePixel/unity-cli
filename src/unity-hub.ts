@@ -150,7 +150,7 @@ export class UnityHub {
                             tasksComplete = true;
 
                             if (child?.pid) {
-                                Logger.instance.debug(`Unity Hub reported all tasks completed, terminating process...`);
+                                Logger.instance.ci(`Unity Hub reported all tasks completed, terminating process...`);
                                 KillProcess({ pid: child.pid, name: child.spawnfile, ppid: process.pid });
                             }
                         }
@@ -163,12 +163,11 @@ export class UnityHub {
                 child.stdout.on('data', processOutput);
                 child.stderr.on('data', processOutput);
                 child.on('error', (error) => {
-                    Logger.instance.info(`Unity Hub process encountered an error`);
                     removeListeners();
                     reject(error);
                 });
                 child.on('close', (code) => {
-                    Logger.instance.info(`Unity Hub process exited with code: ${code}`);
+                    Logger.instance.ci(`Unity Hub process exited with code: ${code}`);
                     removeListeners();
 
                     if (tasksComplete) {
