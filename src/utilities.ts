@@ -240,7 +240,7 @@ export async function TryKillProcess(procInfo: ProcInfo, signal: NodeJS.Signals 
     let pid: number | undefined;
 
     try {
-        logger.ci(`Killing process "${procInfo.name}" with pid: ${pid}`);
+        logger.ci(`Killing process "${procInfo.name}" with pid: ${procInfo.pid}`);
         process.kill(procInfo.pid, signal);
         pid = procInfo.pid;
     } catch (error) {
