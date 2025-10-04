@@ -20,7 +20,7 @@ import {
     ReadFileContents,
     GetTempDir,
     KillChildProcesses,
-    TryKillProcess
+    KillProcess,
 } from './utilities';
 import {
     UnityReleasesClient,
@@ -111,11 +111,19 @@ export class UnityHub {
                 const sigtermHandler = () => child.kill('SIGTERM');
                 process.once('SIGINT', sigintHandler);
                 process.once('SIGTERM', sigtermHandler);
+                let hasCleanedUpListeners = false;
+
                 function removeListeners() {
+                    if (hasCleanedUpListeners) { return; }
+                    hasCleanedUpListeners = true;
                     process.removeListener('SIGINT', sigintHandler);
                     process.removeListener('SIGTERM', sigtermHandler);
+
+                    if (child.pid) {
+                        KillChildProcesses({ pid: child.pid, name: child.spawnfile, ppid: process.pid });
+                    }
                 }
-                let forceCloseTimeout: NodeJS.Timeout | undefined;
+
                 function processOutput(data: Buffer) {
                     try {
                         const chunk = data.toString();
@@ -143,21 +151,8 @@ export class UnityHub {
 
                             if (child?.pid) {
                                 Logger.instance.debug(`Unity Hub reported all tasks completed, terminating process...`);
-                                const childProcInfo = { pid: child.pid, name: child.spawnfile, ppid: process.pid };
-                                KillChildProcesses(childProcInfo).then(async () => {
-                                    const killedPid = await TryKillProcess(childProcInfo, 'SIGTERM');
-
-                                    if (!killedPid) {
-                                        Logger.instance.error(`Failed to terminate Unity Hub process!`);
-                                    }
-
-                                    // In case the process doesn't close itself, force kill after 5 seconds
-                                    forceCloseTimeout = setTimeout(() => {
-                                        Logger.instance.info(`Force closing Unity Hub process after timeout...`);
-                                        TryKillProcess(childProcInfo, 'SIGKILL');
-                                        removeListeners();
-                                        resolve(0);
-                                    }, 5000);
+                                KillProcess({ pid: child.pid, name: child.spawnfile, ppid: process.pid }).catch((error) => {
+                                    throw error;
                                 });
                             }
                         }
@@ -170,18 +165,12 @@ export class UnityHub {
                 child.stdout.on('data', processOutput);
                 child.stderr.on('data', processOutput);
                 child.on('error', (error) => {
-                    if (forceCloseTimeout) {
-                        clearTimeout(forceCloseTimeout);
-                    }
-
+                    Logger.instance.info(`Unity Hub process encountered an error`);
                     removeListeners();
                     reject(error);
                 });
                 child.on('close', (code) => {
-                    if (forceCloseTimeout) {
-                        clearTimeout(forceCloseTimeout);
-                    }
-
+                    Logger.instance.info(`Unity Hub process exited with code: ${code}`);
                     removeListeners();
 
                     if (tasksComplete) {

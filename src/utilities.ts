@@ -232,27 +232,47 @@ export interface ProcInfo {
 
 /**
  * Attempts to kill a process with the given ProcInfo.
+ * Escalates to SIGKILL or taskkill if the process does not exit after 5 seconds.
  * @param procInfo The process information containing the PID.
  * @param signal The signal to use for killing the process. Defaults to 'SIGTERM'.
- * @returns The PID of the killed process, or undefined if no process was killed.
  */
-export async function TryKillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = 'SIGTERM'): Promise<number | undefined> {
-    let pid: number | undefined;
-
-    try {
-        logger.ci(`Killing process "${procInfo.name}" with pid: ${procInfo.pid}`);
-        process.kill(procInfo.pid, signal);
-        pid = procInfo.pid;
-    } catch (error) {
-        const nodeJsException = error as NodeJS.ErrnoException;
-        const errorCode = nodeJsException?.code;
-
-        if (errorCode !== 'ENOENT' && errorCode !== 'ESRCH') {
-            logger.error(`Failed to kill process:\n${JSON.stringify(error)}`);
+export function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = 'SIGTERM'): Promise<void> {
+    return new Promise((resolve, reject) => {
+        try {
+            logger.ci(`Killing process "${procInfo.name}" with pid: ${procInfo.pid}`);
+            process.kill(procInfo.pid, signal);
+            setTimeout(async () => {
+                try {
+                    // Check if the process is still running
+                    process.kill(procInfo.pid, 0);
+                    // If the process is still running, escalate to SIGKILL or taskkill
+                    logger.warn(`Process with pid ${procInfo.pid} did not exit after ${signal}, attempting to force kill...`);
+                    try {
+                        if (process.platform === 'win32') {
+                            const command = `taskkill /PID ${procInfo.pid} /F /T`;
+                            await Exec('powershell', ['-Command', command], { silent: true, showCommand: false });
+                        } else {
+                            process.kill(procInfo.pid, 'SIGKILL');
+                        }
+                    } catch (error: NodeJS.ErrnoException | any) {
+                        if (error.code !== 'ENOENT' && error.code !== 'ESRCH') {
+                            logger.error(`Failed to kill process:\n${JSON.stringify(error)}`);
+                            reject(error);
+                        }
+                    }
+                } catch {
+                    logger.info(`Process with pid ${procInfo.pid} has exited successfully.`);
+                } finally {
+                    resolve();
+                }
+            }, 5000);
+        } catch (error: NodeJS.ErrnoException | any) {
+            if (error.code !== 'ENOENT' && error.code !== 'ESRCH') {
+                logger.error(`Failed to kill process:\n${JSON.stringify(error)}`);
+                reject(error);
+            }
         }
-    }
-
-    return pid;
+    });
 }
 
 /**
@@ -307,14 +327,17 @@ export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
             const lines = psOutput.split('\n').slice(1); // Skip header line
 
             for (const line of lines) {
-                const parts = line.trim().split(/\s+/, 3);
-                if (parts.length === 3) {
-                    const pid: number = parseInt(parts[0]!, 10);
-                    const ppid: number = parseInt(parts[1]!, 10);
-                    const name: string = parts[2]!;
+                const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/);
+
+                if (match) {
+                    const pid: number = parseInt(match[1]!, 10);
+                    const ppid: number = parseInt(match[2]!, 10);
+                    const name: string = match[3]!.trim();
 
                     if (ppid === procInfo.pid) {
-                        await TryKillProcess({ pid, ppid, name });
+                        KillProcess({ pid, ppid, name }).catch((error) => {
+                            logger.error(`Failed to kill child process:\n${JSON.stringify(error)}`);
+                        });
                     }
                 }
             }
