@@ -278,43 +278,62 @@ export interface ProcInfo {
  * @param signal The signal to use for killing the process. Defaults to 'SIGTERM'.
  */
 export async function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = 'SIGTERM'): Promise<void> {
-    return new Promise((resolve, reject) => {
-        try {
-            logger.debug(`Killing process "${procInfo.name}" with pid: ${procInfo.pid}`);
-            process.kill(procInfo.pid, signal);
-            setTimeout(async () => {
-                try {
-                    // Check if the process is still running
-                    process.kill(procInfo.pid, 0);
-                    // If the process is still running, escalate to SIGKILL or taskkill
-                    logger.debug(`Process with pid ${procInfo.pid} did not exit after ${signal}, attempting to force kill...`);
-                    try {
-                        if (process.platform === 'win32') {
-                            const command = `taskkill /PID ${procInfo.pid} /F /T`;
-                            await Exec('powershell', ['-Command', command], { silent: true, showCommand: false });
-                        } else { // linux and macos
-                            process.kill(procInfo.pid, 'SIGKILL');
-                        }
-                    } catch (error: NodeJS.ErrnoException | any) {
-                        if (error.code !== 'ENOENT' && error.code !== 'ESRCH') {
-                            logger.error(`Failed to kill process:\n${JSON.stringify(error)}`);
-                            reject(error);
-                        }
-                    }
-                } catch {
-                    logger.debug(`Process with pid ${procInfo.pid} has exited successfully.`);
-                }
+    try {
+        logger.debug(`Killing process "${procInfo.name}" with pid: ${procInfo.pid}`);
+        process.kill(procInfo.pid, signal);
 
-                resolve();
-            }, 5000);
+        // Immediately check if the process has exited
+        try {
+            process.kill(procInfo.pid, 0);
+        } catch {
+            logger.debug(`Process with pid ${procInfo.pid} has exited successfully.`);
+            return; // Process has exited
+        }
+
+        await delay(1000); // wait 1 second
+
+        try {
+            process.kill(procInfo.pid, 0);
+        } catch {
+            logger.debug(`Process with pid ${procInfo.pid} has exited successfully.`);
+            return; // Process has exited
+        }
+
+        await delay(4000); // wait 4 seconds
+
+        try {
+            // Check if the process is still running
+            process.kill(procInfo.pid, 0);
+        } catch {
+            logger.debug(`Process with pid ${procInfo.pid} has exited successfully.`);
+            return; // Process has exited
+        }
+
+        // If the process is still running, escalate to SIGKILL or taskkill
+        logger.debug(`Process with pid ${procInfo.pid} did not exit after ${signal}, attempting to force kill...`);
+
+        try {
+            if (process.platform === 'win32') {
+                const command = `taskkill /PID ${procInfo.pid} /F /T`;
+                await Exec('powershell', ['-Command', command], { silent: true, showCommand: false });
+            } else { // linux and macos
+                process.kill(procInfo.pid, 'SIGKILL');
+            }
         } catch (error: NodeJS.ErrnoException | any) {
             if (error.code !== 'ENOENT' && error.code !== 'ESRCH') {
                 logger.error(`Failed to kill process:\n${JSON.stringify(error)}`);
-                reject(error);
+                throw error;
             }
         }
-    });
+    } catch (error: NodeJS.ErrnoException | any) {
+        if (error.code !== 'ENOENT' && error.code !== 'ESRCH') {
+            logger.error(`Failed to kill process:\n${JSON.stringify(error)}`);
+            throw error;
+        }
+    }
 }
+
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
  * Reads a PID file and returns the process information.
@@ -366,7 +385,7 @@ export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
         } else { // linux and macos
             const psOutput = await Exec('ps', ['-eo', 'pid,ppid,comm'], { silent: true, showCommand: false });
             const lines = psOutput.split('\n').slice(1); // Skip header line
-            let killPromises: Promise<void>[] = [];
+            const killPromises: Promise<void>[] = [];
 
             for (const line of lines) {
                 const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/);
