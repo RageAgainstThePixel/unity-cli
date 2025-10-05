@@ -136,7 +136,7 @@ export async function Exec(command: string, args: string[], options: ExecOptions
                 removeListeners();
                 reject(error);
             });
-            child.on('close', (code) => {
+            child.on('exit', (code) => {
                 removeListeners();
 
                 // Flush any remaining buffered content
@@ -267,7 +267,6 @@ export interface ProcInfo {
     name: string;
 }
 
-
 /**
  * Reads a PID file and returns the process information.
  * @param pidFilePath The path to the PID file.
@@ -305,8 +304,187 @@ export async function ReadPidFile(pidFilePath: string): Promise<ProcInfo | undef
     return procInfo;
 }
 
-async function delay(ms: number): Promise<void> {
+export async function delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Result of the tailLogFile function containing cleanup resources.
+ */
+export interface LogTailResult {
+    /** Promise that resolves when log tailing completes */
+    promise: Promise<void>;
+    /** Function to signal that log tailing should end */
+    signalEnd: () => void;
+}
+
+/**
+ * Tails a log file using fs.watch and ReadStream for efficient reading.
+ * @param logPath The path to the log file to tail.
+ * @returns An object containing the tail promise and signalEnd function.
+ */
+export function tailLogFile(logPath: string): LogTailResult {
+    let logEnded = false;
+    let lastSize = 0;
+    const logPollingInterval = 250;
+
+    const readNewLogContent = () => {
+        try {
+            const stats = fs.statSync(logPath);
+
+            if (stats.size < lastSize) {
+                lastSize = 0;
+            }
+
+            if (stats.size > lastSize) {
+                const bytesToRead = stats.size - lastSize;
+                const buffer = Buffer.alloc(bytesToRead);
+                let fd: number | null = null;
+
+                try {
+                    fd = fs.openSync(logPath, 'r');
+                    fs.readSync(fd, buffer, 0, bytesToRead, lastSize);
+                } finally {
+                    if (fd !== null) {
+                        try {
+                            fs.closeSync(fd);
+                        } catch (error) {
+                            logger.debug(`Failed to close log file descriptor: ${error}`);
+                        }
+                    }
+                }
+
+                lastSize = stats.size;
+
+                if (bytesToRead > 0) {
+                    const chunk = buffer.toString('utf8');
+
+                    try {
+                        process.stdout.write(chunk);
+                    } catch (error: any) {
+                        if (error.code !== 'EPIPE') {
+                            logger.error(`Error writing log output: ${error}`);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            // Ignore errors while polling unless tailing has been intentionally ended
+            if (!logEnded) {
+                logger.debug(`Error while polling log file: ${error}`);
+            }
+        }
+    };
+
+    const promise = new Promise<void>(async (resolve, reject) => {
+        try {
+            while (!logEnded) {
+                readNewLogContent();
+                await delay(logPollingInterval);
+            }
+
+            // Final read to capture any remaining content after tailing stops
+            await waitForFileToBeUnlocked(logPath, fs.constants.O_RDONLY, 10000);
+            readNewLogContent();
+
+            try {
+                process.stdout.write('\n');
+            } catch (error: any) {
+                if (error.code !== 'EPIPE') {
+                    logger.error(`Error writing final newline: ${error}`);
+                }
+            }
+
+            resolve();
+        } catch (error) {
+            reject(error);
+        }
+    });
+
+    function signalEnd(): void {
+        logEnded = true;
+    }
+
+    return { promise, signalEnd };
+}
+
+/**
+ * Waits for a file to be created and become readable within a timeout.
+ * @param filePath The path of the file to wait for.
+ * @param timeout The maximum time to wait in milliseconds. Default is 30000 (30 seconds).
+ */
+export async function waitForFileToBeCreatedAndReadable(filePath: string, timeout: number = 30000): Promise<void> {
+    const pollInterval = 100;
+    const deadline = Date.now() + timeout;
+
+    while (Date.now() < deadline) {
+        try {
+            if (fs.existsSync(filePath)) {
+                fs.accessSync(filePath, fs.constants.R_OK);
+                return;
+            }
+        } catch (error) {
+            // File exists but not yet readable; keep polling until timeout expires
+        }
+
+        await delay(pollInterval);
+    }
+
+    throw new Error(`Timed out waiting for file to become readable: ${filePath}`);
+}
+
+/**
+ * Waits for a file to be unlocked (not exclusively locked by another process).
+ * If the file does not exist, it is considered unlocked.
+ * If the file exists, attempts to open it with read/write access.
+ * @param filePath The path of the file to wait for.
+ * @param flags The file open flags to use when testing. Default is fs.constants.O_RDWR.
+ * @param timeout The maximum time to wait in milliseconds. Default is 30000 (30 seconds).
+ * @returns A promise that resolves when the file is unlocked.
+ */
+export async function waitForFileToBeUnlocked(filePath: string, flags: number = fs.constants.O_RDWR, timeout: number = 30000): Promise<void> {
+    const pollInterval = 100;
+    const deadline = Date.now() + timeout;
+
+    const tryOpen = (): boolean => {
+        try {
+            const fd = fs.openSync(filePath, flags);
+            try {
+                fs.closeSync(fd);
+            } catch {
+                // ignore close errors
+            }
+            return true;
+        } catch (error: any) {
+            const code = error && error.code ? error.code : null;
+            if (code === 'EACCES' || code === 'EPERM' || code === 'EBUSY' || code === 'ETXTBSY') {
+                return false;
+            }
+            throw error;
+        }
+    };
+
+    while (Date.now() < deadline) {
+        try {
+            if (!fs.existsSync(filePath)) {
+                return;
+            }
+        } catch (error) {
+            // If exists check fails unexpectedly, continue polling until timeout or success
+        }
+
+        try {
+            if (tryOpen()) {
+                return;
+            }
+        } catch (error) {
+            throw error;
+        }
+
+        await delay(pollInterval);
+    }
+
+    throw new Error(`Timed out waiting for file to be unlocked: ${filePath}`);
 }
 
 /**

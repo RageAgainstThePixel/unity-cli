@@ -124,6 +124,8 @@ program.command('hub-install')
         const unityHub = new UnityHub();
         const hubPath = await unityHub.Install(options.autoUpdate === true);
 
+        Logger.instance.setEnvironmentVariable('UNITY_HUB_PATH', hubPath);
+
         if (options.json) {
             process.stdout.write(`\n${JSON.stringify({ UNITY_HUB_PATH: hubPath })}\n`);
         } else {
@@ -136,6 +138,9 @@ program.command('hub-path')
     .option('--json', 'Prints the last line of output as JSON string.')
     .action(async (options) => {
         const hub = new UnityHub();
+
+        Logger.instance.setEnvironmentVariable('UNITY_HUB_PATH', hub.executable);
+
         if (options.json) {
             process.stdout.write(`\n${JSON.stringify({ UNITY_HUB_PATH: hub.executable })}\n`);
         } else {
@@ -228,6 +233,10 @@ program.command('setup-unity')
             }
         }
 
+        for (const [key, value] of Object.entries(output)) {
+            Logger.instance.setEnvironmentVariable(key, value);
+        }
+
         if (options.json) {
             process.stdout.write(`\n${JSON.stringify(output)}\n`);
         }
@@ -279,6 +288,8 @@ program.command('create-project')
                 '-cloneFromTemplate', templatePath
             ]
         });
+
+        Logger.instance.setEnvironmentVariable('UNITY_PROJECT_PATH', projectPath);
 
         if (options.json) {
             process.stdout.write(`\n${JSON.stringify({ UNITY_PROJECT_PATH: projectPath })}\n`);

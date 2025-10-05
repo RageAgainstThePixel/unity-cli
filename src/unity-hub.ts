@@ -19,7 +19,6 @@ import {
     ExecOptions,
     ReadFileContents,
     GetTempDir,
-    KillChildProcesses,
     KillProcess,
 } from './utilities';
 import {
@@ -776,6 +775,7 @@ done
         }
 
         const request: GetUnityReleasesData = {
+            url: '/unity/editor/release/v1/releases',
             query: {
                 version: version,
                 architecture: [unityVersion.architecture],
@@ -785,7 +785,7 @@ done
         };
 
         this.logger.debug(`Get Unity Release: ${JSON.stringify(request, null, 2)}`);
-        const { data, error } = await releasesClient.api.ReleaseService.getUnityReleases(request);
+        const { data, error } = await releasesClient.api.Release.getUnityReleases(request);
 
         if (error) {
             throw new Error(`Failed to get Unity releases: ${JSON.stringify(error, null, 2)}`);

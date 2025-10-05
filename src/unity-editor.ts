@@ -5,11 +5,16 @@ import {
     GetArgumentValueAsString,
     KillChildProcesses,
     ProcInfo,
-    KillProcess
+    KillProcess,
+    delay,
+    tailLogFile,
+    LogTailResult,
+    waitForFileToBeCreatedAndReadable,
+    waitForFileToBeUnlocked
 } from './utilities';
 import {
     spawn,
-    ChildProcessByStdio,
+    ChildProcessByStdio
 } from 'child_process';
 import { UnityVersion } from './unity-version';
 
@@ -23,8 +28,6 @@ export class UnityEditor {
 
     private readonly logger: Logger = Logger.instance;
     private readonly autoAddNoGraphics: boolean;
-
-    private procInfo: ProcInfo | undefined;
 
     /**
      * Initializes a new instance of the UnityEditor class.
@@ -124,27 +127,117 @@ export class UnityEditor {
         return path.normalize(templatePath);
     }
 
+    /**
+     * Run the Unity Editor with the specified command line arguments.
+     * @param command The command containing arguments and optional project path.
+     * @throws Will throw an error if the Unity Editor fails to start or exits with a non-zero code.
+     */
     public async Run(command: EditorCommand): Promise<void> {
         let isCancelled = false;
-        const onCancel = async () => {
-            isCancelled = true;
-            await this.tryKillEditorProcesses();
-        };
+        let procInfo: ProcInfo | null = null;
+        let logTail: LogTailResult | null = null;
 
-        let exitCode: number | undefined;
+        async function tryKillEditorProcesses(): Promise<void> {
+            try {
+                if (procInfo) {
+                    await KillProcess(procInfo);
+                    await KillChildProcesses(procInfo);
+                }
+            } catch (error) {
+                Logger.instance.error(`Failed to kill Unity process: ${error}`);
+            }
+        }
+
+        function onCancel(): void {
+            isCancelled = true;
+            void tryKillEditorProcesses();
+        }
+
+        let exitCode: number = 1;
+
         try {
-            process.once('SIGINT', onCancel);
-            process.once('SIGTERM', onCancel);
-            const commandStr = `\x1b[34m${this.editorPath} ${command.args.join(' ')}\x1b[0m`;
-            this.logger.startGroup(commandStr);
-            exitCode = await this.exec(command, pInfo => { this.procInfo = pInfo; });
-        } catch (error) {
-            if (error instanceof Error) {
-                this.logger.error(error.toString());
+            if (!command.args || command.args.length === 0) {
+                throw Error('No command arguments provided for Unity execution');
             }
 
-            if (!exitCode) {
-                exitCode = 1;
+            if (!command.args.includes(`-automated`)) {
+                command.args.push(`-automated`);
+            }
+
+            if (!command.args.includes(`-batchmode`)) {
+                command.args.push(`-batchmode`);
+            }
+
+            if (this.autoAddNoGraphics &&
+                !command.args.includes(`-nographics`) &&
+                !command.args.includes(`-force-graphics`)) {
+                command.args.push(`-nographics`);
+            }
+
+            if (!command.args.includes('-logFile')) {
+                command.args.push('-logFile', this.GenerateLogFilePath(command.projectPath));
+            }
+
+            const logPath: string = GetArgumentValueAsString('-logFile', command.args);
+            const commandStr = `\x1b[34m${this.editorPath} ${command.args.join(' ')}\x1b[0m`;
+            this.logger.startGroup(commandStr);
+            let unityProcess: ChildProcessByStdio<null, null, null>;
+
+            if (process.platform === 'linux' && !command.args.includes('-nographics')) {
+                unityProcess = spawn(
+                    'xvfb-run',
+                    [this.editorPath, ...command.args], {
+                    stdio: ['ignore', 'ignore', 'ignore'],
+                    env: {
+                        ...process.env,
+                        DISPLAY: ':99',
+                        UNITY_THISISABUILDMACHINE: '1'
+                    }
+                });
+            } else {
+                unityProcess = spawn(
+                    this.editorPath,
+                    command.args, {
+                    stdio: ['ignore', 'ignore', 'ignore'],
+                    env: {
+                        ...process.env,
+                        UNITY_THISISABUILDMACHINE: '1'
+                    }
+                });
+            }
+
+            if (!unityProcess?.pid) {
+                throw new Error('Failed to start Unity process!');
+            }
+
+            process.once('SIGINT', onCancel);
+            process.once('SIGTERM', onCancel);
+            procInfo = { pid: unityProcess.pid, ppid: process.pid, name: this.editorPath };
+            this.logger.debug(`Unity process started with pid: ${procInfo.pid}`);
+            const timeout = 10000; // 10 seconds
+            await waitForFileToBeCreatedAndReadable(logPath, timeout);
+            logTail = tailLogFile(logPath);
+            exitCode = await new Promise((resolve, reject) => {
+                unityProcess.on('exit', (code) => {
+                    setTimeout(() => {
+                        logTail?.signalEnd();
+                        resolve(code === null ? 1 : code);
+                    }, timeout);
+                });
+                unityProcess.on('error', (error) => {
+                    setTimeout(() => {
+                        logTail?.signalEnd();
+                        reject(error);
+                    }, timeout);
+                });
+            });
+            // Wait for log tailing to finish writing remaining content
+            if (logTail && logTail.promise) {
+                try {
+                    await logTail.promise;
+                } catch (error) {
+                    this.logger.error(`Error occurred while tailing log file: ${error}`);
+                }
             }
         } finally {
             process.removeListener('SIGINT', onCancel);
@@ -152,7 +245,7 @@ export class UnityEditor {
             this.logger.endGroup();
 
             if (!isCancelled) {
-                await this.tryKillEditorProcesses();
+                await tryKillEditorProcesses();
 
                 if (exitCode !== 0) {
                     throw Error(`Unity failed with exit code ${exitCode}`);
@@ -161,6 +254,11 @@ export class UnityEditor {
         }
     }
 
+    /**
+     * Get or create the Logs directory within the Unity project or current working directory.
+     * @param projectPath The path to the Unity project. If undefined, uses the current working directory.
+     * @returns The path to the Logs directory.
+     */
     public GetLogsDirectory(projectPath: string | undefined): string {
         const logsDir = projectPath !== undefined
             ? path.join(projectPath, 'Builds', 'Logs')
@@ -176,158 +274,24 @@ export class UnityEditor {
         return logsDir;
     }
 
+    /**
+     * Generate a log file path with an optional prefix in the Logs directory.
+     * @param projectPath The path to the Unity project. If undefined, uses the current working directory.
+     * @param prefix An optional prefix for the log file name.
+     * @returns The generated log file path.
+     */
     public GenerateLogFilePath(projectPath: string | undefined, prefix: string | undefined = undefined): string {
         const logsDir = this.GetLogsDirectory(projectPath);
         const timestamp = new Date().toISOString().replace(/[-:]/g, ``).replace(/\..+/, ``);
         return path.join(logsDir, `${prefix ? prefix + '-' : ''}Unity-${timestamp}.log`);
     }
 
-    private async exec(command: EditorCommand, onPid: (pid: ProcInfo) => void): Promise<number> {
-        if (!command.args || command.args.length === 0) {
-            throw Error('No command arguments provided for Unity execution');
-        }
-
-        if (!command.args.includes(`-automated`)) {
-            command.args.push(`-automated`);
-        }
-
-        if (!command.args.includes(`-batchmode`)) {
-            command.args.push(`-batchmode`);
-        }
-
-        if (this.autoAddNoGraphics &&
-            !command.args.includes(`-nographics`) &&
-            !command.args.includes(`-force-graphics`)) {
-            command.args.push(`-nographics`);
-        }
-
-        if (!command.args.includes('-logFile')) {
-            command.args.push('-logFile', this.GenerateLogFilePath(command.projectPath));
-        }
-
-        const logPath: string = GetArgumentValueAsString('-logFile', command.args);
-
-        let unityProcess: ChildProcessByStdio<null, null, null>;
-
-        if (process.platform === 'linux' && !command.args.includes('-nographics')) {
-            unityProcess = spawn(
-                'xvfb-run',
-                [this.editorPath, ...command.args], {
-                stdio: ['ignore', 'ignore', 'ignore'],
-                detached: true,
-                env: {
-                    ...process.env,
-                    DISPLAY: ':99',
-                    UNITY_THISISABUILDMACHINE: '1'
-                }
-            });
-        } else {
-            unityProcess = spawn(
-                this.editorPath,
-                command.args, {
-                stdio: ['ignore', 'ignore', 'ignore'],
-                detached: true,
-                env: {
-                    ...process.env,
-                    UNITY_THISISABUILDMACHINE: '1'
-                }
-            });
-        }
-
-        const processId = unityProcess.pid;
-
-        if (!processId) {
-            throw new Error('Failed to start Unity process!');
-        }
-
-        onPid({ pid: processId, ppid: process.pid, name: this.editorPath });
-        this.logger.debug(`Unity process started with pid: ${processId}`);
-        const logPollingInterval = 100; // milliseconds
-        // Wait for log file to appear
-        while (!fs.existsSync(logPath)) {
-            await new Promise(res => setTimeout(res, logPollingInterval));
-        }
-        // Start tailing the log file
-        let lastSize = 0;
-        let logEnded = false;
-
-        const tailLog = async () => {
-            while (!logEnded) {
-                try {
-                    const stats = fs.statSync(logPath);
-                    if (stats.size > lastSize) {
-                        const fd = fs.openSync(logPath, 'r');
-                        const buffer = Buffer.alloc(stats.size - lastSize);
-                        fs.readSync(fd, buffer, 0, buffer.length, lastSize);
-                        process.stdout.write(buffer.toString('utf8'));
-                        fs.closeSync(fd);
-                        lastSize = stats.size;
-                    }
-                } catch (error) {
-                    // ignore read errors
-                }
-                await new Promise(res => setTimeout(res, logPollingInterval));
-            }
-            // Write a newline at the end of the log tail
-            // prevents appending logs from being printed on the same line
-            process.stdout.write('\n');
-        };
-        const timeout = 10000; // 10 seconds
-        // Start log tailing in background
-        const tailPromise = tailLog();
-        const exitCode: number = await new Promise((resolve, reject) => {
-            unityProcess.on('exit', (code: number) => {
-                setTimeout(() => {
-                    logEnded = true;
-                    resolve(code ?? 1);
-                }, timeout);
-            });
-            unityProcess.on('error', (error: Error) => {
-                setTimeout(() => {
-                    logEnded = true;
-                    reject(error);
-                }, timeout);
-            });
-        });
-        // Wait for log tailing to finish
-        await tailPromise;
-        // Wait for log file to be unlocked
-        const start = Date.now();
-        let fileLocked = true;
-
-        while (fileLocked && Date.now() - start < timeout) {
-            try {
-                if (fs.existsSync(logPath)) {
-                    const fd = fs.openSync(logPath, 'r+');
-                    fs.closeSync(fd);
-                    fileLocked = false;
-                } else {
-                    fileLocked = false;
-                }
-            } catch {
-                fileLocked = true;
-                await new Promise(r => setTimeout(r, logPollingInterval));
-            }
-        }
-
-        return exitCode;
-    }
-
-    private async tryKillEditorProcesses(): Promise<void> {
-        try {
-            if (this.procInfo) {
-                const proc = this.procInfo;
-                await KillProcess(proc);
-                await KillChildProcesses(proc);
-            } else {
-                this.logger.debug('No Unity process info available to kill.');
-            }
-        } catch (error) {
-            this.logger.error(`Failed to kill Unity process: ${error}`);
-        }
-    }
-
-    static GetEditorRootPath(editorPath: string): string {
+    /**
+     * Get the root path of the Unity Editor installation based on the provided editor path.
+     * @param editorPath The path to the Unity Editor executable.
+     * @returns The root path of the Unity Editor installation.
+     */
+    public static GetEditorRootPath(editorPath: string): string {
         let editorRootPath = editorPath;
         switch (process.platform) {
             case 'darwin':
