@@ -19,7 +19,6 @@ import {
     ExecOptions,
     ReadFileContents,
     GetTempDir,
-    KillProcess,
 } from './utilities';
 import {
     UnityReleasesClient,
@@ -100,11 +99,12 @@ export class UnityHub {
 
         try {
             exitCode = await new Promise<number>((resolve, reject) => {
-                let tasksComplete: boolean = false;
+                let isSettled: boolean = false; // Has the promise been settled (resolved or rejected)?
+                let isHubTaskComplete: boolean = false; // Has the Unity Hub tasks completed successfully?
+                let lineBuffer = ''; // Buffer for incomplete lines
                 const tasksCompleteMessage = 'All Tasks Completed Successfully.';
                 const child = spawn(executable, execArgs, {
-                    stdio: ['ignore', 'pipe', 'pipe'],
-                    detached: process.platform !== 'win32'
+                    stdio: ['ignore', 'pipe', 'pipe']
                 });
                 const sigintHandler = () => child.kill('SIGINT');
                 const sigtermHandler = () => child.kill('SIGTERM');
@@ -112,15 +112,14 @@ export class UnityHub {
                 process.once('SIGTERM', sigtermHandler);
 
                 let hasCleanedUpListeners = false;
-                function removeListeners() {
+                function removeListeners(): void {
                     if (hasCleanedUpListeners) { return; }
                     hasCleanedUpListeners = true;
                     process.removeListener('SIGINT', sigintHandler);
                     process.removeListener('SIGTERM', sigtermHandler);
                 }
 
-                let lineBuffer = ''; // Buffer for incomplete lines
-                function processOutput(data: Buffer) {
+                function processOutput(data: Buffer): void {
                     try {
                         const chunk = data.toString();
                         const fullChunk = lineBuffer + chunk;
@@ -137,10 +136,26 @@ export class UnityHub {
                         const outputLines = lines.filter(line => !ignoredLines.some(ignored => line.includes(ignored)));
 
                         if (outputLines.includes(tasksCompleteMessage)) {
-                            tasksComplete = true;
+                            isHubTaskComplete = true;
 
                             if (child?.pid) {
-                                void KillProcess({ pid: child.pid, name: child.spawnfile, ppid: process.pid });
+                                try {
+                                    child.kill('SIGTERM');
+
+                                    setTimeout(() => {
+                                        try {
+                                            if (child?.pid && !child.killed) {
+                                                child.kill('SIGKILL');
+                                            }
+                                        } catch {
+                                            // Ignore, process may have already exited
+                                        }
+                                    }, 1000);
+                                } catch {
+                                    // Ignore, process may have already exited
+                                } finally {
+                                    settle(0);
+                                }
                             }
                         }
 
@@ -157,41 +172,57 @@ export class UnityHub {
                         }
                     }
                 }
-                child.stdout.on('data', processOutput);
-                child.stderr.on('data', processOutput);
-                child.on('error', (error) => {
-                    removeListeners();
-                    reject(error);
-                });
-                child.on('close', (code) => {
-                    removeListeners();
 
-                    // Flush any remaining buffered content
-                    if (lineBuffer.length > 0) {
-                        const lines = lineBuffer.split('\n') // split by newline
-                            .map(line => line.replace(/\r$/, '')) // remove trailing carriage return
-                            .filter(line => line.length > 0); // filter out empty lines
-                        const outputLines = lines.filter(line => !ignoredLines.some(ignored => line.includes(ignored)));
+                function flushOutput(): void {
+                    try {
+                        if (lineBuffer.length > 0) {
+                            const lines = lineBuffer.split('\n') // split by newline
+                                .map(line => line.replace(/\r$/, '')) // remove trailing carriage return
+                                .filter(line => line.length > 0); // filter out empty lines
+                            lineBuffer = '';
+                            const outputLines = lines.filter(line => !ignoredLines.some(ignored => line.includes(ignored)));
 
-                        if (outputLines.includes(tasksCompleteMessage)) {
-                            tasksComplete = true;
-                        }
+                            if (outputLines.includes(tasksCompleteMessage)) {
+                                isHubTaskComplete = true;
+                            }
 
-                        for (const line of outputLines) {
-                            output += `${line}\n`;
+                            for (const line of outputLines) {
+                                output += `${line}\n`;
 
-                            if (!options.silent) {
-                                process.stdout.write(`${line}\n`);
+                                if (!options.silent) {
+                                    process.stdout.write(`${line}\n`);
+                                }
                             }
                         }
+                    } catch (error: any) {
+                        if (error.code !== 'EPIPE') {
+                            Logger.instance.error(`Failed to process buffered output: ${error}`);
+                        }
                     }
+                }
 
-                    if (tasksComplete) {
+                function settle(code: number | null): void {
+                    if (isSettled) { return; }
+                    isSettled = true;
+                    removeListeners();
+                    flushOutput();
+
+                    if (isHubTaskComplete) {
                         resolve(0);
                     } else {
                         resolve(code === null ? 0 : code);
                     }
+                }
+
+                child.stdout.on('data', processOutput);
+                child.stderr.on('data', processOutput);
+                child.on('error', (error) => {
+                    isSettled = true;
+                    removeListeners();
+                    flushOutput();
+                    reject(error);
                 });
+                child.on('close', settle);
             });
         } finally {
             this.logger.endGroup();

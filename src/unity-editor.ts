@@ -132,8 +132,10 @@ export class UnityEditor {
      */
     public async Run(command: EditorCommand): Promise<void> {
         let isCancelled = false;
+        let exitCode: number = 1;
         let procInfo: ProcInfo | null = null;
         let logTail: LogTailResult | null = null;
+        let unityProcess: ChildProcessByStdio<null, null, null>;
 
         async function tryKillEditorProcesses(): Promise<void> {
             try {
@@ -150,8 +152,6 @@ export class UnityEditor {
             isCancelled = true;
             void tryKillEditorProcesses();
         }
-
-        let exitCode: number = 1;
 
         try {
             if (!command.args || command.args.length === 0) {
@@ -179,7 +179,6 @@ export class UnityEditor {
             const logPath: string = GetArgumentValueAsString('-logFile', command.args);
             const commandStr = `\x1b[34m${this.editorPath} ${command.args.join(' ')}\x1b[0m`;
             this.logger.startGroup(commandStr);
-            let unityProcess: ChildProcessByStdio<null, null, null>;
 
             if (process.platform === 'linux' && !command.args.includes('-nographics')) {
                 unityProcess = spawn(
