@@ -140,7 +140,7 @@ export class UnityHub {
                             tasksComplete = true;
 
                             if (child?.pid) {
-                                KillProcess({ pid: child.pid, name: child.spawnfile, ppid: process.pid });
+                                void KillProcess({ pid: child.pid, name: child.spawnfile, ppid: process.pid });
                             }
                         }
 
