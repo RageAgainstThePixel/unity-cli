@@ -212,8 +212,8 @@ export class UnityEditor {
                 throw new Error('Failed to start Unity process!');
             }
 
-            process.addListener('SIGINT', onCancel);
-            process.addListener('SIGTERM', onCancel);
+            process.once('SIGINT', onCancel);
+            process.once('SIGTERM', onCancel);
             procInfo = { pid: unityProcess.pid, ppid: process.pid, name: this.editorPath };
             this.logger.debug(`Unity process started with pid: ${procInfo.pid}`);
             const timeout = 10000; // 10 seconds
@@ -244,8 +244,6 @@ export class UnityEditor {
             // Wait for log file to be unlocked as the last of the log buffer is flushed to disk.
             await waitForFileToBeUnlocked(logPath, fs.constants.O_RDWR, timeout);
         } finally {
-            logTail?.cleanup();
-            logTail = null;
             process.removeListener('SIGINT', onCancel);
             process.removeListener('SIGTERM', onCancel);
             this.logger.endGroup();

@@ -90,8 +90,8 @@ export async function Exec(command: string, args: string[], options: ExecOptions
             });
             const sigintHandler = () => child.kill('SIGINT');
             const sigtermHandler = () => child.kill('SIGTERM');
-            process.addListener('SIGINT', sigintHandler);
-            process.addListener('SIGTERM', sigtermHandler);
+            process.once('SIGINT', sigintHandler);
+            process.once('SIGTERM', sigtermHandler);
 
             let hasCleanedUpListeners = false;
             function removeListeners() {
@@ -316,14 +316,12 @@ export interface LogTailResult {
     promise: Promise<void>;
     /** Function to signal that log tailing should end */
     signalEnd: () => void;
-    /** Function to cleanup resources (watcher and stream) */
-    cleanup: () => void;
 }
 
 /**
  * Tails a log file using fs.watch and ReadStream for efficient reading.
  * @param logPath The path to the log file to tail.
- * @returns An object containing the tail promise, signalEnd function, and cleanup function.
+ * @returns An object containing the tail promise and signalEnd function.
  */
 export function tailLogFile(logPath: string): LogTailResult {
     let logEnded = false;
@@ -406,11 +404,7 @@ export function tailLogFile(logPath: string): LogTailResult {
         logEnded = true;
     }
 
-    function cleanup(): void {
-        logEnded = true;
-    }
-
-    return { promise, signalEnd, cleanup };
+    return { promise, signalEnd };
 }
 
 /**
@@ -422,7 +416,7 @@ export async function waitForFileToBeCreatedAndReadable(filePath: string, timeou
     const pollInterval = 100;
     const deadline = Date.now() + timeout;
 
-    while (Date.now() <= deadline) {
+    while (Date.now() < deadline) {
         try {
             if (fs.existsSync(filePath)) {
                 fs.accessSync(filePath, fs.constants.R_OK);
@@ -469,7 +463,7 @@ export async function waitForFileToBeUnlocked(filePath: string, flags: number = 
         }
     };
 
-    while (Date.now() <= deadline) {
+    while (Date.now() < deadline) {
         try {
             if (!fs.existsSync(filePath)) {
                 return;
