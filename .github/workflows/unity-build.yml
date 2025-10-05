@@ -89,4 +89,4 @@ jobs:
         with:
           name: ${{ matrix.name }} logs
           path: |
-            ${{ github.workspace }}/*/**.log
+            ${{ github.workspace }}/**/*.log
