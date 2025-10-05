@@ -136,7 +136,7 @@ export async function Exec(command: string, args: string[], options: ExecOptions
                 removeListeners();
                 reject(error);
             });
-            child.on('close', (code) => {
+            child.on('exit', (code) => {
                 removeListeners();
 
                 // Flush any remaining buffered content

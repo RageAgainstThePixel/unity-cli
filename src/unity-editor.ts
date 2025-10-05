@@ -220,7 +220,7 @@ export class UnityEditor {
             await waitForFileToBeCreatedAndReadable(logPath, timeout);
             logTail = tailLogFile(logPath);
             exitCode = await new Promise((resolve, reject) => {
-                unityProcess.on('close', (code) => {
+                unityProcess.on('exit', (code) => {
                     setTimeout(() => {
                         logTail?.signalEnd();
                         resolve(code === null ? 1 : code);
