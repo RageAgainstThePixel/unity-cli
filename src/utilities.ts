@@ -27,6 +27,11 @@ export async function ResolveGlobToPath(globs: string[]): Promise<string> {
     throw new Error(`No accessible file found for glob pattern: ${path.normalize(globPath)}`);
 }
 
+/**
+ * Prompts the user for input, masking the input with asterisks.
+ * @param prompt The prompt message to display.
+ * @returns The user input as a string.
+ */
 export async function PromptForSecretInput(prompt: string): Promise<string> {
     return new Promise<string>((resolve) => {
         const rl = readline.createInterface({
@@ -304,7 +309,12 @@ export async function ReadPidFile(pidFilePath: string): Promise<ProcInfo | undef
     return procInfo;
 }
 
-export async function delay(ms: number): Promise<void> {
+/**
+ * Delays execution for a specified number of milliseconds.
+ * @param ms The number of milliseconds to delay.
+ * @returns A promise that resolves after the delay.
+ */
+export async function Delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
@@ -313,7 +323,7 @@ export async function delay(ms: number): Promise<void> {
  */
 export interface LogTailResult {
     /** Promise that resolves when log tailing completes */
-    promise: Promise<void>;
+    tailPromise: Promise<void>;
     /** Function to signal that log tailing should end */
     stopLogTail: () => void;
 }
@@ -323,7 +333,7 @@ export interface LogTailResult {
  * @param logPath The path to the log file to tail.
  * @returns An object containing the tail promise and signalEnd function.
  */
-export function tailLogFile(logPath: string): LogTailResult {
+export function TailLogFile(logPath: string): LogTailResult {
     let logEnded = false;
     let lastSize = 0;
     const logPollingInterval = 250;
@@ -345,11 +355,7 @@ export function tailLogFile(logPath: string): LogTailResult {
                     fh = await fs.promises.open(logPath, fs.constants.O_RDONLY);
                     await fh.read(buffer, 0, bytesToRead, lastSize);
                 } finally {
-                    try {
-                        await fh?.close();
-                    } catch (error) {
-                        logger.debug(`Failed to close log file descriptor: ${error}`);
-                    }
+                    await fh?.close();
                 }
 
                 lastSize = stats.size;
@@ -361,36 +367,33 @@ export function tailLogFile(logPath: string): LogTailResult {
                         process.stdout.write(chunk);
                     } catch (error: any) {
                         if (error.code !== 'EPIPE') {
-                            logger.error(`Error writing log output: ${error}`);
+                            throw error;
                         }
                     }
                 }
             }
         } catch (error) {
-            // Ignore errors while polling unless tailing has been intentionally ended
-            if (!logEnded) {
-                logger.debug(`Error while polling log file: ${error}`);
-            }
+            logger.warn(`Error while tailing log file: ${error}`);
         }
     }
 
-    const promise = new Promise<void>((resolve, reject) => {
+    const tailPromise = new Promise<void>((resolve, reject) => {
         (async () => {
             try {
                 while (!logEnded) {
-                    await delay(logPollingInterval);
+                    await Delay(logPollingInterval);
                     await readNewLogContent();
                 }
 
                 // Final read to capture any remaining content after tailing stops
-                await waitForFileToBeUnlocked(logPath, 10000);
+                await WaitForFileToBeUnlocked(logPath, 10000);
                 await readNewLogContent();
 
                 try {
                     process.stdout.write('\n');
                 } catch (error: any) {
                     if (error.code !== 'EPIPE') {
-                        logger.error(`Error writing final newline: ${error}`);
+                        logger.warn(`Error while writing log tail: ${error}`);
                     }
                 }
 
@@ -405,7 +408,7 @@ export function tailLogFile(logPath: string): LogTailResult {
         logEnded = true;
     }
 
-    return { promise, stopLogTail };
+    return { tailPromise, stopLogTail };
 }
 
 /**
@@ -413,17 +416,17 @@ export function tailLogFile(logPath: string): LogTailResult {
  * @param filePath The path of the file to wait for.
  * @param timeout The maximum time to wait in milliseconds. Default is 30000 (30 seconds).
  */
-export async function waitForFileToBeCreatedAndReadable(filePath: string, timeout: number = 30000): Promise<void> {
+export async function WaitForFileToBeCreatedAndReadable(filePath: string, timeout: number = 30000): Promise<void> {
     const pollInterval = 100;
     const deadline = Date.now() + timeout;
 
     while (Date.now() < deadline) {
         // test file access by attempting to open the file with read only access
-        if (await testFileAccess(filePath, fs.constants.O_RDONLY)) {
+        if (await TestFileAccess(filePath, fs.constants.O_RDONLY)) {
             return;
         }
 
-        await delay(pollInterval);
+        await Delay(pollInterval);
     }
 
     throw new Error(`Timed out waiting for file to become readable: ${filePath}`);
@@ -437,17 +440,17 @@ export async function waitForFileToBeCreatedAndReadable(filePath: string, timeou
  * @param timeout The maximum time to wait in milliseconds. Default is 30000 (30 seconds).
  * @returns A promise that resolves when the file is unlocked.
  */
-export async function waitForFileToBeUnlocked(filePath: string, timeout: number = 30000): Promise<void> {
+export async function WaitForFileToBeUnlocked(filePath: string, timeout: number = 30000): Promise<void> {
     const pollInterval = 100;
     const deadline = Date.now() + timeout;
 
     while (Date.now() < deadline) {
         // test file access by attempting to open the file with read/write access
-        if (await testFileAccess(filePath, fs.constants.O_RDWR)) {
+        if (await TestFileAccess(filePath, fs.constants.O_RDWR)) {
             return;
         }
 
-        await delay(pollInterval);
+        await Delay(pollInterval);
     }
 
     throw new Error(`Timed out waiting for file to be unlocked: ${filePath}`);
@@ -460,7 +463,7 @@ export async function waitForFileToBeUnlocked(filePath: string, timeout: number 
  * @param flags The flags to use when opening the file (e.g., fs.constants.O_RDONLY).
  * @returns A promise that resolves to true if the file can be opened, false otherwise.
  */
-async function testFileAccess(filePath: string, flags: number): Promise<boolean> {
+export async function TestFileAccess(filePath: string, flags: number): Promise<boolean> {
     // expect the file to be visible and accessible
     try {
         await fs.promises.access(filePath, fs.constants.F_OK);
@@ -506,7 +509,7 @@ export async function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = '
             return; // Process has exited
         }
 
-        await delay(5000); // wait 5 seconds
+        await Delay(5000); // wait 5 seconds
 
         try {
             // Check if the process is still running

@@ -1,22 +1,20 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Logger } from './logging';
+import { UnityVersion } from './unity-version';
+import {
+    spawn,
+    ChildProcessByStdio
+} from 'child_process';
 import {
     GetArgumentValueAsString,
     KillChildProcesses,
     ProcInfo,
     KillProcess,
-    delay,
-    tailLogFile,
+    TailLogFile,
     LogTailResult,
-    waitForFileToBeCreatedAndReadable,
-    waitForFileToBeUnlocked
+    WaitForFileToBeCreatedAndReadable,
 } from './utilities';
-import {
-    spawn,
-    ChildProcessByStdio
-} from 'child_process';
-import { UnityVersion } from './unity-version';
 
 export interface EditorCommand {
     args: string[];
@@ -215,8 +213,8 @@ export class UnityEditor {
             procInfo = { pid: unityProcess.pid, ppid: process.pid, name: this.editorPath };
             this.logger.debug(`Unity process started with pid: ${procInfo.pid}`);
             const timeout = 10000; // 10 seconds
-            await waitForFileToBeCreatedAndReadable(logPath, timeout);
-            logTail = tailLogFile(logPath);
+            await WaitForFileToBeCreatedAndReadable(logPath, timeout);
+            logTail = TailLogFile(logPath);
             exitCode = await new Promise((resolve, reject) => {
                 unityProcess.on('close', (code) => {
                     setTimeout(() => {
@@ -232,9 +230,9 @@ export class UnityEditor {
                 });
             });
             // Wait for log tailing to finish writing remaining content
-            if (logTail && logTail.promise) {
+            if (logTail && logTail.tailPromise) {
                 try {
-                    await logTail.promise;
+                    await logTail.tailPromise;
                 } catch (error) {
                     this.logger.error(`Error occurred while tailing log file: ${error}`);
                 }
