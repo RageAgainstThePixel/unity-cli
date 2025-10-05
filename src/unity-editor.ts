@@ -218,15 +218,15 @@ export class UnityEditor {
             await waitForFileToBeCreatedAndReadable(logPath, timeout);
             logTail = tailLogFile(logPath);
             exitCode = await new Promise((resolve, reject) => {
-                unityProcess.on('exit', (code) => {
+                unityProcess.on('close', (code) => {
                     setTimeout(() => {
-                        logTail?.signalEnd();
+                        logTail?.stopLogTail();
                         resolve(code === null ? 1 : code);
                     }, timeout);
                 });
                 unityProcess.on('error', (error) => {
                     setTimeout(() => {
-                        logTail?.signalEnd();
+                        logTail?.stopLogTail();
                         reject(error);
                     }, timeout);
                 });

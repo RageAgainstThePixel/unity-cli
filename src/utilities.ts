@@ -1,10 +1,10 @@
 
-import * as path from 'path';
-import * as glob from 'glob';
+import * as os from 'os';
 import * as fs from 'fs';
+import * as path from 'path';
 import * as https from 'https';
 import * as readline from 'readline';
-import * as os from 'os';
+import { glob } from 'glob';
 import { spawn } from 'child_process';
 import { Logger, LogLevel } from './logging';
 
@@ -17,7 +17,7 @@ const logger = Logger.instance;
  */
 export async function ResolveGlobToPath(globs: string[]): Promise<string> {
     const globPath: string = path.join(...globs).split(path.sep).join('/');
-    const paths: string[] = await glob.glob(globPath);
+    const paths: string[] = await glob(globPath);
 
     for (const path of paths) {
         await fs.promises.access(path, fs.constants.R_OK);
@@ -136,7 +136,7 @@ export async function Exec(command: string, args: string[], options: ExecOptions
                 removeListeners();
                 reject(error);
             });
-            child.on('exit', (code) => {
+            child.on('close', (code) => {
                 removeListeners();
 
                 // Flush any remaining buffered content
@@ -315,7 +315,7 @@ export interface LogTailResult {
     /** Promise that resolves when log tailing completes */
     promise: Promise<void>;
     /** Function to signal that log tailing should end */
-    signalEnd: () => void;
+    stopLogTail: () => void;
 }
 
 /**
@@ -328,9 +328,9 @@ export function tailLogFile(logPath: string): LogTailResult {
     let lastSize = 0;
     const logPollingInterval = 250;
 
-    const readNewLogContent = () => {
+    async function readNewLogContent(): Promise<void> {
         try {
-            const stats = fs.statSync(logPath);
+            const stats = await fs.promises.stat(logPath);
 
             if (stats.size < lastSize) {
                 lastSize = 0;
@@ -339,18 +339,16 @@ export function tailLogFile(logPath: string): LogTailResult {
             if (stats.size > lastSize) {
                 const bytesToRead = stats.size - lastSize;
                 const buffer = Buffer.alloc(bytesToRead);
-                let fd: number | null = null;
+                let fh: fs.promises.FileHandle | undefined;
 
                 try {
-                    fd = fs.openSync(logPath, 'r');
-                    fs.readSync(fd, buffer, 0, bytesToRead, lastSize);
+                    fh = await fs.promises.open(logPath, fs.constants.O_RDONLY);
+                    await fh.read(buffer, 0, bytesToRead, lastSize);
                 } finally {
-                    if (fd !== null) {
-                        try {
-                            fs.closeSync(fd);
-                        } catch (error) {
-                            logger.debug(`Failed to close log file descriptor: ${error}`);
-                        }
+                    try {
+                        await fh?.close();
+                    } catch (error) {
+                        logger.debug(`Failed to close log file descriptor: ${error}`);
                     }
                 }
 
@@ -374,38 +372,40 @@ export function tailLogFile(logPath: string): LogTailResult {
                 logger.debug(`Error while polling log file: ${error}`);
             }
         }
-    };
+    }
 
-    const promise = new Promise<void>(async (resolve, reject) => {
-        try {
-            while (!logEnded) {
-                readNewLogContent();
-                await delay(logPollingInterval);
-            }
-
-            // Final read to capture any remaining content after tailing stops
-            await waitForFileToBeUnlocked(logPath, fs.constants.O_RDONLY, 10000);
-            readNewLogContent();
-
+    const promise = new Promise<void>((resolve, reject) => {
+        (async () => {
             try {
-                process.stdout.write('\n');
-            } catch (error: any) {
-                if (error.code !== 'EPIPE') {
-                    logger.error(`Error writing final newline: ${error}`);
+                while (!logEnded) {
+                    await delay(logPollingInterval);
+                    await readNewLogContent();
                 }
-            }
 
-            resolve();
-        } catch (error) {
-            reject(error);
-        }
+                // Final read to capture any remaining content after tailing stops
+                await waitForFileToBeUnlocked(logPath, 10000);
+                await readNewLogContent();
+
+                try {
+                    process.stdout.write('\n');
+                } catch (error: any) {
+                    if (error.code !== 'EPIPE') {
+                        logger.error(`Error writing final newline: ${error}`);
+                    }
+                }
+
+                resolve();
+            } catch (error) {
+                reject(error);
+            }
+        })();
     });
 
-    function signalEnd(): void {
+    function stopLogTail(): void {
         logEnded = true;
     }
 
-    return { promise, signalEnd };
+    return { promise, stopLogTail };
 }
 
 /**
@@ -418,13 +418,9 @@ export async function waitForFileToBeCreatedAndReadable(filePath: string, timeou
     const deadline = Date.now() + timeout;
 
     while (Date.now() < deadline) {
-        try {
-            if (fs.existsSync(filePath)) {
-                fs.accessSync(filePath, fs.constants.R_OK);
-                return;
-            }
-        } catch (error) {
-            // File exists but not yet readable; keep polling until timeout expires
+        // test file access by attempting to open the file with read only access
+        if (await testFileAccess(filePath, fs.constants.O_RDONLY)) {
+            return;
         }
 
         await delay(pollInterval);
@@ -438,53 +434,57 @@ export async function waitForFileToBeCreatedAndReadable(filePath: string, timeou
  * If the file does not exist, it is considered unlocked.
  * If the file exists, attempts to open it with read/write access.
  * @param filePath The path of the file to wait for.
- * @param flags The file open flags to use when testing. Default is fs.constants.O_RDWR.
  * @param timeout The maximum time to wait in milliseconds. Default is 30000 (30 seconds).
  * @returns A promise that resolves when the file is unlocked.
  */
-export async function waitForFileToBeUnlocked(filePath: string, flags: number = fs.constants.O_RDWR, timeout: number = 30000): Promise<void> {
+export async function waitForFileToBeUnlocked(filePath: string, timeout: number = 30000): Promise<void> {
     const pollInterval = 100;
     const deadline = Date.now() + timeout;
 
-    const tryOpen = (): boolean => {
-        try {
-            const fd = fs.openSync(filePath, flags);
-            try {
-                fs.closeSync(fd);
-            } catch {
-                // ignore close errors
-            }
-            return true;
-        } catch (error: any) {
-            const code = error && error.code ? error.code : null;
-            if (code === 'EACCES' || code === 'EPERM' || code === 'EBUSY' || code === 'ETXTBSY') {
-                return false;
-            }
-            throw error;
-        }
-    };
-
     while (Date.now() < deadline) {
-        try {
-            if (!fs.existsSync(filePath)) {
-                return;
-            }
-        } catch (error) {
-            // If exists check fails unexpectedly, continue polling until timeout or success
-        }
-
-        try {
-            if (tryOpen()) {
-                return;
-            }
-        } catch (error) {
-            throw error;
+        // test file access by attempting to open the file with read/write access
+        if (await testFileAccess(filePath, fs.constants.O_RDWR)) {
+            return;
         }
 
         await delay(pollInterval);
     }
 
     throw new Error(`Timed out waiting for file to be unlocked: ${filePath}`);
+}
+
+/**
+ * Tests if a file can be opened with the specified flags.
+ * @remarks If the file does not exist, it returns false.
+ * @param filePath The path of the file to test.
+ * @param flags The flags to use when opening the file (e.g., fs.constants.O_RDONLY).
+ * @returns A promise that resolves to true if the file can be opened, false otherwise.
+ */
+async function testFileAccess(filePath: string, flags: number): Promise<boolean> {
+    // expect the file to be visible and accessible
+    try {
+        await fs.promises.access(filePath, fs.constants.F_OK);
+    } catch (error) {
+        return false;
+    }
+
+    let fh: fs.promises.FileHandle | undefined;
+
+    // try to open the file with the specified flags
+    try {
+        fh = await fs.promises.open(filePath, flags);
+        return true;
+    } catch (error: any) {
+        const code = error && error.code ? error.code : null;
+        // These codes indicate the file is temporarily inaccessible (locked/permission) or missing.
+        if (code === 'EACCES' || code === 'EPERM' || code === 'EBUSY' || code === 'ETXTBSY' || code === 'ENOENT') {
+            return false;
+        }
+        // Unexpected error, rethrow
+        throw error;
+    } finally {
+        await fh?.close();
+    }
 }
 
 /**
