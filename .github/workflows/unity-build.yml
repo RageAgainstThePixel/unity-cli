@@ -82,5 +82,4 @@ jobs:
         if: always()
         shell: bash
         run: |
-          set -xe
           unity-cli return-license --license personal
