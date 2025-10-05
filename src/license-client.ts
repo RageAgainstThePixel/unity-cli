@@ -235,11 +235,6 @@ export class LicensingClient {
         let output: string = '';
         let exitCode: number = 0;
 
-        function processOutput(data: Buffer) {
-            const chunk = data.toString();
-            output += chunk;
-        }
-
         this.logger.startGroup(`\x1b[34m${this.licenseClientPath} ${args.join(' ')}\x1b[0m`);
         await fs.promises.access(this.licenseClientPath!, fs.constants.R_OK | fs.constants.X_OK);
 
@@ -254,16 +249,28 @@ export class LicensingClient {
                 const sigtermHandler = () => child.kill('SIGTERM');
                 process.once('SIGINT', sigintHandler);
                 process.once('SIGTERM', sigtermHandler);
+
+                let hasCleanedUpListeners = false;
+                function removeListeners() {
+                    if (hasCleanedUpListeners) { return; }
+                    hasCleanedUpListeners = true;
+                    process.removeListener('SIGINT', sigintHandler);
+                    process.removeListener('SIGTERM', sigtermHandler);
+                }
+
+                function processOutput(data: Buffer) {
+                    const chunk = data.toString();
+                    output += chunk;
+                }
+
                 child.stdout.on('data', processOutput);
                 child.stderr.on('data', processOutput);
                 child.on('error', (error) => {
-                    process.removeListener('SIGINT', sigintHandler);
-                    process.removeListener('SIGTERM', sigtermHandler);
+                    removeListeners();
                     reject(error);
                 });
                 child.on('close', (code) => {
-                    process.removeListener('SIGINT', sigintHandler);
-                    process.removeListener('SIGTERM', sigtermHandler);
+                    removeListeners();
                     resolve(code === null ? 0 : code);
                 });
             });

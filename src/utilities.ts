@@ -1,10 +1,10 @@
 
-import * as path from 'path';
-import * as glob from 'glob';
+import * as os from 'os';
 import * as fs from 'fs';
+import * as path from 'path';
 import * as https from 'https';
 import * as readline from 'readline';
-import * as os from 'os';
+import { glob } from 'glob';
 import { spawn } from 'child_process';
 import { Logger, LogLevel } from './logging';
 
@@ -17,7 +17,7 @@ const logger = Logger.instance;
  */
 export async function ResolveGlobToPath(globs: string[]): Promise<string> {
     const globPath: string = path.join(...globs).split(path.sep).join('/');
-    const paths: string[] = await glob.glob(globPath);
+    const paths: string[] = await glob(globPath);
 
     for (const path of paths) {
         await fs.promises.access(path, fs.constants.R_OK);
@@ -27,6 +27,11 @@ export async function ResolveGlobToPath(globs: string[]): Promise<string> {
     throw new Error(`No accessible file found for glob pattern: ${path.normalize(globPath)}`);
 }
 
+/**
+ * Prompts the user for input, masking the input with asterisks.
+ * @param prompt The prompt message to display.
+ * @returns The user input as a string.
+ */
 export async function PromptForSecretInput(prompt: string): Promise<string> {
     return new Promise<string>((resolve) => {
         const rl = readline.createInterface({
@@ -68,21 +73,6 @@ export async function Exec(command: string, args: string[], options: ExecOptions
     const isSilent = isDebug ? false : options.silent ? options.silent : false;
     const mustShowCommand = isDebug ? true : options.showCommand ? options.showCommand : false;
 
-    function processOutput(data: Buffer) {
-        try {
-            const chunk = data.toString();
-            output += chunk;
-
-            if (!isSilent && chunk.trim().length > 0) {
-                process.stdout.write(chunk);
-            }
-        } catch (error: any) {
-            if (error.code !== 'EPIPE') {
-                throw error;
-            }
-        }
-    }
-
     if (mustShowCommand) {
         const commandStr = `\x1b[34m${command} ${args.join(' ')}\x1b[0m`;
 
@@ -107,16 +97,68 @@ export async function Exec(command: string, args: string[], options: ExecOptions
             const sigtermHandler = () => child.kill('SIGTERM');
             process.once('SIGINT', sigintHandler);
             process.once('SIGTERM', sigtermHandler);
+
+            let hasCleanedUpListeners = false;
+            function removeListeners() {
+                if (hasCleanedUpListeners) { return; }
+                hasCleanedUpListeners = true;
+                process.removeListener('SIGINT', sigintHandler);
+                process.removeListener('SIGTERM', sigtermHandler);
+            }
+
+            let lineBuffer = ''; // Buffer for incomplete lines
+            function processOutput(data: Buffer) {
+                try {
+                    const chunk = data.toString();
+                    const fullChunk = lineBuffer + chunk;
+                    const lines = fullChunk.split('\n') // split by newline
+                        .map(line => line.replace(/\r$/, '')) // remove trailing carriage return
+                        .filter(line => line.length > 0); // filter out empty lines
+
+                    if (!chunk.endsWith('\n')) {
+                        lineBuffer = lines.pop() || '';
+                    } else {
+                        lineBuffer = '';
+                    }
+
+                    for (const line of lines) {
+                        output += `${line}\n`;
+
+                        if (!isSilent) {
+                            process.stdout.write(`${line}\n`);
+                        }
+                    }
+                } catch (error: any) {
+                    if (error.code !== 'EPIPE') {
+                        throw error;
+                    }
+                }
+            }
+
             child.stdout.on('data', processOutput);
             child.stderr.on('data', processOutput);
             child.on('error', (error) => {
-                process.removeListener('SIGINT', sigintHandler);
-                process.removeListener('SIGTERM', sigtermHandler);
+                removeListeners();
                 reject(error);
             });
             child.on('close', (code) => {
-                process.removeListener('SIGINT', sigintHandler);
-                process.removeListener('SIGTERM', sigtermHandler);
+                removeListeners();
+
+                // Flush any remaining buffered content
+                if (lineBuffer.length > 0) {
+                    const lines = lineBuffer.split('\n') // split by newline
+                        .map(line => line.replace(/\r$/, '')) // remove trailing carriage return
+                        .filter(line => line.length > 0); // filter out empty lines
+
+                    for (const line of lines) {
+                        output += `${line}\n`;
+
+                        if (!isSilent) {
+                            process.stdout.write(`${line}\n`);
+                        }
+                    }
+                }
+
                 resolve(code === null ? 0 : code);
             });
         });
@@ -231,31 +273,6 @@ export interface ProcInfo {
 }
 
 /**
- * Attempts to kill a process with the given ProcInfo.
- * @param procInfo The process information containing the PID.
- * @param signal The signal to use for killing the process. Defaults to 'SIGTERM'.
- * @returns The PID of the killed process, or undefined if no process was killed.
- */
-export async function TryKillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = 'SIGTERM'): Promise<number | undefined> {
-    let pid: number | undefined;
-
-    try {
-        logger.ci(`Killing process "${procInfo.name}" with pid: ${procInfo.pid}`);
-        process.kill(procInfo.pid, signal);
-        pid = procInfo.pid;
-    } catch (error) {
-        const nodeJsException = error as NodeJS.ErrnoException;
-        const errorCode = nodeJsException?.code;
-
-        if (errorCode !== 'ENOENT' && errorCode !== 'ESRCH') {
-            logger.error(`Failed to kill process:\n${JSON.stringify(error)}`);
-        }
-    }
-
-    return pid;
-}
-
-/**
  * Reads a PID file and returns the process information.
  * @param pidFilePath The path to the PID file.
  * @returns The process information, or undefined if the file does not exist or cannot be read.
@@ -293,11 +310,245 @@ export async function ReadPidFile(pidFilePath: string): Promise<ProcInfo | undef
 }
 
 /**
+ * Delays execution for a specified number of milliseconds.
+ * @param ms The number of milliseconds to delay.
+ * @returns A promise that resolves after the delay.
+ */
+export async function Delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Result of the tailLogFile function containing cleanup resources.
+ */
+export interface LogTailResult {
+    /** Promise that resolves when log tailing completes */
+    tailPromise: Promise<void>;
+    /** Function to signal that log tailing should end */
+    stopLogTail: () => void;
+}
+
+/**
+ * Tails a log file using fs.watch and ReadStream for efficient reading.
+ * @param logPath The path to the log file to tail.
+ * @returns An object containing the tail promise and signalEnd function.
+ */
+export function TailLogFile(logPath: string): LogTailResult {
+    let logEnded = false;
+    let lastSize = 0;
+    const logPollingInterval = 250;
+
+    async function readNewLogContent(): Promise<void> {
+        try {
+            const stats = await fs.promises.stat(logPath);
+
+            if (stats.size < lastSize) {
+                lastSize = 0;
+            }
+
+            if (stats.size > lastSize) {
+                const bytesToRead = stats.size - lastSize;
+                const buffer = Buffer.alloc(bytesToRead);
+                let fh: fs.promises.FileHandle | undefined;
+
+                try {
+                    fh = await fs.promises.open(logPath, fs.constants.O_RDONLY);
+                    await fh.read(buffer, 0, bytesToRead, lastSize);
+                } finally {
+                    await fh?.close();
+                }
+
+                lastSize = stats.size;
+
+                if (bytesToRead > 0) {
+                    const chunk = buffer.toString('utf8');
+
+                    try {
+                        process.stdout.write(chunk);
+                    } catch (error: any) {
+                        if (error.code !== 'EPIPE') {
+                            throw error;
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            logger.warn(`Error while tailing log file: ${error}`);
+        }
+    }
+
+    const tailPromise = new Promise<void>((resolve, reject) => {
+        (async () => {
+            try {
+                while (!logEnded) {
+                    await Delay(logPollingInterval);
+                    await readNewLogContent();
+                }
+
+                // Final read to capture any remaining content after tailing stops
+                await WaitForFileToBeUnlocked(logPath, 10000);
+                await readNewLogContent();
+
+                try {
+                    process.stdout.write('\n');
+                } catch (error: any) {
+                    if (error.code !== 'EPIPE') {
+                        logger.warn(`Error while writing log tail: ${error}`);
+                    }
+                }
+
+                resolve();
+            } catch (error) {
+                reject(error);
+            }
+        })();
+    });
+
+    function stopLogTail(): void {
+        logEnded = true;
+    }
+
+    return { tailPromise, stopLogTail };
+}
+
+/**
+ * Waits for a file to be created and become readable within a timeout.
+ * @param filePath The path of the file to wait for.
+ * @param timeout The maximum time to wait in milliseconds. Default is 30000 (30 seconds).
+ */
+export async function WaitForFileToBeCreatedAndReadable(filePath: string, timeout: number = 30000): Promise<void> {
+    const pollInterval = 100;
+    const deadline = Date.now() + timeout;
+
+    while (Date.now() < deadline) {
+        // test file access by attempting to open the file with read only access
+        if (await TestFileAccess(filePath, fs.constants.O_RDONLY)) {
+            return;
+        }
+
+        await Delay(pollInterval);
+    }
+
+    throw new Error(`Timed out waiting for file to become readable: ${filePath}`);
+}
+
+/**
+ * Waits for a file to be unlocked (not exclusively locked by another process).
+ * If the file does not exist, it is considered unlocked.
+ * If the file exists, attempts to open it with read/write access.
+ * @param filePath The path of the file to wait for.
+ * @param timeout The maximum time to wait in milliseconds. Default is 30000 (30 seconds).
+ * @returns A promise that resolves when the file is unlocked.
+ */
+export async function WaitForFileToBeUnlocked(filePath: string, timeout: number = 30000): Promise<void> {
+    const pollInterval = 100;
+    const deadline = Date.now() + timeout;
+
+    while (Date.now() < deadline) {
+        // test file access by attempting to open the file with read/write access
+        if (await TestFileAccess(filePath, fs.constants.O_RDWR)) {
+            return;
+        }
+
+        await Delay(pollInterval);
+    }
+
+    throw new Error(`Timed out waiting for file to be unlocked: ${filePath}`);
+}
+
+/**
+ * Tests if a file can be opened with the specified flags.
+ * @remarks If the file does not exist, it returns false.
+ * @param filePath The path of the file to test.
+ * @param flags The flags to use when opening the file (e.g., fs.constants.O_RDONLY).
+ * @returns A promise that resolves to true if the file can be opened, false otherwise.
+ */
+export async function TestFileAccess(filePath: string, flags: number): Promise<boolean> {
+    // expect the file to be visible and accessible
+    try {
+        await fs.promises.access(filePath, fs.constants.F_OK);
+    } catch (error) {
+        return false;
+    }
+
+    let fh: fs.promises.FileHandle | undefined;
+
+    // try to open the file with the specified flags
+    try {
+        fh = await fs.promises.open(filePath, flags);
+        return true;
+    } catch (error: any) {
+        const code = error && error.code ? error.code : null;
+        // These codes indicate the file is temporarily inaccessible (locked/permission) or missing.
+        if (code === 'EACCES' || code === 'EPERM' || code === 'EBUSY' || code === 'ETXTBSY' || code === 'ENOENT') {
+            return false;
+        }
+        // Unexpected error, rethrow
+        throw error;
+    } finally {
+        await fh?.close();
+    }
+}
+
+/**
+ * Attempts to kill a process with the given ProcInfo.
+ * Escalates to SIGKILL or taskkill if the process does not exit after 5 seconds.
+ * @param procInfo The process information containing the PID.
+ * @param signal The signal to use for killing the process. Defaults to 'SIGTERM'.
+ */
+export async function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = 'SIGTERM'): Promise<void> {
+    try {
+        logger.debug(`Killing process [${procInfo.pid}] ${procInfo.name}...`);
+        process.kill(procInfo.pid, signal);
+
+        // Immediately check if the process has exited
+        try {
+            process.kill(procInfo.pid, 0);
+        } catch {
+            logger.debug(`Process [${procInfo.pid}] ${procInfo.name} has exited successfully.`);
+            return; // Process has exited
+        }
+
+        await Delay(5000); // wait 5 seconds
+
+        try {
+            // Check if the process is still running
+            process.kill(procInfo.pid, 0);
+        } catch {
+            logger.debug(`Process [${procInfo.pid}] ${procInfo.name} has exited successfully.`);
+            return; // Process has exited
+        }
+
+        // If the process is still running, escalate to SIGKILL or taskkill to force quit.
+        logger.debug(`Process [${procInfo.pid}] ${procInfo.name} did not exit after ${signal}, attempting to force quit...`);
+
+        try {
+            if (process.platform === 'win32') {
+                const command = `taskkill /PID ${procInfo.pid} /F /T`;
+                await Exec('powershell', ['-Command', command], { silent: true, showCommand: false });
+            } else { // linux and macos
+                process.kill(procInfo.pid, 'SIGKILL');
+            }
+        } catch (error: NodeJS.ErrnoException | any) {
+            if (error.code !== 'ENOENT' && error.code !== 'ESRCH') {
+                logger.error(`Failed to kill process:\n${JSON.stringify(error)}`);
+                throw error;
+            }
+        }
+    } catch (error: NodeJS.ErrnoException | any) {
+        if (error.code !== 'ENOENT' && error.code !== 'ESRCH') {
+            logger.error(`Failed to kill process:\n${JSON.stringify(error)}`);
+            throw error;
+        }
+    }
+}
+
+/**
  * Kills all child processes of the given process.
  * @param procInfo The process information of the parent process.
  */
 export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
-    logger.debug(`Killing child processes of ${procInfo.name} with pid: ${procInfo.pid}...`);
+    logger.debug(`Killing child processes of [${procInfo.pid}] ${procInfo.name}...`);
     try {
         if (process.platform === 'win32') {
             const command = `Get-CimInstance Win32_Process -Filter "ParentProcessId=${procInfo.pid}" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
@@ -305,19 +556,23 @@ export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
         } else { // linux and macos
             const psOutput = await Exec('ps', ['-eo', 'pid,ppid,comm'], { silent: true, showCommand: false });
             const lines = psOutput.split('\n').slice(1); // Skip header line
+            const killPromises: Promise<void>[] = [];
 
             for (const line of lines) {
-                const parts = line.trim().split(/\s+/, 3);
-                if (parts.length === 3) {
-                    const pid: number = parseInt(parts[0]!, 10);
-                    const ppid: number = parseInt(parts[1]!, 10);
-                    const name: string = parts[2]!;
+                const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/);
+
+                if (match) {
+                    const pid: number = parseInt(match[1]!, 10);
+                    const ppid: number = parseInt(match[2]!, 10);
+                    const name: string = match[3]!.trim();
 
                     if (ppid === procInfo.pid) {
-                        await TryKillProcess({ pid, ppid, name });
+                        killPromises.push(KillProcess({ pid, ppid, name }));
                     }
                 }
             }
+
+            await Promise.all(killPromises);
         }
     } catch (error) {
         logger.error(`Failed to kill child processes of pid ${procInfo.pid}:\n${JSON.stringify(error)}`);

@@ -128,11 +128,19 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
                 stdio: ['pipe', 'pipe', 'pipe'],
                 env: { ...process.env, JAVA_HOME: javaPath }
             });
-
             const sigintHandler = () => child.kill('SIGINT');
             const sigtermHandler = () => child.kill('SIGTERM');
             process.once('SIGINT', sigintHandler);
             process.once('SIGTERM', sigtermHandler);
+
+            let hasCleanedUpListeners = false;
+            function removeListeners() {
+                if (hasCleanedUpListeners) { return; }
+                hasCleanedUpListeners = true;
+                process.removeListener('SIGINT', sigintHandler);
+                process.removeListener('SIGTERM', sigtermHandler);
+            }
+
             child.stdout.on('data', (data: Buffer) => {
                 const chunk = data.toString();
                 output += chunk;
@@ -149,14 +157,12 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
                 output += chunk;
                 process.stderr.write(chunk);
             });
-            child.on('error', (error: Error) => {
-                process.removeListener('SIGINT', sigintHandler);
-                process.removeListener('SIGTERM', sigtermHandler);
+            child.on('error', (error) => {
+                removeListeners();
                 reject(error);
             });
-            child.on('close', (code: number | null) => {
-                process.removeListener('SIGINT', sigintHandler);
-                process.removeListener('SIGTERM', sigtermHandler);
+            child.on('close', (code) => {
+                removeListeners();
                 resolve(code === null ? 0 : code);
             });
         });

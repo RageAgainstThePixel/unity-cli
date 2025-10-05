@@ -21,36 +21,73 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22.x
-      - name: unity-cli
+      - name: setup unity-cli
         shell: bash
         run: |
-          set -xe
           npm ci
           npm run build
           npm run link
           unity-cli --version
+      - name: setup unity
+        shell: bash
+        run: |
           unity-cli hub-install --auto-update
           unity-cli activate-license --license personal --email "${{ secrets.UNITY_USERNAME }}" --password "${{ secrets.UNITY_PASSWORD }}"
-          setup_output=$(unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-targets }}" --json)
-          unity_editor_path=$(echo "$setup_output" | tail -n 1 | jq -r '.UNITY_EDITOR_PATH')
-          echo "$unity_editor_path"
-          create_project_output=$(unity-cli create-project --name "Unity Project" --unity-editor "${unity_editor_path}" --json --verbose)
-          project_path=$(echo "$create_project_output" | tail -n 1 | jq -r '.UNITY_PROJECT_PATH')
-          echo "${project_path}"
+          unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-target }}" --json
+      - name: verify UNITY_HUB_PATH and UNITY_EDITOR_PATH variables
+        shell: bash
+        run: |
+          echo "UNITY_HUB_PATH: ${UNITY_HUB_PATH}"
+          echo "UNITY_EDITOR_PATH: ${UNITY_EDITOR_PATH}"
+          echo "UNITY_PROJECT_PATH: ${UNITY_PROJECT_PATH}" # Expected to be empty at this point
+
+          if [ -z "${UNITY_HUB_PATH}" ]; then
+            echo "Error: UNITY_HUB_PATH is not set"
+            exit 1
+          fi
+
+          if [ -z "${UNITY_EDITOR_PATH}" ]; then
+            echo "Error: UNITY_EDITOR_PATH is not set"
+            exit 1
+          fi
+      - name: create unity project
+        shell: bash
+        run: |
+          unity-cli create-project --name "Unity Project" --unity-editor "${UNITY_EDITOR_PATH}" --json
+      - name: verify UNITY_PROJECT_PATH variable
+        shell: bash
+        run: |
+          if [ -z "${UNITY_PROJECT_PATH}" ]; then
+            echo "Error: UNITY_PROJECT_PATH is not set"
+            exit 1
+          fi
+      - name: Install OpenUPM and build pipeline package
+        shell: bash
+        run: |
           npm install -g openupm-cli
-          cd "${project_path}"
+          cd "${UNITY_PROJECT_PATH}"
           openupm add com.utilities.buildpipeline
-          unity-cli run --unity-editor "${unity_editor_path}" --unity-project "${project_path}" --log-name Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
-          unity-cli run --unity-editor "${unity_editor_path}" --unity-project "${project_path}" --log-name Build -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity
+      - name: Build project
+        shell: bash
+        run: |
+          unity-cli run --unity-editor "${UNITY_EDITOR_PATH}" --unity-project "${UNITY_PROJECT_PATH}" --log-name Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
+          unity-cli run --unity-editor "${UNITY_EDITOR_PATH}" --unity-project "${UNITY_PROJECT_PATH}" --log-name Build -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity
       - name: Post Run
         if: always()
         shell: bash
         run: |
-          set -xe
           unity-cli return-license --license personal
+      - name: upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.run_id }}.${{ github.run_attempt }} ${{ matrix.unity-version }} ${{ matrix.build-target }} logs
+          retention-days: 1
+          path: |
+            ${{ github.workspace }}/**/*.log
