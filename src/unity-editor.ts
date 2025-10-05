@@ -233,7 +233,7 @@ export class UnityEditor {
                     }, timeout);
                 });
             });
-            // Wait for log tailing to finish
+            // Wait for log tailing to finish writing remaining content
             if (logTail && logTail.promise) {
                 try {
                     await logTail.promise;
@@ -241,8 +241,6 @@ export class UnityEditor {
                     this.logger.error(`Error occurred while tailing log file: ${error}`);
                 }
             }
-            // Wait for log file to be unlocked as the last of the log buffer is flushed to disk.
-            await waitForFileToBeUnlocked(logPath, fs.constants.O_RDWR, timeout);
         } finally {
             process.removeListener('SIGINT', onCancel);
             process.removeListener('SIGTERM', onCancel);

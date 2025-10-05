@@ -83,3 +83,10 @@ jobs:
         shell: bash
         run: |
           unity-cli return-license --license personal
+      - name: upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }} logs
+          path: |
+            ${{ github.workspace }}/*/**.log

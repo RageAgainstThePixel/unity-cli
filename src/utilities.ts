@@ -384,6 +384,7 @@ export function tailLogFile(logPath: string): LogTailResult {
             }
 
             // Final read to capture any remaining content after tailing stops
+            await waitForFileToBeUnlocked(logPath, fs.constants.O_RDONLY, 10000);
             readNewLogContent();
 
             try {
