@@ -156,9 +156,6 @@ export class UnityEditor {
         let exitCode: number = 1;
 
         try {
-            const commandStr = `\x1b[34m${this.editorPath} ${command.args.join(' ')}\x1b[0m`;
-            this.logger.startGroup(commandStr);
-
             if (!command.args || command.args.length === 0) {
                 throw Error('No command arguments provided for Unity execution');
             }
@@ -182,7 +179,8 @@ export class UnityEditor {
             }
 
             const logPath: string = GetArgumentValueAsString('-logFile', command.args);
-
+            const commandStr = `\x1b[34m${this.editorPath} ${command.args.join(' ')}\x1b[0m`;
+            this.logger.startGroup(commandStr);
             let unityProcess: ChildProcessByStdio<null, null, null>;
 
             if (process.platform === 'linux' && !command.args.includes('-nographics')) {
