@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22.x
-      - name: unity-cli
+      - name: setup unity-cli
         shell: bash
         run: |
           set -xe
@@ -35,79 +35,50 @@ jobs:
           npm run build
           npm run link
           unity-cli --version
+      - name: setup unity
+        shell: bash
+        run: |
+          set -xe
           unity-cli hub-install --auto-update
           unity-cli activate-license --license personal --email "${{ secrets.UNITY_USERNAME }}" --password "${{ secrets.UNITY_PASSWORD }}"
-          
-          # Helper to run commands while streaming output to the console and saving it to a temp file.
-          # Usage: tmp=$(run_and_capture NAME command args...)
-          # Returns: prints the temp file path to stdout so callers can capture it.
-          run_and_capture() {
-            name="$1"
-            shift
-            tmpfile=$(mktemp 2>/dev/null || echo "${RUNNER_TEMP}/${name}_output.txt")
-            set +e
-            # Run the command and tee both stdout/stderr to the tmpfile so logs
-            # appear in real time and any JSON printed on stderr is captured.
-            "$@" 2>&1 | tee "$tmpfile"
-            # Capture the exit code of the command on the left side of the pipe
-            # (PIPESTATUS is a bash-only array available here because the
-            # workflow step uses bash as its shell).
-            rc=${PIPESTATUS[0]}
-            set -e
-            if [ "$rc" -ne 0 ]; then
-              echo "$name failed with exit code $rc"
-              cat "$tmpfile"
-              rm -f "$tmpfile"
-              exit $rc
-            fi
-            # Make a safe environment variable name: uppercase and replace
-            # non-alphanumeric characters with underscores so export doesn't fail
-            # (e.g. names with dashes). This becomes CAPTURE_<SAFE_NAME>.
-            capname=$(echo "$name" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9_]/_/g')
-            # Shell variables can't start with a digit; prefix an underscore if needed.
-            case "$capname" in
-              [0-9]*) capname="_${capname}" ;;
-            esac
-            export "CAPTURE_${capname}"="$(cat "$tmpfile")"
-            # Print the tmpfile path so callers can capture and parse it (e.g. with jq).
-            printf '%s' "$tmpfile"
-          }
+          unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-targets }}" --json
+      - name: verify environment variables
+        shell: bash
+        run: |
+          echo "UNITY_HUB_PATH: $UNITY_HUB_PATH"
+          echo "UNITY_EDITOR_PATH: $UNITY_EDITOR_PATH"
+          echo "UNITY_PROJECT_PATH: $UNITY_PROJECT_PATH" # Expected to be empty at this point
 
-          # This helps when the command prints logs around the JSON payload
-          # and the JSON isn't guaranteed to be the final line.
-          find_json_in_output() {
-            file="$1"
-            json=""
-            while IFS= read -r line; do
-              # Use jq to validate the line as JSON; suppress errors. Prevent set -e from
-              # aborting by using || true.
-              echo "$line" | jq -e . >/dev/null 2>&1 && json="$line" || true
-            done < "$file"
-            if [ -z "$json" ]; then
-              echo "No JSON found in $file" >&2
-              return 1
-            fi
-            printf '%s' "$json"
-          }
+          if [ -z "$UNITY_HUB_PATH" ]; then
+            echo "Error: UNITY_HUB_PATH is not set"
+            exit 1
+          fi
 
-          # Run setup-unity and capture output
-          setup_output=$(run_and_capture setup_unity unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-targets }}" --json)
-          unity_editor_path=$(find_json_in_output "$setup_output" | jq -r '.UNITY_EDITOR_PATH')
-          echo "$unity_editor_path"
-          rm -f "$setup_output"
-
-          # Create project and capture output
-          project_output=$(run_and_capture create_project unity-cli create-project --name "Unity Project" --unity-editor "${unity_editor_path}" --json)
-          project_path=$(find_json_in_output "$project_output" | jq -r '.UNITY_PROJECT_PATH')
-          echo "${project_path}"
-          rm -f "$project_output"
-
+          if [ -z "$UNITY_EDITOR_PATH" ]; then
+            echo "Error: UNITY_EDITOR_PATH is not set"
+            exit 1
+          fi
+      - name: create unity project
+        shell: bash
+        run: |
+          set -xe
+          unity-cli create-project --name "Unity Project" --unity-editor "${UNITY_EDITOR_PATH}" --json
+      - name: verify UNITY_PROJECT_PATH
+        shell: bash
+        run: |
+          if [ -z "$UNITY_PROJECT_PATH" ]; then
+            echo "Error: UNITY_PROJECT_PATH is not set"
+            exit 1
+          fi
+      - name: Build
+        shell: bash
+        run: |
+          set -xe
           npm install -g openupm-cli
-          cd "${project_path}"
+          cd "${UNITY_PROJECT_PATH}"
           openupm add com.utilities.buildpipeline
-
-          run_and_capture validate_run unity-cli run --unity-editor "${unity_editor_path}" --unity-project "${project_path}" --log-name Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
-          run_and_capture build_run unity-cli run --unity-editor "${unity_editor_path}" --unity-project "${project_path}" --log-name Build -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity
+          unity-cli run --unity-editor "${UNITY_EDITOR_PATH}" --unity-project "${UNITY_PROJECT_PATH}" --log-name Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
+          unity-cli run --unity-editor "${UNITY_EDITOR_PATH}" --unity-project "${UNITY_PROJECT_PATH}" --log-name Build -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity
       - name: Post Run
         if: always()
         shell: bash

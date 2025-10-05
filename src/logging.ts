@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+
 export enum LogLevel {
     DEBUG = 'debug',
     CI = 'ci',
@@ -143,6 +145,34 @@ export class Logger {
         switch (this._ci) {
             case 'GITHUB_ACTIONS': {
                 process.stdout.write(`::add-mask::${message}\n`);
+                break;
+            }
+        }
+    }
+
+    public setEnvironmentVariable(name: string, value: string): void {
+        switch (this._ci) {
+            case 'GITHUB_ACTIONS': {
+                // needs to be appended to the temporary file specified in the GITHUB_ENV environment variable
+                const githubEnv = process.env.GITHUB_ENV;
+                // echo "MY_ENV_VAR=myValue" >> $GITHUB_ENV
+                if (githubEnv) {
+                    fs.appendFileSync(githubEnv, `${name}=${value}\n`, { encoding: 'utf8' });
+                }
+                break;
+            }
+        }
+    }
+
+    public setOutput(name: string, value: string): void {
+        switch (this._ci) {
+            case 'GITHUB_ACTIONS': {
+                // needs to be appended to the temporary file specified in the GITHUB_OUTPUT environment variable
+                const githubOutput = process.env.GITHUB_OUTPUT;
+                // echo "myOutput=myValue" >> $GITHUB_OUTPUT
+                if (githubOutput) {
+                    fs.appendFileSync(githubOutput, `${name}=${value}\n`, { encoding: 'utf8' });
+                }
                 break;
             }
         }
