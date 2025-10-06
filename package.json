@@ -48,22 +48,21 @@
     "tests": "jest --roots tests"
   },
   "dependencies": {
-    "@electron/asar": "4.0.1",
-    "@rage-against-the-pixel/unity-releases-api": "1.0.3",
-    "commander": "14.0.1",
+    "@electron/asar": "^4.0.1",
+    "@rage-against-the-pixel/unity-releases-api": "^1.0.3",
+    "commander": "^14.0.1",
     "glob": "11.0.3",
-    "semver": "7.7.2",
-    "source-map-support": "0.5.21",
-    "yaml": "2.8.1"
+    "semver": "^7.7.2",
+    "source-map-support": "^0.5.21",
+    "yaml": "^2.8.1"
   },
   "devDependencies": {
-    "@types/commander": "2.12.5",
-    "@types/jest": "30.0.0",
-    "@types/node": "24.6.2",
-    "@types/semver": "7.7.1",
-    "jest": "30.2.0",
-    "ts-jest": "29.4.4",
-    "ts-node": "10.9.2",
-    "typescript": "5.9.3"
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.6.2",
+    "@types/semver": "^7.7.1",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   }
 }
