@@ -129,15 +129,11 @@ export class UnityEditor {
             return templates;
         }
 
-        // Find all .tgz files in the template directory
-        const files = fs.readdirSync(templateDir)
+        // Find all .tgz packages in the template directory
+        const packages = fs.readdirSync(templateDir)
             .filter(f => f.endsWith('.tgz'))
             .map(f => path.join(templateDir, f));
-
-        if (files.length > 0) {
-            files.forEach(f => templates.push(path.basename(f)));
-        }
-
+        templates.push(...packages.map(f => path.basename(f)));
         return templates;
     }
 

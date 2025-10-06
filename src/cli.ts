@@ -327,7 +327,7 @@ program.command('list-project-templates')
         const templates = unityEditor.GetAvailableTemplates();
 
         if (options.json) {
-            process.stdout.write(`\n{\"templates\": ${JSON.stringify(templates)}}\n`);
+            process.stdout.write(`\n${JSON.stringify({ templates })}\n`);
         } else {
             process.stdout.write(`Available project templates:\n`);
             for (const template of templates) {
