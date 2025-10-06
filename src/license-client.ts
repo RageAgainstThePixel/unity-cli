@@ -188,6 +188,10 @@ export class LicensingClient {
             this.licenseClientPath = await this.init();
         }
 
+        if (this.licenseVersion === '6.x') {
+            return; // no patching needed
+        }
+
         const clientDirectory = path.dirname(this.licenseClientPath);
         const patchedDirectory = path.join(os.tmpdir(), `UnityLicensingClient-${this.licenseVersion.replace('.', '_')}`);
 
