@@ -167,7 +167,6 @@ program.command('hub-path')
 
 program.command('hub')
     .description('Run commands directly to the Unity Hub. (You need not to pass --headless or -- to this command).')
-    .allowUnknownOption(true)
     .argument('<args...>', 'Arguments to pass to the Unity Hub executable.')
     .option('--verbose', 'Enable verbose logging.')
     .action(async (args: string[], options) => {
@@ -341,12 +340,11 @@ program.command('open-project')
 
 program.command('run')
     .description('Run command line args directly to the Unity Editor.')
-    .option('-e, --unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, -u, --unity-project or the UNITY_EDITOR_PATH environment variable must be set.')
-    .option('-p, --unity-project <unityProjectPath>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
+    .option('--unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, --unity-project or the UNITY_EDITOR_PATH environment variable must be set.')
+    .option('--unity-project <unityProjectPath>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
     .option('--log-name <logName>', 'The name of the log file.')
-    .allowUnknownOption(true)
-    .argument('<args...>', 'Arguments to pass to the Unity Editor executable.')
     .option('--verbose', 'Enable verbose logging.')
+    .argument('<args...>', 'Arguments to pass to the Unity Editor executable.')
     .action(async (args: string[], options) => {
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
@@ -374,7 +372,7 @@ program.command('run')
         }
 
         if (!unityEditor) {
-            throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR_PATH environment variable.');
+            throw new Error('The Unity Editor path was not specified. Use --unity-editor to specify it or set the UNITY_EDITOR_PATH environment variable.');
         }
 
         if (!args.includes('-logFile')) {
