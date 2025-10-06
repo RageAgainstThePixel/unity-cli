@@ -581,21 +581,21 @@ chmod -R 777 "$hubPath"`]);
         }
 
         try {
-            this.logger.ci(`Checking installed modules for Unity ${unityVersion.toString()}...`);
+            this.logger.info(`Checking installed modules for Unity ${unityVersion.toString()}...`);
             const [installedModules, additionalModules] = await this.checkEditorModules(editorPath, unityVersion, modules);
 
             if (installedModules && installedModules.length > 0) {
-                this.logger.ci(`Installed Modules:`);
+                this.logger.info(`Installed Modules:`);
 
                 for (const module of installedModules) {
-                    this.logger.ci(`  > ${module}`);
+                    this.logger.info(`  > ${module}`);
                 }
             }
             if (additionalModules && additionalModules.length > 0) {
-                this.logger.ci(`Additional Modules:`);
+                this.logger.info(`Additional Modules:`);
 
                 for (const module of additionalModules) {
-                    this.logger.ci(`  > ${module}`);
+                    this.logger.info(`  > ${module}`);
                 }
             }
         } catch (error: Error | any) {
@@ -612,11 +612,35 @@ chmod -R 777 "$hubPath"`]);
      * Lists the installed Unity Editors.
      * @returns A list of installed Unity Editor versions and their paths.
      */
-    public async ListInstalledEditors(): Promise<string[]> {
+    public async ListInstalledEditors(): Promise<UnityEditor[]> {
         const output = await this.Exec(['editors', '-i']);
-        return output.split('\n')
+        const paths = output.split('\n')
             .filter(line => /installed at/.test(line))
             .map(line => line.trim());
+        const editors: UnityEditor[] = [];
+        const pattern = /(?<version>\d+\.\d+\.\d+[abcfpx]?\d*)\s*(?:\((?<arch>Apple silicon|Intel)\))?\s*,? installed at (?<editorPath>.*)/;
+        const matches = paths.map(path => path.match(pattern)).filter(match => match && match.groups);
+
+        if (paths.length !== matches.length) {
+            throw new Error(`Failed to parse all installed Unity Editors!\n > paths: ${JSON.stringify(paths)}\n  > matches: ${JSON.stringify(matches)}`);
+        }
+
+        for (const match of matches) {
+            if (match && match.groups && match.groups.version && match.groups.editorPath) {
+                const version = new UnityVersion(match.groups.version, null, match.groups.arch === 'Apple silicon' ? 'ARM64' : match.groups.arch === 'Intel' ? 'X86_64' : undefined);
+                editors.push(new UnityEditor(path.normalize(match.groups.editorPath), version));
+            }
+        }
+
+        // Sort editors descending by UnityVersion so callers receive newest matches first
+        editors.sort((a, b) => {
+            if (!a.version && !b.version) { return 0; }
+            if (!a.version) { return 1; }
+            if (!b.version) { return -1; }
+            return UnityVersion.compare(b.version!, a.version!);
+        });
+
+        return editors;
     }
 
     /**
@@ -640,59 +664,43 @@ chmod -R 777 "$hubPath"`]);
         let editorPath = undefined;
 
         if (!installPath) {
-            const paths: string[] = await this.ListInstalledEditors();
+            const editors: UnityEditor[] = await this.ListInstalledEditors();
 
-            if (paths && paths.length > 0) {
-                const pattern = /(?<version>\d+\.\d+\.\d+[abcfpx]?\d*)\s*(?:\((?<arch>Apple silicon|Intel)\))?\s*,? installed at (?<editorPath>.*)/;
-                const matches = paths.map(path => path.match(pattern)).filter(match => match && match.groups);
-
-                if (paths.length !== matches.length) {
-                    throw new Error(`Failed to parse all installed Unity Editors!\n > paths: ${JSON.stringify(paths)}\n  > matches: ${JSON.stringify(matches)}`);
-                }
-
+            if (editors && editors.length > 0) {
                 // Prefer exact version match first
-                const exactMatch = matches.find(match => match?.groups?.version === unityVersion.version);
+                const exactEditor = editors.find(e => e.version && e.version.version === unityVersion.version);
 
-                if (exactMatch) {
-                    editorPath = exactMatch.groups!.editorPath;
+                if (exactEditor) {
+                    editorPath = exactEditor.editorPath;
                 } else if (allowPartialMatches) {
                     // Fallback: semver satisfies
-                    const versionMatches = matches.filter(match => match?.groups?.version && unityVersion.satisfies(match.groups.version));
+                    const versionEditors = editors.filter(e => e.version && unityVersion.satisfies(e.version.version));
 
-                    if (versionMatches.length === 0) {
+                    if (versionEditors.length === 0) {
                         return undefined;
                     }
 
-                    const archMap = {
-                        'ARM64': 'Apple silicon',
-                        'X86_64': 'Intel',
-                    };
-
-                    const sortedMatches = versionMatches
-                        .map(match => ({
-                            match: match!,
-                            parsed: new UnityVersion(match!.groups!.version!, null, undefined)
-                        }))
-                        .sort((a, b) => UnityVersion.compare(b.parsed, a.parsed));
-
-                    for (const candidate of sortedMatches) {
-                        const match = candidate.match;
-                        if (!match.groups || !match.groups.version || !match.groups.editorPath) {
+                    // ListInstalledEditors already returns editors sorted descending by version.
+                    for (const editor of versionEditors) {
+                        if (!editor.version || !editor.editorPath) {
                             continue;
                         }
 
-                        if (!unityVersion.architecture || !match.groups.arch) {
-                            editorPath = match.groups.editorPath;
+                        // If no architecture requested or editor has no arch info, accept it
+                        if (!unityVersion.architecture || !editor.version.architecture) {
+                            editorPath = editor.editorPath;
                             break;
                         }
 
-                        if (archMap[unityVersion.architecture] === match.groups.arch) {
-                            editorPath = match.groups.editorPath;
+                        // Exact architecture match
+                        if (unityVersion.architecture === editor.version.architecture) {
+                            editorPath = editor.editorPath;
                             break;
                         }
 
-                        if (unityVersion.architecture && match.groups.editorPath.toLowerCase().includes(`-${unityVersion.architecture.toLowerCase()}`)) {
-                            editorPath = match.groups.editorPath;
+                        // Fallback: check for architecture suffix in path (e.g., -arm64)
+                        if (unityVersion.architecture && editor.editorPath.toLowerCase().includes(`-${unityVersion.architecture.toLowerCase()}`)) {
+                            editorPath = editor.editorPath;
                             break;
                         }
                     }

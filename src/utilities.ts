@@ -587,14 +587,3 @@ export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
         logger.error(`Failed to kill child processes of pid ${procInfo.pid}:\n${JSON.stringify(error)}`);
     }
 }
-
-/**
- * Escapes special characters in a string for use in a regular expression.
- * @param input The input string to escape.
- * @returns The escaped string.
- */
-export function EscapeRegex(input: string): string {
-    // remove / from start and end of regex if present
-    input = input.trim().replace(/^\/|\/$/g, '');
-    return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}

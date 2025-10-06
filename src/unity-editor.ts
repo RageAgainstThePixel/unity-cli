@@ -14,7 +14,6 @@ import {
     TailLogFile,
     LogTailResult,
     WaitForFileToBeCreatedAndReadable,
-    EscapeRegex,
 } from './utilities';
 
 export interface EditorCommand {
@@ -23,7 +22,9 @@ export interface EditorCommand {
 }
 
 export class UnityEditor {
+    public readonly editorPath: string;
     public readonly editorRootPath: string;
+    public readonly version: UnityVersion;
 
     private readonly logger: Logger = Logger.instance;
     private readonly autoAddNoGraphics: boolean;
@@ -31,12 +32,15 @@ export class UnityEditor {
     /**
      * Initializes a new instance of the UnityEditor class.
      * @param editorPath The path to the Unity Editor installation.
+     * @param version Optional UnityVersion instance. If not provided, the version will be inferred from the editorPath.
      * @throws Will throw an error if the editor path is invalid or not executable.
      */
     constructor(
-        public readonly editorPath: string,
-        public readonly version: UnityVersion | undefined = undefined
+        editorPath: string,
+        version?: UnityVersion | undefined
     ) {
+        this.editorPath = path.normalize(editorPath);
+
         if (!fs.existsSync(editorPath)) {
             throw new Error(`The Unity Editor path does not exist: ${editorPath}`);
         }
@@ -82,7 +86,7 @@ export class UnityEditor {
         // Accepts either a full regex or a simple string
         let regex: RegExp;
         try {
-            regex = new RegExp(`^${EscapeRegex(template)}.*[0-9]+\\.[0-9]+\\.[0-9]+\\.tgz$`);
+            regex = new RegExp(`^${template}.*[0-9]+\\.[0-9]+\\.[0-9]+\\.tgz$`);
         } catch (e) {
             throw new Error(`Invalid template regex: ${template}`);
         }
