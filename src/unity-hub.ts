@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as yaml from 'yaml';
+import * as asar from '@electron/asar';
 import { spawn } from 'child_process';
 import { Logger, LogLevel } from './logging';
 import { UnityEditor } from './unity-editor';
@@ -426,7 +427,6 @@ chmod -R 777 "$hubPath"`]);
         }
 
         await fs.promises.access(asarPath, fs.constants.R_OK);
-        const asar = await import('@electron/asar');
         const fileBuffer = asar.extractFile(asarPath, 'package.json');
         const packageJson = JSON.parse(fileBuffer.toString());
         const version = coerce(packageJson.version);
