@@ -154,10 +154,9 @@ export class LicensingClient {
     private async patchLicenseVersion(): Promise<void> {
         if (!this.licenseVersion) {
             // check if the UNITY_EDITOR_PATH is set. If it is, use it to determine the license version
-            const unityEditorPath = process.env.UNITY_EDITOR_PATH;
-            const versionMatch = unityEditorPath?.match(/(\d+)\.(\d+)\.(\d+)/);
+            const versionMatch = process.env.UNITY_EDITOR_PATH?.match(/(\d+)\.(\d+)\.(\d+)/);
 
-            if (unityEditorPath && versionMatch) {
+            if (versionMatch) {
                 switch (versionMatch[1]) {
                     case '4': {
                         this.licenseVersion = '4.x';
