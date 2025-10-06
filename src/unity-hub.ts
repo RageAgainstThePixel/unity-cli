@@ -95,7 +95,8 @@ export class UnityHub {
             'You have to request `id` or `_id` fields for all selection sets or create a custom `keys` config for `UnityReleaseLabel`.',
             'Entities without keys will be embedded directly on the parent entity. If this is intentional, create a `keys` config for `UnityReleaseLabel` that always returns null.',
             'https://bit.ly/2XbVrpR#15',
-            'Interaction is not allowed with the Security Server." (-25308)'
+            'Interaction is not allowed with the Security Server." (-25308)',
+            'Network service crashed, restarting service.',
         ];
 
         try {
