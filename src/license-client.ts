@@ -319,7 +319,7 @@ export class LicensingClient {
      * @throws Error if activation fails or required parameters are missing.
      */
     public async Activate(licenseType: LicenseType, servicesConfig: string | undefined = undefined, serial: string | undefined = undefined, username: string | undefined = undefined, password: string | undefined = undefined): Promise<void> {
-        let activeLicenses = await this.showEntitlements();
+        let activeLicenses = await this.GetActiveEntitlements();
 
         if (activeLicenses.includes(licenseType)) {
             this.logger.info(`License of type '${licenseType}' is already active, skipping activation`);
@@ -398,14 +398,18 @@ export class LicensingClient {
             return;
         }
 
-        const activeLicenses = await this.showEntitlements();
+        const activeLicenses = await this.GetActiveEntitlements();
 
         if (activeLicenses.includes(licenseType)) {
             await this.returnLicense(licenseType);
         }
     }
 
-    private async showEntitlements(): Promise<LicenseType[]> {
+    /**
+     * Shows the currently active entitlements/licenses.
+     * @returns A list of active license types.
+     */
+    public async GetActiveEntitlements(): Promise<LicenseType[]> {
         const output = await this.exec([`--showEntitlements`]);
         const matches = output.matchAll(/Product Name: (?<license>.+)/g);
         const licenses: LicenseType[] = [];
@@ -450,7 +454,7 @@ export class LicensingClient {
 
         await this.exec(args);
 
-        const activeLicenses = await this.showEntitlements();
+        const activeLicenses = await this.GetActiveEntitlements();
 
         if (!activeLicenses.includes(licenseType)) {
             throw new Error(`Failed to activate license of type '${licenseType}'`);
@@ -462,7 +466,7 @@ export class LicensingClient {
     private async returnLicense(licenseType: LicenseType): Promise<void> {
         await this.exec([`--return-ulf`]);
 
-        const activeLicenses = await this.showEntitlements();
+        const activeLicenses = await this.GetActiveEntitlements();
 
         if (activeLicenses.includes(licenseType)) {
             throw new Error(`Failed to return license of type '${licenseType}'`);
