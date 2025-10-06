@@ -436,13 +436,17 @@ program.command('list-project-templates')
 
         const templates = unityEditor.GetAvailableTemplates();
 
-        if (options.json) {
-            process.stdout.write(`\n${JSON.stringify({ templates })}\n`);
-        } else {
-            process.stdout.write(`Available project templates:\n`);
-            for (const template of templates) {
-                process.stdout.write(`  - ${path.basename(template)}\n`);
+        if (templates.length > 0) {
+            if (options.json) {
+                process.stdout.write(`\n${JSON.stringify({ templates })}\n`);
+            } else {
+                process.stdout.write(`Available project templates:\n`);
+                for (const template of templates) {
+                    process.stdout.write(`  - ${path.basename(template)}\n`);
+                }
             }
+        } else {
+            process.stdout.write('No project templates found for this Unity Editor.\n');
         }
     });
 
@@ -483,10 +487,6 @@ program.command('create-project')
             unityEditor = new UnityEditor(editorPath);
         }
 
-        if (!options.template || options.template.length === 0) {
-            throw new Error('The project template name was not specified. Use -t or --template to specify it.');
-        }
-
         let args: string[] = [
             '-quit',
             '-nographics',
@@ -502,7 +502,7 @@ program.command('create-project')
 
         args.push('-createProject', projectPath);
 
-        if (!unityEditor.version.isLegacy()) {
+        if (!unityEditor.version.isLegacy() && options.template && options.template.length > 0) {
             const templatePath = unityEditor.GetTemplatePath(options.template);
             args.push('-cloneFromTemplate', templatePath);
         }
