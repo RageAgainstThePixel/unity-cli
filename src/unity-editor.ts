@@ -15,6 +15,7 @@ import {
     LogTailResult,
     WaitForFileToBeCreatedAndReadable,
     Exec,
+    DeleteDirectory,
 } from './utilities';
 
 export interface EditorCommand {
@@ -336,24 +337,10 @@ export class UnityEditor {
                     `Start-Process -FilePath "${uninstallPath}" -ArgumentList "/S" -Wait`
                 ], { silent: true, showCommand: true });
                 // also delete the editor root directory if it still exists
-                if (fs.existsSync(editorDir)) {
-                    await Exec('powershell', [
-                        '-NoProfile',
-                        '-Command',
-                        `Remove-Item -Path "${editorDir}" -Recurse -Force`,
-                        '-Verb', 'RunAs'
-                    ], { silent: true, showCommand: true });
-                }
-                // also delete the MonoBehaviour directory one level up if it still exists
-                const monoBehaviourPath = path.join(path.dirname(editorDir), 'MonoBehaviour');
-                if (fs.existsSync(monoBehaviourPath)) {
-                    await Exec('powershell', [
-                        '-NoProfile',
-                        '-Command',
-                        `Remove-Item -Path "${monoBehaviourPath}" -Recurse -Force`,
-                        '-Verb', 'RunAs'
-                    ], { silent: true, showCommand: true });
-                }
+                await DeleteDirectory(editorDir);
+                // also delete the MonoDevelop directory one level up if it still exists
+                const monoDevelopDir = path.join(path.dirname(editorDir), 'MonoDevelop');
+                await DeleteDirectory(monoDevelopDir);
                 break;
         }
     }
