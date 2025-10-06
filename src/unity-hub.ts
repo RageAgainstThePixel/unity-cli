@@ -432,7 +432,12 @@ chmod -R 777 "$hubPath"`]);
             }
         }
 
-        await fs.promises.access(asarPath, fs.constants.R_OK);
+        try {
+            await fs.promises.access(asarPath, fs.constants.R_OK);
+        } catch {
+            throw new Error('Unity Hub is not installed.');
+        }
+
         const fileBuffer = asar.extractFile(asarPath, 'package.json');
         const packageJson = JSON.parse(fileBuffer.toString());
         const version = coerce(packageJson.version);

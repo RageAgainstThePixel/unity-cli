@@ -3,6 +3,13 @@ import { UnityHub } from '../src/unity-hub';
 jest.setTimeout(30000); // UnityHub operations can be slow
 
 describe('UnityHub', () => {
+    it('should get the Unity Hub version', async () => {
+        const unityHub = new UnityHub();
+        const version = await unityHub.Version();
+        expect(version).toBeDefined();
+        expect(typeof version).toBe('string');
+    });
+
     it('should list installed editors', async () => {
         const unityHub = new UnityHub();
         const editors = await unityHub.ListInstalledEditors();

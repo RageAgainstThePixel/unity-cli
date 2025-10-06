@@ -117,8 +117,12 @@ program.command('hub-version')
     .description('Print the version of the Unity Hub.')
     .action(async () => {
         const unityHub = new UnityHub();
-        const version = await unityHub.Version();
-        process.stdout.write(`${version}\n`);
+        try {
+            const version = await unityHub.Version();
+            process.stdout.write(`${version}\n`);
+        } catch (error) {
+            process.stdout.write(`${error}\n`);
+        }
     });
 
 program.command('hub-install')
