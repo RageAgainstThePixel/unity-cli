@@ -322,16 +322,36 @@ export class UnityEditor {
         switch (process.platform) {
             case 'darwin':
             case 'linux':
-                await Exec('sudo', ['rm', '-rf', this.editorRootPath], { silent: true, showCommand: true });
-                break;
-            case 'win32':
-                const uninstallPath = path.join(this.editorRootPath, 'Uninstall.exe');
-                await Exec('powershell', [
-                    '-Command',
-                    `Start-Process -File "${uninstallPath}" -ArgumentList "/S" -NoNewWindow -Wait -Verb RunAs`
+                await Exec('sudo', [
+                    'rm', '-rf', this.editorRootPath
                 ], { silent: true, showCommand: true });
                 break;
+            case 'win32':
+                const uninstallPath = path.join(path.dirname(this.editorPath), 'Uninstall.exe');
+                await fs.promises.access(uninstallPath, fs.constants.R_OK | fs.constants.X_OK);
+                await Exec('powershell', [
+                    '-NoProfile',
+                    '-Command',
+                    `Start-Process -FilePath "${uninstallPath}" -ArgumentList "/S" -Wait`
+                ], { silent: true, showCommand: true });
+                // also delete the editor root directory if it still exists
+                if (fs.existsSync(this.editorRootPath)) {
+                    await Exec('powershell', [
+                        '-NoProfile',
+                        '-Command',
+                        `Remove-Item -Path "${this.editorRootPath}" -Recurse -Force`
+                    ], { silent: true, showCommand: true });
+                }
+                // also delete the MonoBehaviour directory one level up if it still exists
+                const monoBehaviourPath = path.join(path.dirname(this.editorRootPath), 'MonoBehaviour');
+                if (fs.existsSync(monoBehaviourPath)) {
+                    await Exec('powershell', [
+                        '-NoProfile',
+                        '-Command',
+                        `Remove-Item -Path "${monoBehaviourPath}" -Recurse -Force`
+                    ], { silent: true, showCommand: true });
+                }
+                break;
         }
-
     }
 }

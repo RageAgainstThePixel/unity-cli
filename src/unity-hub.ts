@@ -550,28 +550,28 @@ chmod -R 777 "$hubPath"`]);
         let editorPath = await this.checkInstalledEditors(resolvedVersion, false, undefined, allowPartialMatches);
         unityVersion = resolvedVersion;
 
-        let installPath: string | undefined = undefined;
+        let installDir: string | undefined = undefined;
 
         if (!editorPath) {
             try {
-                installPath = await this.installUnity(unityVersion, modules);
+                installDir = await this.installUnity(unityVersion, modules);
             } catch (error: Error | any) {
                 if (retryErrorMessages.some(msg => error.message.includes(msg))) {
                     if (editorPath) {
                         await DeleteDirectory(editorPath);
                     }
 
-                    if (installPath) {
-                        await DeleteDirectory(installPath);
+                    if (installDir) {
+                        await DeleteDirectory(installDir);
                     }
 
-                    installPath = await this.installUnity(unityVersion, modules);
+                    installDir = await this.installUnity(unityVersion, modules);
                 } else {
                     throw error;
                 }
             }
 
-            editorPath = await this.checkInstalledEditors(unityVersion, true, installPath);
+            editorPath = await this.checkInstalledEditors(unityVersion, true, installDir);
         }
 
         if (!editorPath) {
@@ -663,12 +663,12 @@ chmod -R 777 "$hubPath"`]);
     private async checkInstalledEditors(
         unityVersion: UnityVersion,
         failOnEmpty: boolean,
-        installPath: string | undefined = undefined,
+        installDir: string | undefined = undefined,
         allowPartialMatches: boolean = true
     ): Promise<string | undefined> {
         let editorPath = undefined;
 
-        if (!installPath) {
+        if (!installDir) {
             const editors: UnityEditor[] = await this.ListInstalledEditors();
 
             if (editors && editors.length > 0) {
@@ -713,9 +713,9 @@ chmod -R 777 "$hubPath"`]);
             }
         } else {
             if (process.platform == 'win32') {
-                editorPath = path.join(installPath, 'Unity.exe');
+                editorPath = path.join(installDir, 'Unity.exe');
             } else {
-                editorPath = installPath;
+                editorPath = installDir;
             }
         }
 
@@ -1004,11 +1004,12 @@ done
     }
 
     private async installUnity4x(unityVersion: UnityVersion): Promise<string> {
-        const installDir = await this.GetInstallPath();
+        const hubInstallDir = await this.GetInstallPath();
 
         switch (process.platform) {
             case 'win32': {
-                const installPath = path.join(installDir, `Unity ${unityVersion.version}`);
+                const installDir = path.join(hubInstallDir, `Unity ${unityVersion.version}`);
+                const installPath = path.join(installDir, 'Unity.exe');
 
                 if (!fs.existsSync(installPath)) {
                     const url = `https://beta.unity3d.com/download/UnitySetup-${unityVersion.version}.exe`;
@@ -1019,9 +1020,8 @@ done
 
                     try {
                         await Exec('powershell', [
-                            '-NoProfile',
                             '-Command',
-                            `Start-Process -FilePath \"${installerPath}\" -ArgumentList \"/S /D=${installPath}\" -Wait -NoNewWindow`
+                            `Start-Process -FilePath \"${installerPath}\" -ArgumentList \"/S /D=${installDir}\" -Wait`
                         ], { silent: true, showCommand: true });
                     } catch (error) {
                         this.logger.error(`Failed to install Unity ${unityVersion.toString()}: ${error}`);
@@ -1030,13 +1030,13 @@ done
                     }
                 }
 
-                await fs.promises.access(installPath, fs.constants.R_OK);
-                return installPath;
+                await fs.promises.access(installDir, fs.constants.R_OK | fs.constants.X_OK);
+                return installDir;
             }
             case 'darwin': {
-                const installPath = path.join(installDir, `Unity ${unityVersion.version}`, 'Unity.app');
+                const installDir = path.join(hubInstallDir, `Unity ${unityVersion.version}`, 'Unity.app');
 
-                if (!fs.existsSync(installPath)) {
+                if (!fs.existsSync(installDir)) {
                     const url = `https://beta.unity3d.com/download/unity-${unityVersion.version}.dmg`;
                     const installerPath = path.join(GetTempDir(), `UnitySetup-${unityVersion.version}.dmg`);
                     await DownloadFile(url, installerPath);
@@ -1062,7 +1062,7 @@ done
                         this.logger.debug(`Found .pkg installer: ${pkgPath}`);
                         await Exec('sudo', ['installer', '-pkg', pkgPath, '-target', '/', '-verboseR'], { silent: true, showCommand: true });
                         const unityAppPath = path.join('/Applications', 'Unity');
-                        const targetPath = path.join(installDir, `Unity ${unityVersion.version}`);
+                        const targetPath = path.join(hubInstallDir, `Unity ${unityVersion.version}`);
 
                         if (fs.existsSync(unityAppPath)) {
                             this.logger.debug(`Moving ${unityAppPath} to ${targetPath}...`);
@@ -1097,8 +1097,8 @@ done
                     }
                 }
 
-                await fs.promises.access(installPath, fs.constants.R_OK);
-                return installPath;
+                await fs.promises.access(installDir, fs.constants.R_OK | fs.constants.X_OK);
+                return installDir;
             }
             default:
                 throw new Error(`Unity ${unityVersion.toString()} is not supported on ${process.platform}`);

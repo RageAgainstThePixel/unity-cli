@@ -287,20 +287,35 @@ program.command('uninstall-unity')
         if (unityVersionStr) {
             const unityVersion = new UnityVersion(unityVersionStr, options.changeset, options.arch);
             const unityHub = new UnityHub();
-            unityEditor = await unityHub.GetEditor(unityVersion);
+            const installedEditors = await unityHub.ListInstalledEditors();
+            if (unityVersion.isLegacy()) {
+                const installPath = await unityHub.GetInstallPath();
+                unityEditor = new UnityEditor(path.join(installPath, `Unity ${unityVersion.toString()}`, 'Unity.exe'));
+            } else {
+                unityEditor = installedEditors.find(e => e.version.equals(unityVersion));
+            }
         } else {
             const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH || undefined;
+
             if (!editorPath || editorPath.length === 0) {
                 throw new Error('You must specify a Unity version or editor path with -u, --unity-version, -e, --unity-editor.');
             }
-            unityEditor = new UnityEditor(editorPath);
+
+            try {
+                unityEditor = new UnityEditor(editorPath);
+            } catch {
+                // ignored
+            }
         }
 
         if (!unityEditor) {
-            throw new Error('The Unity Editor could not be found.');
+            Logger.instance.info('The specified Unity Editor was not found.');
+        }
+        else {
+            await unityEditor.Uninstall();
         }
 
-        await unityEditor.Uninstall();
+        process.exit(0);
     });
 
 program.commandsGroup('Unity Editor:');
