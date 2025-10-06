@@ -359,6 +359,7 @@ export class LicensingClient {
 
                 const servicesConfigPath = path.join(servicesPath, 'services-config.json');
                 await fs.promises.writeFile(servicesConfigPath, Buffer.from(options.servicesConfig, 'base64'));
+                break;
             }
             default: { // personal and professional license activation
                 if (!options.username) {
@@ -392,6 +393,7 @@ export class LicensingClient {
                 }
 
                 await this.activateLicense(options.licenseType, options.username, options.password, options.serial);
+                break;
             }
         }
     }
