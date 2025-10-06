@@ -960,7 +960,11 @@ done
                 } finally {
                     fs.promises.unlink(downloadPath);
                 }
-            } else if (['2019.3', '2019.4'].some(v => unityVersion.version.startsWith(v)) || unityVersion.version.startsWith('2020.')) {
+            } else if (
+                ['2019.3', '2019.4'].some(v => unityVersion.version.startsWith(v)) ||
+                unityVersion.version.startsWith('2020.') ||
+                unityVersion.version.startsWith('2021.')
+            ) {
                 const url = `https://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.0g-2ubuntu4_${arch}.deb`;
                 const downloadPath = path.join(GetTempDir(), `libssl1.1_1.1.0g-2ubuntu4_${arch}.deb`);
                 await DownloadFile(url, downloadPath);

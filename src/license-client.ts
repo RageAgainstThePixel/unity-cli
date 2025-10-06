@@ -198,7 +198,7 @@ export class LicensingClient {
         const patchedDirectory = path.join(os.tmpdir(), `UnityLicensingClient-${this.licenseVersion.replace('.', '_')}`);
 
         if (await fs.promises.mkdir(patchedDirectory, { recursive: true }) === undefined) {
-            this.logger.info('Unity Licensing Client was already patched, reusing');
+            this.logger.debug('Unity Licensing Client was already patched, reusing');
         } else {
             let found = false;
             for (const fileName of await fs.promises.readdir(clientDirectory)) {
