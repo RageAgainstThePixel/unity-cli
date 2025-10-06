@@ -487,25 +487,27 @@ program.command('create-project')
             throw new Error('The project template name was not specified. Use -t or --template to specify it.');
         }
 
-        const templatePath = unityEditor.GetTemplatePath(options.template);
-        const projectName = options.name?.toString()?.trim();
+        let args: string[] = [
+            '-quit',
+            '-nographics',
+            '-batchmode'
+        ];
 
+        const projectName = options.name?.toString()?.trim();
         let projectPath = options.path?.toString()?.trim() || process.cwd();
 
         if (projectName && projectName.length > 0) {
             projectPath = path.join(projectPath, projectName);
         }
 
-        await unityEditor.Run({
-            projectPath: projectPath,
-            args: [
-                '-quit',
-                '-nographics',
-                '-batchmode',
-                '-createProject', projectPath,
-                '-cloneFromTemplate', templatePath
-            ]
-        });
+        args.push('-createProject', projectPath);
+
+        if (!unityEditor.version.isLegacy()) {
+            const templatePath = unityEditor.GetTemplatePath(options.template);
+            args.push('-cloneFromTemplate', templatePath);
+        }
+
+        await unityEditor.Run({ projectPath, args });
 
         Logger.instance.CI_setEnvironmentVariable('UNITY_PROJECT_PATH', projectPath);
 

@@ -340,7 +340,7 @@ export class UnityEditor {
                     await Exec('powershell', [
                         '-NoProfile',
                         '-Command',
-                        `Remove-Item -Path "${editorDir}" -Recurse -Force`
+                        `Remove-Item -Path "${editorDir}" -Recurse -Force -Verb RunAs`
                     ], { silent: true, showCommand: true });
                 }
                 // also delete the MonoBehaviour directory one level up if it still exists
@@ -349,7 +349,7 @@ export class UnityEditor {
                     await Exec('powershell', [
                         '-NoProfile',
                         '-Command',
-                        `Remove-Item -Path "${monoBehaviourPath}" -Recurse -Force`
+                        `Remove-Item -Path "${monoBehaviourPath}" -Recurse -Force -Verb RunAs`
                     ], { silent: true, showCommand: true });
                 }
                 break;
