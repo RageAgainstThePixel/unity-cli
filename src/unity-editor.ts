@@ -14,6 +14,7 @@ import {
     TailLogFile,
     LogTailResult,
     WaitForFileToBeCreatedAndReadable,
+    Exec,
 } from './utilities';
 
 export interface EditorCommand {
@@ -315,5 +316,22 @@ export class UnityEditor {
         }
         fs.accessSync(editorRootPath, fs.constants.R_OK);
         return editorRootPath;
+    }
+
+    public async Uninstall(): Promise<void> {
+        switch (process.platform) {
+            case 'darwin':
+            case 'linux':
+                await Exec('sudo', ['rm', '-rf', this.editorRootPath], { silent: true, showCommand: true });
+                break;
+            case 'win32':
+                const uninstallPath = path.join(this.editorRootPath, 'Uninstall.exe');
+                await Exec('powershell', [
+                    '-Command',
+                    `Start-Process -File "${uninstallPath}" -ArgumentList "/S" -NoNewWindow -Wait -Verb RunAs`
+                ], { silent: true, showCommand: true });
+                break;
+        }
+
     }
 }

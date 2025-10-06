@@ -268,6 +268,42 @@ program.command('setup-unity')
         }
     });
 
+program.command('uninstall-unity')
+    .description('Uninstall the specified Unity Editor version.')
+    .option('-e, --unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, -u, --unity-version or the UNITY_EDITOR_PATH environment variable must be set.')
+    .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000). If unspecified, then --unity-editor must be specified.')
+    .option('-c, --changeset <changeset>', 'The Unity changeset to get (e.g. 1234567890ab).')
+    .option('-a, --arch <architecture>', 'The Unity architecture to get (e.g. x86_64, arm64). Defaults to the architecture of the current process.')
+    .option('--verbose', 'Enable verbose logging.')
+    .action(async (options) => {
+        if (options.verbose) {
+            Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        Logger.instance.debug(JSON.stringify(options));
+
+        let unityEditor: UnityEditor | undefined;
+        const unityVersionStr = options.unityVersion?.toString()?.trim();
+
+        if (unityVersionStr) {
+            const unityVersion = new UnityVersion(unityVersionStr, options.changeset, options.arch);
+            const unityHub = new UnityHub();
+            unityEditor = await unityHub.GetEditor(unityVersion);
+        } else {
+            const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH || undefined;
+            if (!editorPath || editorPath.length === 0) {
+                throw new Error('You must specify a Unity version or editor path with -u, --unity-version, -e, --unity-editor.');
+            }
+            unityEditor = new UnityEditor(editorPath);
+        }
+
+        if (!unityEditor) {
+            throw new Error('The Unity Editor could not be found.');
+        }
+
+        await unityEditor.Uninstall();
+    });
+
 program.commandsGroup('Unity Editor:');
 
 program.command('open-project')
