@@ -28,16 +28,29 @@ unity-cli [command] [options]
 
 ### Common Commands
 
-- `unity-cli hub-install`: Install Unity Hub
-- `unity-cli hub-version`: Print Unity Hub version
-- `unity-cli hub-path`: Print Unity Hub executable path
-- `unity-cli hub [options] <args...>`: Run [Unity Hub command line arguments](https://docs.unity3d.com/hub/manual/HubCLI.html)
+#### Auth
+
+- `unity-cli license-version`: Print the Unity License Client version
 - `unity-cli activate-license [options]`: Activate a Unity license
 - `unity-cli return-license [options]`: Return a Unity license
-- `unity-cli license-version`: Print Unity License Client version
-- `unity-cli setup-unity [options]`: Find or install Unity Editor for a project/version
-- `unity-cli create-project [options]`: Create a new Unity project from a [template](https://docs.unity3d.com/hub/manual/Templates.html)
-- `unity-cli run [options] <args...>`: Run [Unity Editor Command Line Arguments](https://docs.unity3d.com/Manual/EditorCommandLineArguments.html)
+
+#### Unity Hub
+
+- `unity-cli hub-version`: Print the Unity Hub version
+- `unity-cli hub-install [options]`: Install or update the Unity Hub
+- `unity-cli hub-path`: Print the Unity Hub executable path
+- `unity-cli hub [options] <args...>`: Run Unity Hub command line arguments (passes args directly to the hub executable)
+
+#### Unity Editor
+
+- `unity-cli setup-unity [options]`: Find or install the Unity Editor for a project or specific version
+- `unity-cli uninstall-unity [options]`: Uninstall a Unity Editor version
+- `unity-cli list-project-templates [options]`: List available Unity project templates for an editor
+- `unity-cli create-project [options]`: Create a new Unity project from a template
+- `unity-cli open-project [options]`: Open a Unity project in the Unity Editor
+- `unity-cli run [options] <args...>`: Run Unity Editor command line arguments (passes args directly to the editor)
+
+Run `unity-cli --help` for a full list of commands and options.
 
 #### Install Unity Hub and Editor
 
@@ -60,8 +73,16 @@ unity-cli activate-license --email <your-email> --password <your-password> --ser
 unity-cli create-project --name "MyGame" --template com.unity.template.3d(-cross-platform)? --unity-editor <path-to-editor>
 ```
 
+#### Open a project from the command line
+
+> [!NOTE] If you run this command in the same directory as your Unity project, you can omit the `--unity-project`, `--unity-version`, and `--unity-editor` options.
+
+```bash
+unity-cli open-project
+```
+
 #### Build a Project
 
 ```bash
-unity-cli run --unity-editor <path-to-editor> --unity-project <path-to-project> -quit -batchmode -executeMethod StartCommandLineBuild
+unity-cli run --unity-project <path-to-project> -quit -batchmode -executeMethod StartCommandLineBuild
 ```
