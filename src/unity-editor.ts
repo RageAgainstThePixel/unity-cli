@@ -8,9 +8,9 @@ import {
 } from 'child_process';
 import {
     GetArgumentValueAsString,
-    KillChildProcesses,
     ProcInfo,
     KillProcess,
+    KillChildProcesses,
     TailLogFile,
     LogTailResult,
     WaitForFileToBeCreatedAndReadable,
@@ -22,7 +22,9 @@ export interface EditorCommand {
 }
 
 export class UnityEditor {
+    public readonly editorPath: string;
     public readonly editorRootPath: string;
+    public readonly version: UnityVersion;
 
     private readonly logger: Logger = Logger.instance;
     private readonly autoAddNoGraphics: boolean;
@@ -30,12 +32,15 @@ export class UnityEditor {
     /**
      * Initializes a new instance of the UnityEditor class.
      * @param editorPath The path to the Unity Editor installation.
+     * @param version Optional UnityVersion instance. If not provided, the version will be inferred from the editorPath.
      * @throws Will throw an error if the editor path is invalid or not executable.
      */
     constructor(
-        public readonly editorPath: string,
-        public readonly version: UnityVersion | undefined = undefined
+        editorPath: string,
+        version?: UnityVersion | undefined
     ) {
+        this.editorPath = path.normalize(editorPath);
+
         if (!fs.existsSync(editorPath)) {
             throw new Error(`The Unity Editor path does not exist: ${editorPath}`);
         }
@@ -68,50 +73,30 @@ export class UnityEditor {
      * Get the full path to a Unity project template based on the provided template name or regex pattern.
      * @param template The name or regex pattern of the template to find.
      * @returns The full path to the matching template file.
-     * @throws Error if the template directory does not exist, no templates are found, or no matching template is found.
+     * @throws If no templates are found, or no matching template is found.
      */
     public GetTemplatePath(template: string): string {
-        let templateDir: string;
-        let editorRoot = path.dirname(this.editorPath);
+        const templates: string[] = this.GetAvailableTemplates();
 
-        if (process.platform === 'darwin') {
-            templateDir = path.join(path.dirname(editorRoot), 'Resources', 'PackageManager', 'ProjectTemplates');
-        } else {
-            templateDir = path.join(editorRoot, 'Data', 'Resources', 'PackageManager', 'ProjectTemplates');
+        if (templates.length === 0) {
+            throw new Error('No Unity templates found!');
         }
 
-        // Check if the template directory exists
-        if (!fs.existsSync(templateDir) ||
-            !fs.statSync(templateDir).isDirectory()) {
-            throw new Error(`Template directory not found: ${templateDir}`);
-        }
-
-        // Find all .tgz files in the template directory
-        const files = fs.readdirSync(templateDir)
-            .filter(f => f.endsWith('.tgz'))
-            .map(f => path.join(templateDir, f));
-
-        if (files.length === 0) {
-            throw new Error(`No templates found in ${templateDir}`);
-        }
-
-        this.logger.ci(`Available templates:`);
-        files.forEach(f => this.logger.ci(`  > ${path.basename(f)}`));
-
-        // Build a regex to match the template name and version (e.g., com.unity.template.3d.*[0-9]+\.[0-9]+\.[0-9]+\.tgz)
+        // Build a regex to match the template name and version
+        // e.g., com.unity.template.3d(-cross-platform)?.*[0-9]+\.[0-9]+\.[0-9]+\.tgz
         // Accepts either a full regex or a simple string
         let regex: RegExp;
         try {
-            regex = new RegExp(template + ".*[0-9]+\\.[0-9]+\\.[0-9]+\\.tgz");
+            regex = new RegExp(`^${template}.*[0-9]+\\.[0-9]+\\.[0-9]+\\.tgz$`);
         } catch (e) {
             throw new Error(`Invalid template regex: ${template}`);
         }
 
         // Filter files by regex
-        const matches = files.filter(f => regex.test(path.basename(f)));
+        const matches = templates.filter(t => regex.test(path.basename(t)));
 
         if (matches.length === 0) {
-            throw new Error(`${template} path not found in ${templateDir}!`);
+            throw new Error(`${template} path not found!`);
         }
 
         // Pick the longest match (as in the shell script: sort by length descending)
@@ -123,6 +108,38 @@ export class UnityEditor {
         }
 
         return path.normalize(templatePath);
+    }
+
+    /**
+     * Get a list of available Unity project templates.
+     * @returns An array of available template file names.
+     */
+    public GetAvailableTemplates(): string[] {
+        let templateDir: string;
+        let editorRoot = path.dirname(this.editorPath);
+
+        const templates: string[] = [];
+
+        if (process.platform === 'darwin') {
+            templateDir = path.join(path.dirname(editorRoot), 'Resources', 'PackageManager', 'ProjectTemplates');
+        } else {
+            templateDir = path.join(editorRoot, 'Data', 'Resources', 'PackageManager', 'ProjectTemplates');
+        }
+
+        this.logger.debug(`Looking for templates in: ${templateDir}`);
+
+        // Check if the template directory exists
+        if (!fs.existsSync(templateDir) ||
+            !fs.statSync(templateDir).isDirectory()) {
+            return templates;
+        }
+
+        // Find all .tgz packages in the template directory
+        const packages = fs.readdirSync(templateDir)
+            .filter(f => f.endsWith('.tgz'))
+            .map(f => path.join(templateDir, f));
+        templates.push(...packages);
+        return templates;
     }
 
     /**

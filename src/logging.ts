@@ -141,7 +141,7 @@ export class Logger {
      * Masks a string in the console output in CI environments that support it.
      * @param message The string to mask.
      */
-    public mask(message: string): void {
+    public CI_mask(message: string): void {
         switch (this._ci) {
             case 'GITHUB_ACTIONS': {
                 process.stdout.write(`::add-mask::${message}\n`);
@@ -150,7 +150,12 @@ export class Logger {
         }
     }
 
-    public setEnvironmentVariable(name: string, value: string): void {
+    /**
+     * Sets an environment variable in CI environments that support it.
+     * @param name The name of the environment variable.
+     * @param value The value of the environment variable.
+     */
+    public CI_setEnvironmentVariable(name: string, value: string): void {
         switch (this._ci) {
             case 'GITHUB_ACTIONS': {
                 // needs to be appended to the temporary file specified in the GITHUB_ENV environment variable
@@ -164,7 +169,7 @@ export class Logger {
         }
     }
 
-    public setOutput(name: string, value: string): void {
+    public CI_setOutput(name: string, value: string): void {
         switch (this._ci) {
             case 'GITHUB_ACTIONS': {
                 // needs to be appended to the temporary file specified in the GITHUB_OUTPUT environment variable

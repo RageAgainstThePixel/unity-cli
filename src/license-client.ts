@@ -12,6 +12,19 @@ export enum LicenseType {
     floating = 'floating'
 }
 
+export interface ActivateOptions {
+    /** The type of license to activate */
+    licenseType: LicenseType;
+    /** Base64 encoded services configuration json */
+    servicesConfig?: string;
+    /** The license serial number */
+    serial?: string;
+    /** The Unity ID username (email address) */
+    username?: string;
+    /** The Unity ID password */
+    password?: string;
+}
+
 export class LicensingClient {
     private readonly unityHub: UnityHub = new UnityHub();
     private readonly logger: Logger = Logger.instance;
@@ -297,7 +310,7 @@ export class LicensingClient {
     private maskSerialInOutput(output: string): string {
         return output.replace(/([\w-]+-XXXX)/g, (_, serial) => {
             const maskedSerial = serial.slice(0, -4) + `XXXX`;
-            this.logger.mask(maskedSerial);
+            this.logger.CI_mask(maskedSerial);
             return serial;
         });
     }
@@ -311,24 +324,21 @@ export class LicensingClient {
 
     /**
      * Activates a Unity license.
-     * @param licenseType The type of license to activate.
-     * @param servicesConfig The services config path for floating licenses.
-     * @param serial The license serial number.
-     * @param username The Unity ID username.
-     * @param password The Unity ID password.
+     * @param options The activation options including license type, services config, serial, username, and password.
+     * @returns A promise that resolves when the license is activated.
      * @throws Error if activation fails or required parameters are missing.
      */
-    public async Activate(licenseType: LicenseType, servicesConfig: string | undefined = undefined, serial: string | undefined = undefined, username: string | undefined = undefined, password: string | undefined = undefined): Promise<void> {
+    public async Activate(options: ActivateOptions): Promise<void> {
         let activeLicenses = await this.GetActiveEntitlements();
 
-        if (activeLicenses.includes(licenseType)) {
-            this.logger.info(`License of type '${licenseType}' is already active, skipping activation`);
+        if (activeLicenses.includes(options.licenseType)) {
+            this.logger.info(`License of type '${options.licenseType}' is already active, skipping activation`);
             return;
         }
 
-        switch (licenseType) {
+        switch (options.licenseType) {
             case LicenseType.floating: {
-                if (!servicesConfig) {
+                if (!options.servicesConfig) {
                     throw new Error('Services config path is required for floating license activation');
                 }
 
@@ -348,41 +358,45 @@ export class LicensingClient {
                 }
 
                 const servicesConfigPath = path.join(servicesPath, 'services-config.json');
-                await fs.promises.writeFile(servicesConfigPath, Buffer.from(servicesConfig, 'base64'));
-                return;
+                await fs.promises.writeFile(servicesConfigPath, Buffer.from(options.servicesConfig, 'base64'));
+                break;
             }
             default: { // personal and professional license activation
-                if (!username) {
+                if (!options.username) {
                     const encodedUsername = process.env.UNITY_USERNAME_BASE64;
 
                     if (!encodedUsername) {
                         throw Error('Username is required for Unity License Activation!');
                     }
 
-                    username = Buffer.from(encodedUsername, 'base64').toString('utf-8');
+                    options.username = Buffer.from(encodedUsername, 'base64').toString('utf-8');
                 }
 
-                const emailRegex: RegExp = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                function isValidEmail(email: string): boolean {
+                    const emailRegex: RegExp = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    return emailRegex.test(email);
+                }
 
-                if (username.length === 0 || !emailRegex.test(username)) {
+                if (options.username.length === 0 || !isValidEmail(options.username)) {
                     throw Error('Username must be your Unity ID email address!');
                 }
 
-                if (!password) {
+                if (!options.password) {
                     const encodedPassword = process.env.UNITY_PASSWORD_BASE64;
 
                     if (!encodedPassword) {
                         throw Error('Password is required for Unity License Activation!');
                     }
 
-                    password = Buffer.from(encodedPassword, 'base64').toString('utf-8');
+                    options.password = Buffer.from(encodedPassword, 'base64').toString('utf-8');
                 }
 
-                if (password.length === 0) {
+                if (options.password.length === 0) {
                     throw Error('Password is required for Unity License Activation!');
                 }
 
-                await this.activateLicense(licenseType, username, password, serial);
+                await this.activateLicense(options.licenseType, options.username, options.password, options.serial);
+                break;
             }
         }
     }
@@ -445,7 +459,7 @@ export class LicensingClient {
             serial = serial.trim();
             args.push(`--serial`, serial);
             const maskedSerial = serial.slice(0, -4) + `XXXX`;
-            this.logger.mask(maskedSerial);
+            this.logger.CI_mask(maskedSerial);
         }
 
         if (licenseType === LicenseType.personal) {
