@@ -1021,7 +1021,7 @@ done
                         await Exec('powershell', [
                             '-NoProfile',
                             '-Command',
-                            `Start-Process -FilePath \"${installerPath}\" -ArgumentList \"/S /D=${installPath}\" -Wait -NoNewWindow -Verb RunAs`
+                            `Start-Process -FilePath \"${installerPath}\" -ArgumentList \"/S /D=${installPath}\" -Wait -NoNewWindow`
                         ], { silent: true, showCommand: true });
                     } catch (error) {
                         this.logger.error(`Failed to install Unity ${unityVersion.toString()}: ${error}`);

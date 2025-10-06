@@ -5,6 +5,7 @@
     "macos-latest"
   ],
   "unity-version": [
+    "2020.x",
     "2021.x",
     "2022.x",
     "6000.0.x",
@@ -23,6 +24,11 @@
     {
       "os": "macos-latest",
       "build-target": "StandaloneOSX"
+    },
+    {
+      "os": "windows-latest",
+      "build-target": "StandaloneWindows64",
+      "unity-version": "4.7.2"
     }
   ]
 }
