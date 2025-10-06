@@ -40,7 +40,6 @@ jobs:
         shell: bash
         run: |
           unity-cli hub-install --auto-update
-          unity-cli activate-license --license personal --email "${{ secrets.UNITY_USERNAME }}" --password "${{ secrets.UNITY_PASSWORD }}"
           unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-target }}" --json
       - name: verify UNITY_HUB_PATH and UNITY_EDITOR_PATH variables
         shell: bash
@@ -58,6 +57,10 @@ jobs:
             echo "Error: UNITY_EDITOR_PATH is not set"
             exit 1
           fi
+      - name: activate license
+        shell: bash
+        run: |
+          unity-cli activate-license --license personal --username "${{ secrets.UNITY_USERNAME }}" --password "${{ secrets.UNITY_PASSWORD }}"
       - name: create unity project
         shell: bash
         run: |
@@ -82,9 +85,12 @@ jobs:
           unity-cli run --unity-editor "${UNITY_EDITOR_PATH}" --unity-project "${UNITY_PROJECT_PATH}" --log-name Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
           unity-cli run --unity-editor "${UNITY_EDITOR_PATH}" --unity-project "${UNITY_PROJECT_PATH}" --log-name Build -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity
       - name: Uninstall editor
-        if: ${{ always() && env.UNITY_EDITOR_PATH != '' }}
         shell: bash
         run: |
+          if [ -z "${UNITY_EDITOR_PATH}" ]; then
+            echo "UNITY_EDITOR_PATH is not set, skipping uninstall"
+            exit 0
+          fi
           unity-cli uninstall-unity --unity-editor "${UNITY_EDITOR_PATH}"
       - name: Return license
         if: always()
