@@ -372,9 +372,12 @@ export class LicensingClient {
                     options.username = Buffer.from(encodedUsername, 'base64').toString('utf-8');
                 }
 
-                const emailRegex: RegExp = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                function isValidEmail(email: string): boolean {
+                    const emailRegex: RegExp = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    return emailRegex.test(email);
+                }
 
-                if (options.username.length === 0 || !emailRegex.test(options.username)) {
+                if (options.username.length === 0 || !isValidEmail(options.username)) {
                     throw Error('Username must be your Unity ID email address!');
                 }
 
