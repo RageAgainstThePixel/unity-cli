@@ -335,7 +335,7 @@ program.command('list-project-templates')
         } else {
             process.stdout.write(`Available project templates:\n`);
             for (const template of templates) {
-                process.stdout.write(`  - ${template}\n`);
+                process.stdout.write(`  - ${path.basename(template)}\n`);
             }
         }
     });

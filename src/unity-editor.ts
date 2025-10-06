@@ -138,7 +138,7 @@ export class UnityEditor {
         const packages = fs.readdirSync(templateDir)
             .filter(f => f.endsWith('.tgz'))
             .map(f => path.join(templateDir, f));
-        templates.push(...packages.map(f => path.basename(f)));
+        templates.push(...packages);
         return templates;
     }
 
