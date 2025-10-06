@@ -82,7 +82,7 @@ export class UnityEditor {
         // Accepts either a full regex or a simple string
         let regex: RegExp;
         try {
-            regex = new RegExp(`${EscapeRegex(template)}.*[0-9]+\\.[0-9]+\\.[0-9]+\\.tgz`);
+            regex = new RegExp(`^${EscapeRegex(template)}.*[0-9]+\\.[0-9]+\\.[0-9]+\\.tgz$`);
         } catch (e) {
             throw new Error(`Invalid template regex: ${template}`);
         }

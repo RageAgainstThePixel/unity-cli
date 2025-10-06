@@ -594,5 +594,7 @@ export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
  * @returns The escaped string.
  */
 export function EscapeRegex(input: string): string {
+    // remove / from start and end of regex if present
+    input = input.trim().replace(/^\/|\/$/g, '');
     return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
