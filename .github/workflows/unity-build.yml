@@ -75,15 +75,17 @@ jobs:
           fi
       - name: Install OpenUPM and build pipeline package
         shell: bash
+        if: ${{ matrix.unity-version != '4.7.2' && matrix.unity-version != '5.6.7' }}
         run: |
           npm install -g openupm-cli
           cd "${UNITY_PROJECT_PATH}"
           openupm add com.utilities.buildpipeline
       - name: Build project
+        if: ${{ matrix.unity-version != '4.7.2' && matrix.unity-version != '5.6.7' }}
         shell: bash
         run: |
-          unity-cli run --unity-editor "${UNITY_EDITOR_PATH}" --unity-project "${UNITY_PROJECT_PATH}" --log-name Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
-          unity-cli run --unity-editor "${UNITY_EDITOR_PATH}" --unity-project "${UNITY_PROJECT_PATH}" --log-name Build -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity
+          unity-cli run --log-name Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
+          unity-cli run --log-name Build -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity
       - name: Uninstall editor
         shell: bash
         run: |
