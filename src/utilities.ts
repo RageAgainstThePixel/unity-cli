@@ -144,18 +144,24 @@ export async function Exec(command: string, args: string[], options: ExecOptions
             child.on('close', (code) => {
                 removeListeners();
 
-                // Flush any remaining buffered content
-                if (lineBuffer.length > 0) {
-                    const lines = lineBuffer.split('\n') // split by newline
-                        .map(line => line.replace(/\r$/, '')) // remove trailing carriage return
-                        .filter(line => line.length > 0); // filter out empty lines
+                try {
+                    // Flush any remaining buffered content
+                    if (lineBuffer.length > 0) {
+                        const lines = lineBuffer.split('\n') // split by newline
+                            .map(line => line.replace(/\r$/, '')) // remove trailing carriage return
+                            .filter(line => line.length > 0); // filter out empty lines
 
-                    for (const line of lines) {
-                        output += `${line}\n`;
+                        for (const line of lines) {
+                            output += `${line}\n`;
 
-                        if (!isSilent) {
-                            process.stdout.write(`${line}\n`);
+                            if (!isSilent) {
+                                process.stdout.write(`${line}\n`);
+                            }
                         }
+                    }
+                } catch (error: any) {
+                    if (error.code !== 'EPIPE') {
+                        logger.error(`Error while flushing output: ${error}`);
                     }
                 }
 
@@ -524,8 +530,7 @@ export async function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = '
 
         try {
             if (process.platform === 'win32') {
-                const command = `taskkill /PID ${procInfo.pid} /F /T`;
-                await Exec('powershell', ['-Command', command], { silent: true, showCommand: false });
+                await Exec('taskkill', ['/PID', procInfo.pid.toString(), '/F', '/T'], { silent: true, showCommand: false });
             } else { // linux and macos
                 process.kill(procInfo.pid, 'SIGKILL');
             }
