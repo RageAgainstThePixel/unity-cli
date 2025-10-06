@@ -516,7 +516,7 @@ chmod -R 777 "$hubPath"`]);
      * @param modules The modules to install alongside the editor.
      * @returns The path to the Unity Editor executable.
      */
-    public async GetEditor(unityVersion: UnityVersion, modules: string[]): Promise<UnityEditor> {
+    public async GetEditor(unityVersion: UnityVersion, modules: string[] = []): Promise<UnityEditor> {
         const retryErrorMessages = [
             'Editor already installed in this location',
             'failed to download. Error given: Request timeout'

@@ -3,19 +3,20 @@
 import 'source-map-support/register';
 import * as fs from 'fs';
 import * as os from 'os';
+import * as path from 'path';
 import { Command } from 'commander';
-import path, { join } from 'path';
-import { LicenseType, LicensingClient } from './license-client';
-import { PromptForSecretInput } from './utilities';
 import { UnityHub } from './unity-hub';
+import updateNotifier from "update-notifier";
 import { Logger, LogLevel } from './logging';
+import { UnityEditor } from './unity-editor';
 import { UnityVersion } from './unity-version';
 import { UnityProject } from './unity-project';
+import { ChildProcess, spawn } from 'child_process';
+import { PromptForSecretInput } from './utilities';
 import { CheckAndroidSdkInstalled } from './android-sdk';
-import { UnityEditor } from './unity-editor';
-import updateNotifier from "update-notifier";
+import { LicenseType, LicensingClient } from './license-client';
 
-const pkgPath = join(__dirname, '..', 'package.json');
+const pkgPath = path.join(__dirname, '..', 'package.json');
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
 updateNotifier({ pkg }).notify();
 const program = new Command();
@@ -205,7 +206,7 @@ program.command('setup-unity')
         }
 
         if (!options.unityVersion && !unityProject) {
-            throw new Error('You must specify a Unity version or project with -u, --unity-version, -p, --unity-project.');
+            throw new Error('You must specify a Unity version or project path with -u, --unity-version, -p, --unity-project.');
         }
 
         const unityVersion = unityProject?.version ?? new UnityVersion(options.unityVersion, options.changeset);
@@ -269,10 +270,43 @@ program.command('setup-unity')
 
 program.commandsGroup('Unity Editor:');
 
+program.command('open-project')
+    .description('Open a Unity project in the Unity Editor.')
+    .option('-p, --unity-project <unityProjectPath>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
+    .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000). If specified, it will override the version read from the project.')
+    .option('--verbose', 'Enable verbose logging.')
+    .action(async (options) => {
+        if (options.verbose) {
+            Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        Logger.instance.debug(JSON.stringify(options));
+        const projectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || process.cwd();
+        const unityProject = await UnityProject.GetProject(projectPath);
+
+        if (!unityProject) {
+            throw new Error(`The specified path is not a valid Unity project: ${projectPath}`);
+        }
+
+        const unityVersion = unityProject?.version ?? new UnityVersion(options.unityVersion, options.changeset);
+        const unityHub = new UnityHub();
+        const unityEditor = await unityHub.GetEditor(unityVersion);
+
+        Logger.instance.info(`Opening project at "${unityProject.projectPath}" with Unity ${unityEditor.version}...`);
+
+        let child: ChildProcess | null = null;
+        try {
+            child = spawn(unityEditor.editorPath, ['-projectPath', unityProject.projectPath], { detached: true });
+            child.unref();
+        } finally {
+            process.exit(child?.pid !== undefined ? 0 : 1);
+        }
+    });
+
 program.command('run')
     .description('Run command line args directly to the Unity Editor.')
-    .option('--unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR_PATH environment variable must be set.')
-    .option('--unity-project <unityProjectPath>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
+    .option('-e, --unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, -u, --unity-project or the UNITY_EDITOR_PATH environment variable must be set.')
+    .option('-p, --unity-project <unityProjectPath>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
     .option('--log-name <logName>', 'The name of the log file.')
     .allowUnknownOption(true)
     .argument('<args...>', 'Arguments to pass to the Unity Editor executable.')
@@ -284,18 +318,27 @@ program.command('run')
 
         Logger.instance.debug(JSON.stringify({ options, args }));
 
-        const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH;
+        let unityEditor: UnityEditor | undefined;
+        const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH || undefined;
 
-        if (!editorPath || editorPath.length === 0) {
-            throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR_PATH environment variable.');
+        if (editorPath && editorPath.length > 0) {
+            unityEditor = new UnityEditor(editorPath);
         }
 
-        const unityEditor = new UnityEditor(editorPath);
         const projectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || process.cwd();
         const unityProject = await UnityProject.GetProject(projectPath);
 
         if (!unityProject) {
             throw new Error(`The specified path is not a valid Unity project: ${projectPath}`);
+        }
+
+        if (!unityEditor) {
+            const unityHub = new UnityHub();
+            unityEditor = await unityHub.GetEditor(unityProject.version);
+        }
+
+        if (!unityEditor) {
+            throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR_PATH environment variable.');
         }
 
         if (!args.includes('-logFile')) {
@@ -310,7 +353,8 @@ program.command('run')
 
 program.command('list-project-templates')
     .description('List all available project templates for the given Unity editor.')
-    .option('--unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR_PATH environment variable must be set.')
+    .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000). If unspecified, then --unity-editor must be specified.')
+    .option('-e, --unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR_PATH environment variable must be set.')
     .option('--verbose', 'Enable verbose logging.')
     .option('--json', 'Prints the last line of output as JSON string.')
     .action(async (options) => {
@@ -320,13 +364,27 @@ program.command('list-project-templates')
 
         Logger.instance.debug(JSON.stringify(options));
 
-        const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH;
+        const unityVersionStr = options.unityVersion?.toString()?.trim();
 
-        if (!editorPath || editorPath.length === 0) {
-            throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR_PATH environment variable.');
+        if (!unityVersionStr && !options.unityEditor) {
+            throw new Error('You must specify a Unity version or editor path with -u, --unity-version, -e, --unity-editor.');
         }
 
-        const unityEditor = new UnityEditor(editorPath);
+        let unityEditor: UnityEditor;
+
+        if (unityVersionStr) {
+            const unityVersion = new UnityVersion(unityVersionStr);
+            unityEditor = await new UnityHub().GetEditor(unityVersion);
+        } else {
+            const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH;
+
+            if (!editorPath || editorPath.length === 0) {
+                throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR_PATH environment variable.');
+            }
+
+            unityEditor = new UnityEditor(editorPath);
+        }
+
         const templates = unityEditor.GetAvailableTemplates();
 
         if (options.json) {
@@ -341,10 +399,11 @@ program.command('list-project-templates')
 
 program.command('create-project')
     .description('Create a new Unity project.')
-    .option('--name <projectName>', 'The name of the new Unity project. If unspecified, the project will be created in the specified path or the current working directory.')
-    .option('--path <projectPath>', 'The path to create the new Unity project. If unspecified, the current working directory will be used.')
-    .option('--template <projectTemplate>', 'The name of the template package to use for creating the unity project. Supports regex patterns.', 'com.unity.template.3d(-cross-platform)?')
-    .option('--unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR_PATH environment variable must be set.')
+    .option('-n, --name <projectName>', 'The name of the new Unity project. If unspecified, the project will be created in the specified path or the current working directory.')
+    .option('-p, --path <projectPath>', 'The path to create the new Unity project. If unspecified, the current working directory will be used.')
+    .option('-t, --template <projectTemplate>', 'The name of the template package to use for creating the unity project. Supports regex patterns.', 'com.unity.template.3d(-cross-platform)?')
+    .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000). If unspecified, then --unity-editor must be specified.')
+    .option('-e, --unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, -u, --unity-version, or the UNITY_EDITOR_PATH environment variable must be set.')
     .option('--verbose', 'Enable verbose logging.')
     .option('--json', 'Prints the last line of output as JSON string.')
     .action(async (options) => {
@@ -354,13 +413,26 @@ program.command('create-project')
 
         Logger.instance.debug(JSON.stringify(options));
 
-        const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH;
+        const unityVersionStr = options.unityVersion?.toString()?.trim();
 
-        if (!editorPath || editorPath.length === 0) {
-            throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR_PATH environment variable.');
+        if (!unityVersionStr && !options.unityEditor) {
+            throw new Error('You must specify a Unity version or editor path with -u, --unity-version, -e, --unity-editor.');
         }
 
-        const unityEditor = new UnityEditor(editorPath);
+        let unityEditor: UnityEditor;
+
+        if (unityVersionStr) {
+            const unityVersion = new UnityVersion(unityVersionStr);
+            unityEditor = await new UnityHub().GetEditor(unityVersion);
+        } else {
+            const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH;
+
+            if (!editorPath || editorPath.length === 0) {
+                throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR_PATH environment variable.');
+            }
+
+            unityEditor = new UnityEditor(editorPath);
+        }
 
         if (!options.template || options.template.length === 0) {
             throw new Error('The project template name was not specified. Use -t or --template to specify it.');
