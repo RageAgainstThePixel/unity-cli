@@ -82,7 +82,8 @@ export class UnityEditor {
             throw new Error('No Unity templates found!');
         }
 
-        // Build a regex to match the template name and version (e.g., com.unity.template.3d.*[0-9]+\.[0-9]+\.[0-9]+\.tgz)
+        // Build a regex to match the template name and version
+        // e.g., com.unity.template.3d(-cross-platform)?.*[0-9]+\.[0-9]+\.[0-9]+\.tgz
         // Accepts either a full regex or a simple string
         let regex: RegExp;
         try {

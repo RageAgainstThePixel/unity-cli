@@ -59,7 +59,7 @@ jobs:
       - name: create unity project
         shell: bash
         run: |
-          unity-cli list-templates --unity-editor "${UNITY_EDITOR_PATH}" --json
+          unity-cli list-project-templates --unity-editor "${UNITY_EDITOR_PATH}" --json
           unity-cli create-project --name "Unity Project" --unity-editor "${UNITY_EDITOR_PATH}" --json
       - name: verify UNITY_PROJECT_PATH variable
         shell: bash
