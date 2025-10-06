@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as yaml from 'yaml';
+import * as asar from '@electron/asar';
 import { spawn } from 'child_process';
 import { Logger, LogLevel } from './logging';
 import { UnityEditor } from './unity-editor';
@@ -94,7 +95,8 @@ export class UnityHub {
             'You have to request `id` or `_id` fields for all selection sets or create a custom `keys` config for `UnityReleaseLabel`.',
             'Entities without keys will be embedded directly on the parent entity. If this is intentional, create a `keys` config for `UnityReleaseLabel` that always returns null.',
             'https://bit.ly/2XbVrpR#15',
-            'Interaction is not allowed with the Security Server." (-25308)'
+            'Interaction is not allowed with the Security Server." (-25308)',
+            'Network service crashed, restarting service.',
         ];
 
         try {
@@ -245,6 +247,7 @@ export class UnityHub {
                         throw new Error(`Failed to execute Unity Hub: [${exitCode}] ${errorMessage}`);
                 }
             }
+
             output = output.split('\n')
                 .filter(line => line.trim().length > 0)
                 .filter(line => !ignoredLines.some(ignored => line.includes(ignored)))
@@ -426,7 +429,6 @@ chmod -R 777 "$hubPath"`]);
         }
 
         await fs.promises.access(asarPath, fs.constants.R_OK);
-        const asar = await import('@electron/asar');
         const fileBuffer = asar.extractFile(asarPath, 'package.json');
         const packageJson = JSON.parse(fileBuffer.toString());
         const version = coerce(packageJson.version);
@@ -517,7 +519,7 @@ chmod -R 777 "$hubPath"`]);
         if (!resolvedVersion.isLegacy()) {
             try {
                 if (!resolvedVersion.isFullyQualified()) {
-                    const releases = await this.getLatestHubReleases();
+                    const releases = await this.ListAvailableReleases();
                     resolvedVersion = resolvedVersion.findMatch(releases);
                 }
 
@@ -609,7 +611,7 @@ chmod -R 777 "$hubPath"`]);
     public async ListInstalledEditors(): Promise<string[]> {
         const output = await this.Exec(['editors', '-i']);
         return output.split('\n')
-            .filter(line => line.trim().length > 0)
+            .filter(line => /installed at/.test(line))
             .map(line => line.trim());
     }
 
@@ -619,8 +621,9 @@ chmod -R 777 "$hubPath"`]);
      */
     public async ListAvailableReleases(): Promise<string[]> {
         const output = await this.Exec(['editors', '--releases']);
+        // filter out version lines only 2021.3.45f2 (may include installed path following version)
         return output.split('\n')
-            .filter(line => line.trim().length > 0)
+            .filter(line => /^\d{1,4}\.\d+\.\d+[abcfpx]?\d*/.test(line.trim()))
             .map(line => line.trim());
     }
 
@@ -722,25 +725,6 @@ chmod -R 777 "$hubPath"`]);
         return editorPath;
     }
 
-    private async getLatestHubReleases(): Promise<string[]> {
-        // Normalize output to bare version strings (e.g., 2022.3.62f1)
-        // Unity Hub can return lines like:
-        //  - "6000.0.56f1 (Apple silicon)"
-        //  - "2022.3.62f1 installed at C:\\..."
-        //  - "2022.3.62f1, installed at ..." (older format)
-        // We extract the first version token and discard the rest.
-        const versionRegex = /(\d{1,4})\.(\d+)\.(\d+)([abcfpx])(\d+)/;
-        return (await this.Exec([`editors`, `--releases`]))
-            .split('\n')
-            .map(line => line.trim())
-            .filter(line => line.length > 0)
-            .map(line => {
-                const match = line.match(versionRegex);
-                return match ? match[0] : '';
-            })
-            .filter(v => v.length > 0);
-    }
-
     /**
      * Patches the Bee Backend for Unity Linux Editor.
      * https://discussions.unity.com/t/linux-editor-stuck-on-loading-because-of-bee-backend-w-workaround/854480
@@ -782,9 +766,9 @@ done
         if (fullUnityVersionPattern.test(unityVersion.version)) {
             version = unityVersion.version;
         } else {
-            const mm = unityVersion.version.match(/^(\d{1,4})(?:\.(\d+))?/);
-            if (mm) {
-                version = mm[2] ? `${mm[1]}.${mm[2]}` : mm[1]!;
+            const match = unityVersion.version.match(/^(\d{1,4})(?:\.(\d+))?/);
+            if (match) {
+                version = match[2] ? `${match[1]}.${match[2]}` : match[1]!;
             } else {
                 version = unityVersion.version.split('.')[0]!;
             }

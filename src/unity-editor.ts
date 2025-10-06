@@ -211,21 +211,16 @@ export class UnityEditor {
             process.once('SIGTERM', onCancel);
             procInfo = { pid: unityProcess.pid, ppid: process.pid, name: this.editorPath };
             this.logger.debug(`Unity process started with pid: ${procInfo.pid}`);
-            const timeout = 10000; // 10 seconds
-            await WaitForFileToBeCreatedAndReadable(logPath, timeout);
+            await WaitForFileToBeCreatedAndReadable(logPath, 10_000);
             logTail = TailLogFile(logPath);
             exitCode = await new Promise((resolve, reject) => {
                 unityProcess.on('close', (code) => {
-                    setTimeout(() => {
-                        logTail?.stopLogTail();
-                        resolve(code === null ? 1 : code);
-                    }, timeout);
+                    logTail?.stopLogTail();
+                    resolve(code === null ? 1 : code);
                 });
                 unityProcess.on('error', (error) => {
-                    setTimeout(() => {
-                        logTail?.stopLogTail();
-                        reject(error);
-                    }, timeout);
+                    logTail?.stopLogTail();
+                    reject(error);
                 });
             });
             // Wait for log tailing to finish writing remaining content
@@ -233,7 +228,7 @@ export class UnityEditor {
                 try {
                     await logTail.tailPromise;
                 } catch (error) {
-                    this.logger.error(`Error occurred while tailing log file: ${error}`);
+                    this.logger.error(`Error occurred while tailing log: ${error}`);
                 }
             }
         } finally {
