@@ -269,7 +269,6 @@ program.command('setup-unity')
 
 program.commandsGroup('Unity Editor:');
 
-
 program.command('run')
     .description('Run command line args directly to the Unity Editor.')
     .option('--unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR_PATH environment variable must be set.')
