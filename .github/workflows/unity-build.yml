@@ -22,6 +22,8 @@ jobs:
     permissions:
       contents: read
     timeout-minutes: 30
+    env:
+      UNITY_PROJECT_PATH: '' # Set from create-project step
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -80,11 +82,11 @@ jobs:
           unity-cli run --unity-editor "${UNITY_EDITOR_PATH}" --unity-project "${UNITY_PROJECT_PATH}" --log-name Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
           unity-cli run --unity-editor "${UNITY_EDITOR_PATH}" --unity-project "${UNITY_PROJECT_PATH}" --log-name Build -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity
       - name: Uninstall editor
-        if: always()
+        if: ${{ always() && env.UNITY_EDITOR_PATH != '' }}
         shell: bash
         run: |
           unity-cli uninstall-unity --unity-editor "${UNITY_EDITOR_PATH}"
-      - name: Post Run
+      - name: Return license
         if: always()
         shell: bash
         run: |
