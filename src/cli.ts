@@ -13,10 +13,14 @@ import { UnityVersion } from './unity-version';
 import { UnityProject } from './unity-project';
 import { CheckAndroidSdkInstalled } from './android-sdk';
 import { UnityEditor } from './unity-editor';
+import updateNotifier from "update-notifier";
 
 const pkgPath = join(__dirname, '..', 'package.json');
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+updateNotifier({ pkg }).notify();
 const program = new Command();
+
+program.commandsGroup('Auth:');
 
 program.name('unity-cli')
     .description('A command line utility for the Unity Game Engine.')
@@ -71,7 +75,13 @@ program.command('activate-license')
             }
         }
 
-        await client.Activate(licenseType, options.config, options.serial, options.email, options.password);
+        await client.Activate({
+            licenseType,
+            servicesConfig: options.config,
+            serial: options.serial,
+            username: options.email,
+            password: options.password
+        });
     });
 
 program.command('return-license')
@@ -101,6 +111,8 @@ program.command('return-license')
         await client.Deactivate(licenseType);
     });
 
+program.commandsGroup('Unity Hub:');
+
 program.command('hub-version')
     .description('Print the version of the Unity Hub.')
     .action(async () => {
@@ -124,7 +136,7 @@ program.command('hub-install')
         const unityHub = new UnityHub();
         const hubPath = await unityHub.Install(options.autoUpdate === true);
 
-        Logger.instance.setEnvironmentVariable('UNITY_HUB_PATH', hubPath);
+        Logger.instance.CI_setEnvironmentVariable('UNITY_HUB_PATH', hubPath);
 
         if (options.json) {
             process.stdout.write(`\n${JSON.stringify({ UNITY_HUB_PATH: hubPath })}\n`);
@@ -139,7 +151,7 @@ program.command('hub-path')
     .action(async (options) => {
         const hub = new UnityHub();
 
-        Logger.instance.setEnvironmentVariable('UNITY_HUB_PATH', hub.executable);
+        Logger.instance.CI_setEnvironmentVariable('UNITY_HUB_PATH', hub.executable);
 
         if (options.json) {
             process.stdout.write(`\n${JSON.stringify({ UNITY_HUB_PATH: hub.executable })}\n`);
@@ -234,11 +246,93 @@ program.command('setup-unity')
         }
 
         for (const [key, value] of Object.entries(output)) {
-            Logger.instance.setEnvironmentVariable(key, value);
+            if (value && value.length > 0) {
+                Logger.instance.CI_setEnvironmentVariable(key, value);
+            }
         }
 
         if (options.json) {
             process.stdout.write(`\n${JSON.stringify(output)}\n`);
+        } else {
+            process.stdout.write(`Unity setup complete!\n`);
+            for (const [key, value] of Object.entries(output)) {
+                if (value && value.length > 0) {
+                    process.stdout.write(`${key}=${value}\n`);
+                }
+            }
+        }
+    });
+
+program.commandsGroup('Unity Editor:');
+
+
+program.command('run')
+    .description('Run command line args directly to the Unity Editor.')
+    .option('--unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR_PATH environment variable must be set.')
+    .option('--unity-project <unityProjectPath>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
+    .option('--log-name <logName>', 'The name of the log file.')
+    .allowUnknownOption(true)
+    .argument('<args...>', 'Arguments to pass to the Unity Editor executable.')
+    .option('--verbose', 'Enable verbose logging.')
+    .action(async (args: string[], options) => {
+        if (options.verbose) {
+            Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        Logger.instance.debug(JSON.stringify({ options, args }));
+
+        const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH;
+
+        if (!editorPath || editorPath.length === 0) {
+            throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR_PATH environment variable.');
+        }
+
+        const unityEditor = new UnityEditor(editorPath);
+        const projectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || process.cwd();
+        const unityProject = await UnityProject.GetProject(projectPath);
+
+        if (!unityProject) {
+            throw new Error(`The specified path is not a valid Unity project: ${projectPath}`);
+        }
+
+        if (!args.includes('-logFile')) {
+            const logPath = unityEditor.GenerateLogFilePath(unityProject.projectPath, options.logName);
+            args.push('-logFile', logPath);
+        }
+
+        await unityEditor.Run({
+            args: [...args]
+        });
+    });
+
+program.command('list-project-templates')
+    .description('List all available project templates for the given Unity editor.')
+    .option('--unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR_PATH environment variable must be set.')
+    .option('--verbose', 'Enable verbose logging.')
+    .option('--json', 'Prints the last line of output as JSON string.')
+    .action(async (options) => {
+        if (options.verbose) {
+            Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        Logger.instance.debug(JSON.stringify(options));
+
+        const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH;
+
+        if (!editorPath || editorPath.length === 0) {
+            throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR_PATH environment variable.');
+        }
+
+        const unityEditor = new UnityEditor(editorPath);
+        const templates = unityEditor.GetAvailableTemplates();
+
+        if (options.json) {
+            process.stdout.write(`\n{\"templates\": ${JSON.stringify(templates)}}\n`);
+        } else {
+            process.stdout.write(`Available project templates:\n`);
+            for (const template of templates) {
+                process.stdout.write(`  - ${template}\n`);
+            }
         }
     });
 
@@ -289,50 +383,13 @@ program.command('create-project')
             ]
         });
 
-        Logger.instance.setEnvironmentVariable('UNITY_PROJECT_PATH', projectPath);
+        Logger.instance.CI_setEnvironmentVariable('UNITY_PROJECT_PATH', projectPath);
 
         if (options.json) {
             process.stdout.write(`\n${JSON.stringify({ UNITY_PROJECT_PATH: projectPath })}\n`);
+        } else {
+            process.stdout.write(`Unity project created at: ${projectPath}\n`);
         }
-    });
-
-program.command('run')
-    .description('Run command line args directly to the Unity Editor.')
-    .option('--unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR_PATH environment variable must be set.')
-    .option('--unity-project <unityProjectPath>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
-    .option('--log-name <logName>', 'The name of the log file.')
-    .allowUnknownOption(true)
-    .argument('<args...>', 'Arguments to pass to the Unity Editor executable.')
-    .option('--verbose', 'Enable verbose logging.')
-    .action(async (args: string[], options) => {
-        if (options.verbose) {
-            Logger.instance.logLevel = LogLevel.DEBUG;
-        }
-
-        Logger.instance.debug(JSON.stringify({ options, args }));
-
-        const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH;
-
-        if (!editorPath || editorPath.length === 0) {
-            throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR_PATH environment variable.');
-        }
-
-        const unityEditor = new UnityEditor(editorPath);
-        const projectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || process.cwd();
-        const unityProject = await UnityProject.GetProject(projectPath);
-
-        if (!unityProject) {
-            throw new Error(`The specified path is not a valid Unity project: ${projectPath}`);
-        }
-
-        if (!args.includes('-logFile')) {
-            const logPath = unityEditor.GenerateLogFilePath(unityProject.projectPath, options.logName);
-            args.push('-logFile', logPath);
-        }
-
-        await unityEditor.Run({
-            args: [...args]
-        });
     });
 
 program.parse(process.argv);

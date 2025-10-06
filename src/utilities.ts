@@ -557,7 +557,11 @@ export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
     try {
         if (process.platform === 'win32') {
             const command = `Get-CimInstance Win32_Process -Filter "ParentProcessId=${procInfo.pid}" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
-            await Exec('powershell', ['-Command', command], { silent: true, showCommand: false });
+            await Exec('powershell', [
+                '-NoProfile',
+                '-Command',
+                command
+            ], { silent: true, showCommand: false });
         } else { // linux and macos
             const psOutput = await Exec('ps', ['-eo', 'pid,ppid,comm'], { silent: true, showCommand: false });
             const lines = psOutput.split('\n').slice(1); // Skip header line
@@ -582,4 +586,13 @@ export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
     } catch (error) {
         logger.error(`Failed to kill child processes of pid ${procInfo.pid}:\n${JSON.stringify(error)}`);
     }
+}
+
+/**
+ * Escapes special characters in a string for use in a regular expression.
+ * @param input The input string to escape.
+ * @returns The escaped string.
+ */
+export function EscapeRegex(input: string): string {
+    return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

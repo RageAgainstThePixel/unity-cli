@@ -327,7 +327,11 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub`]);
                 this.logger.info(`Running Unity Hub installer...`);
 
                 try {
-                    await Exec(downloadPath, ['/S'], { silent: true, showCommand: true });
+                    await Exec('powershell', [
+                        '-NoProfile',
+                        '-Command',
+                        `Start-Process -FilePath '${downloadPath}' -ArgumentList '/S' -Verb RunAs -Wait`
+                    ], { silent: true, showCommand: true });
                 } finally {
                     if (fs.statSync(downloadPath).isFile()) {
                         await fs.promises.unlink(downloadPath);
@@ -997,7 +1001,11 @@ done
                     this.logger.info(`Running Unity ${unityVersion.toString()} installer...`);
 
                     try {
-                        await Exec('powershell', ['-Command', `Start-Process -FilePath \"${installerPath}\" -ArgumentList \"/S /D=${installPath}\" -Wait -NoNewWindow`], { silent: true, showCommand: true });
+                        await Exec('powershell', [
+                            '-NoProfile',
+                            '-Command',
+                            `Start-Process -FilePath \"${installerPath}\" -ArgumentList \"/S /D=${installPath}\" -Wait -NoNewWindow -Verb RunAs`
+                        ], { silent: true, showCommand: true });
                     } catch (error) {
                         this.logger.error(`Failed to install Unity ${unityVersion.toString()}: ${error}`);
                     } finally {
