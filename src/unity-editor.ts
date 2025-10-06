@@ -327,7 +327,8 @@ export class UnityEditor {
                 ], { silent: true, showCommand: true });
                 break;
             case 'win32':
-                const uninstallPath = path.join(path.dirname(this.editorPath), 'Uninstall.exe');
+                const editorDir = path.dirname(this.editorPath);
+                const uninstallPath = path.join(editorDir, 'Uninstall.exe');
                 await fs.promises.access(uninstallPath, fs.constants.R_OK | fs.constants.X_OK);
                 await Exec('powershell', [
                     '-NoProfile',
@@ -335,15 +336,15 @@ export class UnityEditor {
                     `Start-Process -FilePath "${uninstallPath}" -ArgumentList "/S" -Wait`
                 ], { silent: true, showCommand: true });
                 // also delete the editor root directory if it still exists
-                if (fs.existsSync(this.editorRootPath)) {
+                if (fs.existsSync(editorDir)) {
                     await Exec('powershell', [
                         '-NoProfile',
                         '-Command',
-                        `Remove-Item -Path "${this.editorRootPath}" -Recurse -Force`
+                        `Remove-Item -Path "${editorDir}" -Recurse -Force`
                     ], { silent: true, showCommand: true });
                 }
                 // also delete the MonoBehaviour directory one level up if it still exists
-                const monoBehaviourPath = path.join(path.dirname(this.editorRootPath), 'MonoBehaviour');
+                const monoBehaviourPath = path.join(path.dirname(editorDir), 'MonoBehaviour');
                 if (fs.existsSync(monoBehaviourPath)) {
                     await Exec('powershell', [
                         '-NoProfile',
