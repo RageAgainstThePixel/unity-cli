@@ -154,40 +154,34 @@ export class LicensingClient {
     private async patchLicenseVersion(): Promise<void> {
         if (!this.licenseVersion) {
             // check if the UNITY_EDITOR_PATH is set. If it is, use it to determine the license version
-            const unityEditorPath = process.env['UNITY_EDITOR_PATH'];
+            const unityEditorPath = process.env.UNITY_EDITOR_PATH;
+            const versionMatch = unityEditorPath?.match(/(\d+)\.(\d+)\.(\d+)/);
 
-            if (unityEditorPath) {
-                const versionMatch = unityEditorPath.match(/(\d+)\.(\d+)\.(\d+)/);
-
-                if (!versionMatch) {
-                    this.licenseVersion = '6.x'; // default to 6.x if version cannot be determined
-                } else {
-                    switch (versionMatch[1]) {
-                        case '4':
-                            this.licenseVersion = '4.x';
-                            break;
-                        case '5':
-                            this.licenseVersion = '5.x';
-                            break;
-                        default:
-                            this.licenseVersion = '6.x'; // default to 6.x for any other
-                            break;
+            if (unityEditorPath && versionMatch) {
+                switch (versionMatch[1]) {
+                    case '4': {
+                        this.licenseVersion = '4.x';
+                        break;
+                    }
+                    case '5': {
+                        this.licenseVersion = '5.x';
+                        break;
+                    }
+                    default: {
+                        this.licenseVersion = '6.x'; // default to 6.x for any other
+                        break;
                     }
                 }
-            }
-
-            if (!this.licenseVersion) {
+            } else {
                 this.licenseVersion = '6.x'; // default to 6.x if not set
             }
         }
 
-        if (this.licenseVersion === '6.x') {
-            return;
-        }
-
-        if (this.licenseVersion !== '5.x' && this.licenseVersion !== '4.x') {
-            this.logger.warn(`Warning: Specified license version '${this.licenseVersion}' is unsupported, skipping`);
-            return;
+        if (this.licenseVersion !== '6.x') {
+            if (this.licenseVersion !== '5.x' && this.licenseVersion !== '4.x') {
+                this.logger.warn(`Warning: Specified license version '${this.licenseVersion}' is unsupported, skipping`);
+                return;
+            }
         }
 
         if (!this.licenseClientPath) {
