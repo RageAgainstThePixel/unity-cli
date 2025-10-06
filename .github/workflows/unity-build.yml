@@ -32,8 +32,8 @@ jobs:
         run: |
           npm ci
           npm run build
-          npm run tests
           npm run link
+          npm run tests
           unity-cli --version
       - name: setup unity
         shell: bash
