@@ -197,10 +197,10 @@ program.command('hub')
 
 program.command('setup-unity')
     .description('Sets up the environment for the specified project and finds or installs the Unity Editor version for it.')
-    .option('-p, --unity-project <unityProjectPath>', 'The path to a Unity project or "none" to skip project detection.')
+    .option('-p, --unity-project <unityProject>', 'The path to a Unity project or "none" to skip project detection.')
     .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000). If specified, it will override the version read from the project.')
     .option('-c, --changeset <changeset>', 'The Unity changeset to get (e.g. 1234567890ab).')
-    .option('-a, --arch <architecture>', 'The Unity architecture to get (e.g. x86_64, arm64). Defaults to the architecture of the current process.')
+    .option('-a, --arch <arch>', 'The Unity architecture to get (e.g. x86_64, arm64). Defaults to the architecture of the current process.')
     .option('-b, --build-targets <buildTargets>', 'The Unity build target to get (e.g. iOS, Android).')
     .option('-m, --modules <modules>', 'The Unity module to get (e.g. ios, android).')
     .option('-i, --install-path <installPath>', 'The path to install the Unity Editor to. By default, it will be installed to the default Unity Hub location.')
@@ -224,7 +224,7 @@ program.command('setup-unity')
             process.exit(1);
         }
 
-        const unityVersion = unityProject?.version ?? new UnityVersion(options.unityVersion, options.changeset);
+        const unityVersion = unityProject?.version ?? new UnityVersion(options.unityVersion, options.changeset, options.arch);
         const modules: string[] = options.modules ? options.modules.split(/[ ,]+/).filter(Boolean) : [];
         const buildTargets: string[] = options.buildTargets ? options.buildTargets.split(/[ ,]+/).filter(Boolean) : [];
         const moduleBuildTargetMap = UnityHub.GetPlatformTargetModuleMap();
@@ -287,10 +287,10 @@ program.command('setup-unity')
 
 program.command('uninstall-unity')
     .description('Uninstall the specified Unity Editor version.')
-    .option('-e, --unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, -u, --unity-version or the UNITY_EDITOR_PATH environment variable must be set.')
+    .option('-e, --unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, -u, --unity-version or the UNITY_EDITOR_PATH environment variable must be set.')
     .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000). If unspecified, then --unity-editor must be specified.')
     .option('-c, --changeset <changeset>', 'The Unity changeset to get (e.g. 1234567890ab).')
-    .option('-a, --arch <architecture>', 'The Unity architecture to get (e.g. x86_64, arm64). Defaults to the architecture of the current process.')
+    .option('-a, --arch <arch>', 'The Unity architecture to get (e.g. x86_64, arm64). Defaults to the architecture of the current process.')
     .option('--verbose', 'Enable verbose logging.')
     .action(async (options) => {
         if (options.verbose) {
@@ -342,7 +342,7 @@ program.commandsGroup('Unity Editor:');
 
 program.command('open-project')
     .description('Open a Unity project in the Unity Editor.')
-    .option('-p, --unity-project <unityProjectPath>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
+    .option('-p, --unity-project <unityProject>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
     .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000). If specified, it will override the version read from the project.')
     .option('--verbose', 'Enable verbose logging.')
     .action(async (options) => {
@@ -359,7 +359,12 @@ program.command('open-project')
             process.exit(1);
         }
 
-        const unityVersion = unityProject?.version ?? new UnityVersion(options.unityVersion, options.changeset);
+        let unityVersion: UnityVersion | undefined = unityProject?.version;
+
+        if (options.unityVersion) {
+            unityVersion = new UnityVersion(options.unityVersion);
+        }
+
         const unityHub = new UnityHub();
         const unityEditor = await unityHub.GetEditor(unityVersion);
 
@@ -376,8 +381,8 @@ program.command('open-project')
 
 program.command('run')
     .description('Run command line args directly to the Unity Editor.')
-    .option('--unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, --unity-project or the UNITY_EDITOR_PATH environment variable must be set.')
-    .option('--unity-project <unityProjectPath>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
+    .option('--unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, --unity-project or the UNITY_EDITOR_PATH environment variable must be set.')
+    .option('--unity-project <unityProject>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
     .option('--log-name <logName>', 'The name of the log file.')
     .option('--verbose', 'Enable verbose logging.')
     .allowUnknownOption(true)
@@ -428,7 +433,7 @@ program.command('run')
 program.command('list-project-templates')
     .description('List all available project templates for the given Unity editor.')
     .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000). If unspecified, then --unity-editor must be specified.')
-    .option('-e, --unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR_PATH environment variable must be set.')
+    .option('-e, --unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR_PATH environment variable must be set.')
     .option('--verbose', 'Enable verbose logging.')
     .option('--json', 'Prints the last line of output as JSON string.')
     .action(async (options) => {
@@ -481,7 +486,7 @@ program.command('create-project')
     .option('-p, --path <projectPath>', 'The path to create the new Unity project. If unspecified, the current working directory will be used.')
     .option('-t, --template <projectTemplate>', 'The name of the template package to use for creating the unity project. Supports regex patterns.', 'com.unity.template.3d(-cross-platform)?')
     .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000). If unspecified, then --unity-editor must be specified.')
-    .option('-e, --unity-editor <unityEditorPath>', 'The path to the Unity Editor executable. If unspecified, -u, --unity-version, or the UNITY_EDITOR_PATH environment variable must be set.')
+    .option('-e, --unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, -u, --unity-version, or the UNITY_EDITOR_PATH environment variable must be set.')
     .option('--verbose', 'Enable verbose logging.')
     .option('--json', 'Prints the last line of output as JSON string.')
     .action(async (options) => {
