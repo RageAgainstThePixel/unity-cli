@@ -24,8 +24,14 @@ import {
 import {
     UnityReleasesClient,
     GetUnityReleasesData,
-    UnityRelease
+    UnityRelease,
+    Release
 } from '@rage-against-the-pixel/unity-releases-api';
+
+interface ReleaseInfo {
+    unityRelease: UnityRelease;
+    unityVersion: UnityVersion;
+}
 
 export class UnityHub {
     /** The path to the Unity Hub executable. */
@@ -540,8 +546,8 @@ chmod -R 777 "$hubPath"`]);
                     resolvedVersion = resolvedVersion.findMatch(releases);
                 }
 
-                if (!resolvedVersion.changeset) {
-                    const unityReleaseInfo: UnityRelease = await this.getEditorReleaseInfo(resolvedVersion);
+                if (!resolvedVersion?.changeset) {
+                    const unityReleaseInfo: UnityRelease = await this.GetEditorReleaseInfo(resolvedVersion);
                     resolvedVersion = new UnityVersion(unityReleaseInfo.version, unityReleaseInfo.shortRevision, resolvedVersion.architecture);
                 }
             } catch (error) {
@@ -781,7 +787,13 @@ done
         }
     }
 
-    private async getEditorReleaseInfo(unityVersion: UnityVersion): Promise<UnityRelease> {
+    /**
+     * Gets the specified Unity release info from the Unity Releases API.
+     * Supports querying by exact version or by prefix (e.g., "2020", "2020.1", "2021.x", "2021.3.x").
+     * @param unityVersion The Unity version to get the release info for.
+     * @returns The Unity release info.
+     */
+    public async GetEditorReleaseInfo(unityVersion: UnityVersion): Promise<UnityRelease> {
         // Prefer querying the releases API with the exact fully-qualified Unity version (e.g., 2022.3.10f1).
         // If we don't have a fully-qualified version, use the most specific prefix available:
         //  - "YYYY.M" when provided (e.g., 6000.1)
@@ -792,6 +804,7 @@ done
             version = unityVersion.version;
         } else {
             const match = unityVersion.version.match(/^(\d{1,4})(?:\.(\d+))?/);
+
             if (match) {
                 version = match[2] ? `${match[1]}.${match[2]}` : match[1]!;
             } else {
@@ -820,7 +833,8 @@ done
                 version: version,
                 architecture: [unityVersion.architecture],
                 platform: getPlatform(),
-                limit: 1,
+                limit: 10,
+                order: 'RELEASE_DATE_DESC',
             }
         };
 
@@ -838,32 +852,22 @@ done
         this.logger.debug(`Found Unity Release: ${JSON.stringify(data, null, 2)}`);
         // Filter to stable 'f' releases only unless the user explicitly asked for a pre-release
         const isExplicitPrerelease = /[abcpx]$/.test(unityVersion.version) || /[abcpx]/.test(unityVersion.version);
-        const results = (data.results || [])
-            .filter(r => isExplicitPrerelease ? true : /f\d+$/.test(r.version))
-            // Sort descending by minor, patch, f-number where possible; fallback to semver coercion
-            .sort((a, b) => {
-                const parse = (v: string) => {
-                    const m = v.match(/(\d{1,4})\.(\d+)\.(\d+)([abcfpx])(\d+)/);
-                    return m ? [parseInt(m[2]!), parseInt(m[3]!), m[4], parseInt(m[5]!)] as [number, number, string, number] : [0, 0, 'f', 0] as [number, number, string, number];
-                };
-                const [aMinor, aPatch, aTag, aNum] = parse(a.version);
-                const [bMinor, bPatch, bTag, bNum] = parse(b.version);
-                // Prefer higher minor
-                if (aMinor !== bMinor) return bMinor - aMinor;
-                // Then higher patch
-                if (aPatch !== bPatch) return bPatch - aPatch;
-                // Tag order: f > p > c > b > a > x
-                const order = { f: 5, p: 4, c: 3, b: 2, a: 1, x: 0 } as Record<string, number>;
-                if (order[aTag] !== order[bTag]) return (order[bTag] || 0) - (order[aTag] || 0);
-                return bNum - aNum;
-            });
+        const releases: ReleaseInfo[] = (data.results || [])
+            .filter(release => isExplicitPrerelease || release.version.includes('f'))
+            .map(release => ({
+                unityRelease: release,
+                unityVersion: new UnityVersion(release.version, release.shortRevision, unityVersion.architecture)
+            }));
 
-        if (results.length === 0) {
+        if (releases.length === 0) {
             throw new Error(`No suitable Unity releases (stable) found for version: ${version}`);
         }
 
-        this.logger.debug(`Found Unity Release: ${JSON.stringify({ query: version, picked: results[0] }, null, 2)}`);
-        return results[0]!;
+        releases.sort((a, b) => UnityVersion.compare(b.unityVersion, a.unityVersion));
+
+        const latest = releases[0]!.unityRelease!;
+        this.logger.debug(`Latest Unity Release: ${latest.version} (${latest.shortRevision}) - ${latest.recommended}`);
+        return latest;
     }
 
     private async fallbackVersionLookup(unityVersion: UnityVersion): Promise<UnityVersion> {
