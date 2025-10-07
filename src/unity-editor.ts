@@ -274,7 +274,7 @@ export class UnityEditor {
 
                 if (exitCode === undefined) {
                     throw Error('Failed to start Unity!');
-                } else if (exitCode > 0) {
+                } else if (exitCode !== 0) {
                     throw Error(`Unity failed with exit code ${exitCode}`);
                 }
             }
