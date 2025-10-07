@@ -204,6 +204,10 @@ export class UnityEditor {
             const commandStr = `\x1b[34m${this.editorPath} ${command.args.join(' ')}\x1b[0m`;
             this.logger.startGroup(commandStr);
 
+            if (this.version.isLegacy() && process.platform === 'darwin' && process.arch === 'arm64') {
+                throw new Error(`Cannot execute Unity ${this.version.toString()} on Apple Silicon Macs.`);
+            }
+
             if (process.platform === 'linux' &&
                 !command.args.includes('-nographics')
             ) {
@@ -242,7 +246,7 @@ export class UnityEditor {
                 });
             }
 
-            if (!unityProcess?.pid) {
+            if (!unityProcess?.pid || unityProcess.killed) {
                 throw new Error('Failed to start Unity process!');
             }
 
