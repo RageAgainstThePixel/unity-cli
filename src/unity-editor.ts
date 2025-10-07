@@ -319,6 +319,9 @@ export class UnityEditor {
         return editorRootPath;
     }
 
+    /**
+     * Uninstall the Unity Editor.
+     */
     public async Uninstall(): Promise<void> {
         switch (process.platform) {
             case 'darwin':

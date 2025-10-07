@@ -849,7 +849,6 @@ done
             throw new Error(`No Unity releases found for version: ${version}`);
         }
 
-        this.logger.debug(`Found Unity Release: ${JSON.stringify(data, null, 2)}`);
         // Filter to stable 'f' releases only unless the user explicitly asked for a pre-release
         const isExplicitPrerelease = /[abcpx]$/.test(unityVersion.version) || /[abcpx]/.test(unityVersion.version);
         const releases: ReleaseInfo[] = (data.results || [])
@@ -865,8 +864,11 @@ done
 
         releases.sort((a, b) => UnityVersion.compare(b.unityVersion, a.unityVersion));
 
+        this.logger.debug(`Found ${releases.length} matching Unity releases for version: ${version}`);
+        releases.forEach(release => {
+            this.logger.debug(` - ${release.unityRelease.version} (${release.unityRelease.shortRevision}) - ${release.unityRelease.recommended}`);
+        });
         const latest = releases[0]!.unityRelease!;
-        this.logger.debug(`Latest Unity Release: ${latest.version} (${latest.shortRevision}) - ${latest.recommended}`);
         return latest;
     }
 

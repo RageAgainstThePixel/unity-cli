@@ -49,9 +49,9 @@ describe('UnityHub', () => {
 
     it('should get latest editor release info for a partial version YYYY.Y.x', async () => {
         const unityHub = new UnityHub();
-        const version = new UnityVersion('2020.3.x');
+        const version = new UnityVersion('2021.3.x');
         const releaseInfo: UnityRelease = await unityHub.GetEditorReleaseInfo(version);
         expect(releaseInfo).toBeDefined();
-        expect(releaseInfo.version).toMatch(/^2020.3.\d+[abcfpx]\d+$/);
+        expect(releaseInfo.version).toMatch(/^2021.3.\d+[abcfpx]\d+$/);
     });
 });
