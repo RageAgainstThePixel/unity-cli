@@ -36,11 +36,11 @@ program.command('license-version')
 
 program.command('activate-license')
     .description('Activate a Unity license.')
+    .option('-l, --license <license>', 'License type (personal, professional, floating). Required.')
     .option('-e, --email <email>', 'Email associated with the Unity account. Required when activating a personal or professional license.')
     .option('-p, --password <password>', 'Password for the Unity account. Required when activating a personal or professional license.')
     .option('-s, --serial <serial>', 'License serial number. Required when activating a professional license.')
-    .option('-l, --license <license>', 'License type (personal, professional, floating).')
-    .option('-c, --config <config>', 'Path to the configuration file. Required when activating a floating license.')
+    .option('-c, --config <config>', 'Path to the configuration file, or base64 encoded JSON string. Required when activating a floating license.')
     .option('--verbose', 'Enable verbose logging.')
     .action(async (options) => {
         if (options.verbose) {

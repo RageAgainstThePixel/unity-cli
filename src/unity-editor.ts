@@ -151,7 +151,7 @@ export class UnityEditor {
      */
     public async Run(command: EditorCommand): Promise<void> {
         let isCancelled = false;
-        let exitCode: number = 1;
+        let exitCode: number | undefined = undefined;
         let procInfo: ProcInfo | null = null;
         let logTail: LogTailResult | null = null;
         let unityProcess: ChildProcessByStdio<null, null, null>;
@@ -196,6 +196,7 @@ export class UnityEditor {
             }
 
             const logPath: string = GetArgumentValueAsString('-logFile', command.args);
+            logTail = TailLogFile(logPath);
             const commandStr = `\x1b[34m${this.editorPath} ${command.args.join(' ')}\x1b[0m`;
             this.logger.startGroup(commandStr);
 
@@ -211,6 +212,13 @@ export class UnityEditor {
                     }
                 });
             } else {
+                if (process.platform === 'darwin') {
+                    if (this.version.architecture === 'X86_64' && process.arch === 'arm64') {
+                        // Force the Unity Editor to run under Rosetta 2 on Apple Silicon Macs if the editor is x86_64
+                        command.args.unshift('arch', '-x86_64');
+                    }
+                }
+
                 unityProcess = spawn(
                     this.editorPath,
                     command.args, {
@@ -230,14 +238,13 @@ export class UnityEditor {
             process.once('SIGTERM', onCancel);
             procInfo = { pid: unityProcess.pid, ppid: process.pid, name: this.editorPath };
             this.logger.debug(`Unity process started with pid: ${procInfo.pid}`);
-            await WaitForFileToBeCreatedAndReadable(logPath, 10_000);
-            logTail = TailLogFile(logPath);
             exitCode = await new Promise((resolve, reject) => {
                 unityProcess.on('close', (code) => {
                     logTail?.stopLogTail();
                     resolve(code === null ? 1 : code);
                 });
                 unityProcess.on('error', (error) => {
+                    this.logger.error(`Unity process error: ${error}`);
                     logTail?.stopLogTail();
                     reject(error);
                 });
@@ -258,7 +265,9 @@ export class UnityEditor {
             if (!isCancelled) {
                 await tryKillEditorProcesses();
 
-                if (exitCode !== 0) {
+                if (exitCode === undefined) {
+                    throw Error('Failed to start Unity!');
+                } else if (exitCode > 0) {
                     throw Error(`Unity failed with exit code ${exitCode}`);
                 }
             }

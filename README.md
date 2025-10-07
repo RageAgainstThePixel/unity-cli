@@ -61,8 +61,10 @@ unity-cli setup-unity --unity-version 2022.3.x --modules android,ios
 
 #### Activate a Unity License
 
+Supports personal, professional, and floating licenses (using a license server configuration).
+
 ```bash
-unity-cli activate-license --email <your-email> --password <your-password> --serial <your-serial>
+unity-cli activate-license --license personal --email <your-email> --password <your-password>
 ```
 
 #### Create a New Project from a Template

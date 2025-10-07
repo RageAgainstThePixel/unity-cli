@@ -390,13 +390,15 @@ export function TailLogFile(logPath: string): LogTailResult {
     const tailPromise = new Promise<void>((resolve, reject) => {
         (async () => {
             try {
+                await WaitForFileToBeCreatedAndReadable(logPath, 10_000);
+
                 while (!logEnded) {
                     await Delay(logPollingInterval);
                     await readNewLogContent();
                 }
 
                 // Final read to capture any remaining content after tailing stops
-                await WaitForFileToBeUnlocked(logPath, 10000);
+                await WaitForFileToBeUnlocked(logPath, 10_000);
                 await readNewLogContent();
 
                 try {
