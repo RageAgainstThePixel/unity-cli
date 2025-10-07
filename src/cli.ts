@@ -332,7 +332,7 @@ program.command('open-project')
         }
 
         Logger.instance.debug(JSON.stringify(options));
-        const projectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || process.cwd();
+        const projectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || undefined;
         const unityProject = await UnityProject.GetProject(projectPath);
 
         if (!unityProject) {
