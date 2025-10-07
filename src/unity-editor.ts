@@ -200,7 +200,9 @@ export class UnityEditor {
             const commandStr = `\x1b[34m${this.editorPath} ${command.args.join(' ')}\x1b[0m`;
             this.logger.startGroup(commandStr);
 
-            if (process.platform === 'linux' && !command.args.includes('-nographics')) {
+            if (process.platform === 'linux' &&
+                !command.args.includes('-nographics')
+            ) {
                 unityProcess = spawn(
                     'xvfb-run',
                     [this.editorPath, ...command.args], {
@@ -211,32 +213,29 @@ export class UnityEditor {
                         UNITY_THISISABUILDMACHINE: '1'
                     }
                 });
+            } else if (process.arch === 'arm64' &&
+                process.platform === 'darwin' &&
+                this.version.architecture === 'X86_64'
+            ) { // Force the Unity Editor to run under Rosetta 2 on Apple Silicon Macs if the editor is x86_64
+                unityProcess = spawn(
+                    'arch',
+                    ['-x86_64', this.editorPath, ...command.args], {
+                    stdio: ['ignore', 'ignore', 'ignore'],
+                    env: {
+                        ...process.env,
+                        UNITY_THISISABUILDMACHINE: '1'
+                    }
+                });
             } else {
-                if (process.arch === 'arm64' &&
-                    process.platform === 'darwin' &&
-                    this.version.architecture === 'X86_64'
-                ) { // Force the Unity Editor to run under Rosetta 2 on Apple Silicon Macs if the editor is x86_64
-                    command.args.unshift('-x86_64', this.editorPath);
-                    unityProcess = spawn(
-                        'arch',
-                        command.args, {
-                        stdio: ['ignore', 'ignore', 'ignore'],
-                        env: {
-                            ...process.env,
-                            UNITY_THISISABUILDMACHINE: '1'
-                        }
-                    });
-                } else {
-                    unityProcess = spawn(
-                        this.editorPath,
-                        command.args, {
-                        stdio: ['ignore', 'ignore', 'ignore'],
-                        env: {
-                            ...process.env,
-                            UNITY_THISISABUILDMACHINE: '1'
-                        }
-                    });
-                }
+                unityProcess = spawn(
+                    this.editorPath,
+                    command.args, {
+                    stdio: ['ignore', 'ignore', 'ignore'],
+                    env: {
+                        ...process.env,
+                        UNITY_THISISABUILDMACHINE: '1'
+                    }
+                });
             }
 
             if (!unityProcess?.pid) {
