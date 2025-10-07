@@ -24,8 +24,9 @@ jobs:
     timeout-minutes: 30
     env:
       UNITY_PROJECT_PATH: '' # Set from create-project step
+      RUN_BUILD: '' # Set to true if the build pipeline package can be installed and used
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
           node-version: 24.x
@@ -73,15 +74,30 @@ jobs:
             echo "Error: UNITY_PROJECT_PATH is not set"
             exit 1
           fi
+          # check if the project can be built. Only Unity 2019.4+ and newer majors support the build pipeline package
+          version="${{ matrix.unity-version }}"
+          # extract major and minor (minor may be empty if version is just '2019' etc.)
+          major=$(echo "$version" | cut -d'.' -f1)
+          minor=$(echo "$version" | cut -d'.' -f2)
+          if [ -z "$minor" ]; then
+            minor=0
+          fi
+          # numeric comparison: enable build for major > 2019 or major == 2019 and minor >= 4
+          if [ "$major" -gt 2019 ] || { [ "$major" -eq 2019 ] && [ "$minor" -ge 4 ]; }; then
+            echo "Proceeding with build for Unity version $version"
+            echo "RUN_BUILD=true" >> $GITHUB_ENV
+          else
+            echo "Skipping build: Unity version $version does not support the build pipeline package (requires 2019.4+)"
+          fi
       - name: Install OpenUPM and build pipeline package
         shell: bash
-        if: ${{ matrix.unity-version != '4.7.2' && matrix.unity-version != '5.6.7' }}
+        if: ${{ env.RUN_BUILD == 'true' }}
         run: |
           npm install -g openupm-cli
           cd "${UNITY_PROJECT_PATH}"
           openupm add com.utilities.buildpipeline
       - name: Build project
-        if: ${{ matrix.unity-version != '4.7.2' && matrix.unity-version != '5.6.7' }}
+        if: ${{ env.RUN_BUILD == 'true' }}
         shell: bash
         run: |
           unity-cli run --log-name Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset

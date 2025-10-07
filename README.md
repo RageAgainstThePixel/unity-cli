@@ -22,9 +22,13 @@ npm install -g @rage-against-the-pixel/unity-cli
 
 ## Usage
 
+In general, the command structure is:
+
 ```bash
-unity-cli [command] [options]
+unity-cli [command] [options] <args...>
 ```
+
+With options always using double dashes (`--option`) and arguments passed directly to Unity or Unity Hub commands as they normally would with single dashes (`-arg`). Each option typically has a short alias using a single dash (`-o`), except for commands where we pass through arguments, as those get confused by the command parser.
 
 ### Common Commands
 
@@ -61,13 +65,16 @@ unity-cli setup-unity --unity-version 2022.3.x --modules android,ios
 
 #### Activate a Unity License
 
+Supports personal, professional, and floating licenses (using a license server configuration).
+
 ```bash
-unity-cli activate-license --email <your-email> --password <your-password> --serial <your-serial>
+unity-cli activate-license --license personal --email <your-email> --password <your-password>
 ```
 
 #### Create a New Project from a Template
 
-> [!NOTE] Regex patterns are supported for the `--template` option. For example, to create a 3D project with either the standard or cross-platform template, you can use `com.unity.template.3d(-cross-platform)?`.
+> [!NOTE]
+> Regex patterns are supported for the `--template` option. For example, to create a 3D project with either the standard or cross-platform template, you can use `com.unity.template.3d(-cross-platform)?`.
 
 ```bash
 unity-cli create-project --name "MyGame" --template com.unity.template.3d(-cross-platform)? --unity-editor <path-to-editor>
@@ -75,7 +82,8 @@ unity-cli create-project --name "MyGame" --template com.unity.template.3d(-cross
 
 #### Open a project from the command line
 
-> [!NOTE] If you run this command in the same directory as your Unity project, you can omit the `--unity-project`, `--unity-version`, and `--unity-editor` options.
+> [!TIP]
+> If you run this command in the same directory as your Unity project, you can omit the `--unity-project`, `--unity-version`, and `--unity-editor` options.
 
 ```bash
 unity-cli open-project

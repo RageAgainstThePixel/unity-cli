@@ -77,11 +77,12 @@ export class UnityEditor {
      * @returns The full path to the matching template file.
      * @throws If no templates are found, or no matching template is found.
      */
-    public GetTemplatePath(template: string): string {
+    public GetTemplatePath(template: string): string | undefined {
         const templates: string[] = this.GetAvailableTemplates();
 
         if (templates.length === 0) {
-            throw new Error('No Unity templates found!');
+            this.logger.warn(`No Unity templates found for ${this.version.toString()}`);
+            return undefined;
         }
 
         // Build a regex to match the template name and version
@@ -98,7 +99,8 @@ export class UnityEditor {
         const matches = templates.filter(t => regex.test(path.basename(t)));
 
         if (matches.length === 0) {
-            throw new Error(`${template} path not found!`);
+            this.logger.warn(`No matching template path found for ${template}`);
+            return undefined;
         }
 
         // Pick the longest match (as in the shell script: sort by length descending)
@@ -106,7 +108,8 @@ export class UnityEditor {
         const templatePath = matches[0];
 
         if (!templatePath) {
-            throw new Error('No matching template path found.');
+            this.logger.warn(`No matching template path found for ${template}`);
+            return undefined;
         }
 
         return path.normalize(templatePath);
@@ -141,6 +144,7 @@ export class UnityEditor {
             .filter(f => f.endsWith('.tgz'))
             .map(f => path.join(templateDir, f));
         templates.push(...packages);
+        this.logger.debug(`Found ${templates.length} templates:\n${templates.map(t => `  - ${t}`).join('\n')}`);
         return templates;
     }
 
@@ -151,7 +155,7 @@ export class UnityEditor {
      */
     public async Run(command: EditorCommand): Promise<void> {
         let isCancelled = false;
-        let exitCode: number = 1;
+        let exitCode: number | undefined = undefined;
         let procInfo: ProcInfo | null = null;
         let logTail: LogTailResult | null = null;
         let unityProcess: ChildProcessByStdio<null, null, null>;
@@ -196,10 +200,17 @@ export class UnityEditor {
             }
 
             const logPath: string = GetArgumentValueAsString('-logFile', command.args);
+            logTail = TailLogFile(logPath);
             const commandStr = `\x1b[34m${this.editorPath} ${command.args.join(' ')}\x1b[0m`;
             this.logger.startGroup(commandStr);
 
-            if (process.platform === 'linux' && !command.args.includes('-nographics')) {
+            if (this.version.isLegacy() && process.platform === 'darwin' && process.arch === 'arm64') {
+                throw new Error(`Cannot execute Unity ${this.version.toString()} on Apple Silicon Macs.`);
+            }
+
+            if (process.platform === 'linux' &&
+                !command.args.includes('-nographics')
+            ) {
                 unityProcess = spawn(
                     'xvfb-run',
                     [this.editorPath, ...command.args], {
@@ -207,6 +218,19 @@ export class UnityEditor {
                     env: {
                         ...process.env,
                         DISPLAY: ':99',
+                        UNITY_THISISABUILDMACHINE: '1'
+                    }
+                });
+            } else if (process.arch === 'arm64' &&
+                process.platform === 'darwin' &&
+                this.version.architecture === 'X86_64'
+            ) { // Force the Unity Editor to run under Rosetta 2 on Apple Silicon Macs if the editor is x86_64
+                unityProcess = spawn(
+                    'arch',
+                    ['-x86_64', this.editorPath, ...command.args], {
+                    stdio: ['ignore', 'ignore', 'ignore'],
+                    env: {
+                        ...process.env,
                         UNITY_THISISABUILDMACHINE: '1'
                     }
                 });
@@ -222,7 +246,7 @@ export class UnityEditor {
                 });
             }
 
-            if (!unityProcess?.pid) {
+            if (!unityProcess?.pid || unityProcess.killed) {
                 throw new Error('Failed to start Unity process!');
             }
 
@@ -230,14 +254,13 @@ export class UnityEditor {
             process.once('SIGTERM', onCancel);
             procInfo = { pid: unityProcess.pid, ppid: process.pid, name: this.editorPath };
             this.logger.debug(`Unity process started with pid: ${procInfo.pid}`);
-            await WaitForFileToBeCreatedAndReadable(logPath, 10_000);
-            logTail = TailLogFile(logPath);
             exitCode = await new Promise((resolve, reject) => {
                 unityProcess.on('close', (code) => {
                     logTail?.stopLogTail();
                     resolve(code === null ? 1 : code);
                 });
                 unityProcess.on('error', (error) => {
+                    this.logger.error(`Unity process error: ${error}`);
                     logTail?.stopLogTail();
                     reject(error);
                 });
@@ -258,7 +281,9 @@ export class UnityEditor {
             if (!isCancelled) {
                 await tryKillEditorProcesses();
 
-                if (exitCode !== 0) {
+                if (exitCode === undefined) {
+                    throw Error('Failed to start Unity!');
+                } else if (exitCode !== 0) {
                     throw Error(`Unity failed with exit code ${exitCode}`);
                 }
             }

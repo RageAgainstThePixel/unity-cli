@@ -6,6 +6,11 @@
   ],
   "unity-version": [
     "4.7.2",
+    "5.6.7f1 (e80cc3114ac1)",
+    "2017.x",
+    "2018.x",
+    "2019.x",
+    "2020.x",
     "2021.x",
     "2022.x",
     "6000.0.x",
@@ -34,6 +39,10 @@
     {
       "os": "macos-latest",
       "unity-version": "4.7.2"
+    },
+    {
+      "os": "ubuntu-latest",
+      "unity-version": "5.6.7f1 (e80cc3114ac1)"
     }
   ]
 }

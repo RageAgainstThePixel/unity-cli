@@ -354,8 +354,19 @@ export class LicensingClient {
                         throw new Error(`Unsupported platform: ${process.platform}`);
                 }
 
+                // Ensure the services directory exists
+                if (!fs.existsSync(servicesPath)) {
+                    await fs.promises.mkdir(servicesPath, { recursive: true });
+                }
+
                 const servicesConfigPath = path.join(servicesPath, 'services-config.json');
-                await fs.promises.writeFile(servicesConfigPath, Buffer.from(options.servicesConfig, 'base64'));
+
+                if (fs.existsSync(options.servicesConfig)) {
+                    await fs.promises.copyFile(options.servicesConfig, servicesConfigPath);
+                }
+                else {
+                    await fs.promises.writeFile(servicesConfigPath, Buffer.from(options.servicesConfig, 'base64'));
+                }
                 break;
             }
             default: { // personal and professional license activation
