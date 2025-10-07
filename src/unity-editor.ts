@@ -214,18 +214,27 @@ export class UnityEditor {
             } else {
                 if (process.platform === 'darwin' && this.version.architecture === 'X86_64' && process.arch === 'arm64') {
                     // Force the Unity Editor to run under Rosetta 2 on Apple Silicon Macs if the editor is x86_64
-                    command.args.unshift('arch', '-x86_64');
+                    command.args.unshift('-x86_64', this.editorPath);
+                    unityProcess = spawn(
+                        'arch',
+                        command.args, {
+                        stdio: ['ignore', 'ignore', 'ignore'],
+                        env: {
+                            ...process.env,
+                            UNITY_THISISABUILDMACHINE: '1'
+                        }
+                    });
+                } else {
+                    unityProcess = spawn(
+                        this.editorPath,
+                        command.args, {
+                        stdio: ['ignore', 'ignore', 'ignore'],
+                        env: {
+                            ...process.env,
+                            UNITY_THISISABUILDMACHINE: '1'
+                        }
+                    });
                 }
-
-                unityProcess = spawn(
-                    this.editorPath,
-                    command.args, {
-                    stdio: ['ignore', 'ignore', 'ignore'],
-                    env: {
-                        ...process.env,
-                        UNITY_THISISABUILDMACHINE: '1'
-                    }
-                });
             }
 
             if (!unityProcess?.pid) {
