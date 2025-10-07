@@ -169,6 +169,7 @@ program.command('hub')
     .description('Run commands directly to the Unity Hub. (You need not to pass --headless or -- to this command).')
     .argument('<args...>', 'Arguments to pass to the Unity Hub executable.')
     .option('--verbose', 'Enable verbose logging.')
+    .allowUnknownOption(true)
     .action(async (args: string[], options) => {
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
@@ -359,6 +360,7 @@ program.command('run')
     .option('--unity-project <unityProjectPath>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
     .option('--log-name <logName>', 'The name of the log file.')
     .option('--verbose', 'Enable verbose logging.')
+    .allowUnknownOption(true)
     .argument('<args...>', 'Arguments to pass to the Unity Editor executable.')
     .action(async (args: string[], options) => {
         if (options.verbose) {
