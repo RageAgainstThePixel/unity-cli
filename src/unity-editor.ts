@@ -131,7 +131,7 @@ export class UnityEditor {
             templateDir = path.join(editorRoot, 'Data', 'Resources', 'PackageManager', 'ProjectTemplates');
         }
 
-        this.logger.ci(`Looking for templates in: ${templateDir}`);
+        this.logger.debug(`Looking for templates in: ${templateDir}`);
 
         // Check if the template directory exists
         if (!fs.existsSync(templateDir) ||
@@ -144,8 +144,7 @@ export class UnityEditor {
             .filter(f => f.endsWith('.tgz'))
             .map(f => path.join(templateDir, f));
         templates.push(...packages);
-        this.logger.ci(`Found ${templates.length} templates:`);
-        templates.forEach(t => this.logger.ci(`  - ${t}`));
+        this.logger.debug(`Found ${templates.length} templates:\n${templates.map(t => `  - ${t}`).join('\n')}`);
         return templates;
     }
 

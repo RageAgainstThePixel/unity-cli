@@ -78,10 +78,10 @@ export class UnityVersion {
             return new UnityVersion(exactMatch.version, this.changeset ?? null, this.architecture);
         }
 
-        if (UnityVersion.needsFallbackSearch(this.version)) {
-            const candidates = UnityVersion.resolveFallbackCandidates(this.version, releaseInfos);
+        if (UnityVersion.needsGlobSearch(this.version)) {
+            const candidates = UnityVersion.resolveVersionCandidates(this.version, releaseInfos);
 
-            this.logger.debug(`Searching for fallback match for ${this.version}:`);
+            this.logger.debug(`Searching for match for ${this.version}:`);
             candidates.forEach(release => {
                 this.logger.debug(`  > ${release.version}`);
             });
@@ -89,7 +89,7 @@ export class UnityVersion {
             const latest = candidates[0];
 
             if (latest) {
-                this.logger.debug(`Found fallback Unity ${latest.version}`);
+                this.logger.debug(`Found Unity ${latest.version}`);
                 return new UnityVersion(latest.version, null, this.architecture);
             }
         }
@@ -215,11 +215,11 @@ export class UnityVersion {
         };
     }
 
-    private static needsFallbackSearch(version: string): boolean {
+    private static needsGlobSearch(version: string): boolean {
         return /\.x($|[^\w])/.test(version) || /\.\*($|[^\w])/.test(version) || !UnityVersion.UNITY_RELEASE_PATTERN.test(version);
     }
 
-    private static resolveFallbackCandidates(
+    private static resolveVersionCandidates(
         version: string,
         releases: UnityReleaseInfo[]
     ): UnityReleaseInfo[] {

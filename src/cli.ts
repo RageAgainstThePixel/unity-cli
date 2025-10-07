@@ -32,6 +32,7 @@ program.command('license-version')
     .action(async () => {
         const client = new LicensingClient();
         await client.Version();
+        process.exit(0);
     });
 
 program.command('activate-license')
@@ -53,13 +54,15 @@ program.command('activate-license')
         const licenseStr: string = options.license?.toString()?.trim();
 
         if (!licenseStr || licenseStr.length === 0) {
-            throw new Error('License type is required. Use -l or --license to specify it.');
+            Logger.instance.error('License type is required. Use -l or --license to specify it.');
+            process.exit(1);
         }
 
         const licenseType: LicenseType = options.license.toLowerCase() as LicenseType;
 
         if (![LicenseType.personal, LicenseType.professional, LicenseType.floating].includes(licenseType)) {
-            throw new Error(`Invalid license type: ${licenseType}`);
+            Logger.instance.error(`Invalid license type: ${licenseType}`);
+            process.exit(1);
         }
 
         if (licenseType !== LicenseType.floating) {
@@ -83,6 +86,7 @@ program.command('activate-license')
             username: options.email,
             password: options.password
         });
+        process.exit(0);
     });
 
 program.command('return-license')
@@ -100,16 +104,19 @@ program.command('return-license')
         const licenseStr: string = options.license?.toString()?.trim();
 
         if (!licenseStr || licenseStr.length === 0) {
-            throw new Error('License type is required. Use -l or --license to specify it.');
+            Logger.instance.error('License type is required. Use -l or --license to specify it.');
+            process.exit(1);
         }
 
         const licenseType: LicenseType = licenseStr.toLowerCase() as LicenseType;
 
         if (![LicenseType.personal, LicenseType.professional, LicenseType.floating].includes(licenseType)) {
-            throw new Error(`Invalid license type: ${licenseType}`);
+            Logger.instance.error(`Invalid license type: ${licenseType}`);
+            process.exit(1);
         }
 
         await client.Deactivate(licenseType);
+        process.exit(0);
     });
 
 program.commandsGroup('Unity Hub:');
@@ -123,6 +130,8 @@ program.command('hub-version')
             process.stdout.write(`${version}\n`);
         } catch (error) {
             process.stdout.write(`${error}\n`);
+        } finally {
+            process.exit(0);
         }
     });
 
@@ -148,6 +157,8 @@ program.command('hub-install')
         } else {
             process.stdout.write(`${hubPath}\n`);
         }
+
+        process.exit(0);
     });
 
 program.command('hub-path')
@@ -163,13 +174,15 @@ program.command('hub-path')
         } else {
             process.stdout.write(`${hub.executable}\n`);
         }
+
+        process.exit(0);
     });
 
 program.command('hub')
     .description('Run commands directly to the Unity Hub. (You need not to pass --headless or -- to this command).')
+    .allowUnknownOption(true)
     .argument('<args...>', 'Arguments to pass to the Unity Hub executable.')
     .option('--verbose', 'Enable verbose logging.')
-    .allowUnknownOption(true)
     .action(async (args: string[], options) => {
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
@@ -179,6 +192,7 @@ program.command('hub')
 
         const unityHub = new UnityHub();
         await unityHub.Exec(args, { silent: false, showCommand: Logger.instance.logLevel === LogLevel.DEBUG });
+        process.exit(0);
     });
 
 program.command('setup-unity')
@@ -206,7 +220,8 @@ program.command('setup-unity')
         }
 
         if (!options.unityVersion && !unityProject) {
-            throw new Error('You must specify a Unity version or project path with -u, --unity-version, -p, --unity-project.');
+            Logger.instance.error('You must specify a Unity version or project path with -u, --unity-version, -p, --unity-project.');
+            process.exit(1);
         }
 
         const unityVersion = unityProject?.version ?? new UnityVersion(options.unityVersion, options.changeset);
@@ -266,6 +281,8 @@ program.command('setup-unity')
                 }
             }
         }
+
+        process.exit(0);
     });
 
 program.command('uninstall-unity')
@@ -289,6 +306,7 @@ program.command('uninstall-unity')
             const unityVersion = new UnityVersion(unityVersionStr, options.changeset, options.arch);
             const unityHub = new UnityHub();
             const installedEditors = await unityHub.ListInstalledEditors();
+
             if (unityVersion.isLegacy()) {
                 const installPath = await unityHub.GetInstallPath();
                 unityEditor = new UnityEditor(path.join(installPath, `Unity ${unityVersion.toString()}`, 'Unity.exe'));
@@ -299,7 +317,8 @@ program.command('uninstall-unity')
             const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH || undefined;
 
             if (!editorPath || editorPath.length === 0) {
-                throw new Error('You must specify a Unity version or editor path with -u, --unity-version, -e, --unity-editor.');
+                Logger.instance.error('You must specify a Unity version or editor path with -u, --unity-version, -e, --unity-editor.');
+                process.exit(1);
             }
 
             try {
@@ -336,7 +355,8 @@ program.command('open-project')
         const unityProject = await UnityProject.GetProject(projectPath);
 
         if (!unityProject) {
-            throw new Error(`The specified path is not a valid Unity project: ${projectPath}`);
+            Logger.instance.error(`The specified path is not a valid Unity project: ${projectPath}`);
+            process.exit(1);
         }
 
         const unityVersion = unityProject?.version ?? new UnityVersion(options.unityVersion, options.changeset);
@@ -380,7 +400,8 @@ program.command('run')
         const unityProject = await UnityProject.GetProject(projectPath);
 
         if (!unityProject) {
-            throw new Error(`The specified path is not a valid Unity project: ${projectPath}`);
+            Logger.instance.error(`The specified path is not a valid Unity project: ${projectPath}`);
+            process.exit(1);
         }
 
         if (!unityEditor) {
@@ -389,7 +410,8 @@ program.command('run')
         }
 
         if (!unityEditor) {
-            throw new Error('The Unity Editor path was not specified. Use --unity-editor to specify it or set the UNITY_EDITOR_PATH environment variable.');
+            Logger.instance.error('The Unity Editor path was not specified. Use --unity-editor to specify it or set the UNITY_EDITOR_PATH environment variable.');
+            process.exit(1);
         }
 
         if (!args.includes('-logFile')) {
@@ -400,6 +422,7 @@ program.command('run')
         await unityEditor.Run({
             args: [...args]
         });
+        process.exit(0);
     });
 
 program.command('list-project-templates')
@@ -418,7 +441,8 @@ program.command('list-project-templates')
         const unityVersionStr = options.unityVersion?.toString()?.trim();
 
         if (!unityVersionStr && !options.unityEditor) {
-            throw new Error('You must specify a Unity version or editor path with -u, --unity-version, -e, --unity-editor.');
+            Logger.instance.error('You must specify a Unity version or editor path with -u, --unity-version, -e, --unity-editor.');
+            process.exit(1);
         }
 
         let unityEditor: UnityEditor;
@@ -442,14 +466,13 @@ program.command('list-project-templates')
             if (options.json) {
                 process.stdout.write(`\n${JSON.stringify({ templates })}\n`);
             } else {
-                process.stdout.write(`Available project templates:\n`);
-                for (const template of templates) {
-                    process.stdout.write(`  - ${path.basename(template)}\n`);
-                }
+                process.stdout.write(`Available project templates:\n${templates.map(t => `  - ${path.basename(t)}`).join('\n')}\n`);
             }
         } else {
             process.stdout.write('No project templates found for this Unity Editor.\n');
         }
+
+        process.exit(0);
     });
 
 program.command('create-project')
@@ -471,7 +494,8 @@ program.command('create-project')
         const unityVersionStr = options.unityVersion?.toString()?.trim();
 
         if (!unityVersionStr && !options.unityEditor) {
-            throw new Error('You must specify a Unity version or editor path with -u, --unity-version, -e, --unity-editor.');
+            Logger.instance.error('You must specify a Unity version or editor path with -u, --unity-version, -e, --unity-editor.');
+            process.exit(1);
         }
 
         let unityEditor: UnityEditor;
@@ -483,7 +507,8 @@ program.command('create-project')
             const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH;
 
             if (!editorPath || editorPath.length === 0) {
-                throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR_PATH environment variable.');
+                Logger.instance.error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR_PATH environment variable.');
+                process.exit(1);
             }
 
             unityEditor = new UnityEditor(editorPath);
@@ -521,6 +546,8 @@ program.command('create-project')
         } else {
             process.stdout.write(`Unity project created at: ${projectPath}\n`);
         }
+
+        process.exit(0);
     });
 
 program.parse(process.argv);
