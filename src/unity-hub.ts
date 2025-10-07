@@ -296,10 +296,18 @@ export class UnityHub {
             if (latestVersion && compare(installedVersion, latestVersion) < 0) {
                 this.logger.info(`Updating Unity Hub from ${installedVersion.version} to ${latestVersion.version}...`);
 
-                if (process.platform !== 'linux') {
-                    await DeleteDirectory(this.rootDirectory);
+                if (process.platform === 'darwin') {
+                    await Exec('sudo', ['rm', '-rf', this.rootDirectory], { silent: true, showCommand: true });
                     await this.installHub();
-                } else {
+                } else if (process.platform === 'win32') {
+                    const uninstaller = path.join(path.dirname(this.executable), 'Uninstall Unity Hub.exe');
+                    await Exec('powershell', [
+                        '-NoProfile',
+                        '-Command',
+                        `Start-Process -FilePath '${uninstaller}' -ArgumentList '/S' -Verb RunAs -Wait`
+                    ], { silent: true, showCommand: true });
+                    await this.installHub();
+                } else if (process.platform === 'linux') {
                     await Exec('sudo', ['sh', '-c', `#!/bin/bash
 set -e
 wget -qO - https://hub.unity3d.com/linux/keys/public | gpg --dearmor | sudo tee /usr/share/keyrings/Unity_Technologies_ApS.gpg >/dev/null
