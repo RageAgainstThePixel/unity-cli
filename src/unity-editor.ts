@@ -77,11 +77,12 @@ export class UnityEditor {
      * @returns The full path to the matching template file.
      * @throws If no templates are found, or no matching template is found.
      */
-    public GetTemplatePath(template: string): string {
+    public GetTemplatePath(template: string): string | undefined {
         const templates: string[] = this.GetAvailableTemplates();
 
         if (templates.length === 0) {
-            throw new Error('No Unity templates found!');
+            this.logger.warn(`No Unity templates found for ${this.version.toString()}`);
+            return undefined;
         }
 
         // Build a regex to match the template name and version
@@ -98,7 +99,8 @@ export class UnityEditor {
         const matches = templates.filter(t => regex.test(path.basename(t)));
 
         if (matches.length === 0) {
-            throw new Error(`${template} path not found!`);
+            this.logger.warn(`No matching template path found for ${template}`);
+            return undefined;
         }
 
         // Pick the longest match (as in the shell script: sort by length descending)
@@ -106,7 +108,8 @@ export class UnityEditor {
         const templatePath = matches[0];
 
         if (!templatePath) {
-            throw new Error('No matching template path found.');
+            this.logger.warn(`No matching template path found for ${template}`);
+            return undefined;
         }
 
         return path.normalize(templatePath);
@@ -128,7 +131,7 @@ export class UnityEditor {
             templateDir = path.join(editorRoot, 'Data', 'Resources', 'PackageManager', 'ProjectTemplates');
         }
 
-        this.logger.debug(`Looking for templates in: ${templateDir}`);
+        this.logger.ci(`Looking for templates in: ${templateDir}`);
 
         // Check if the template directory exists
         if (!fs.existsSync(templateDir) ||
@@ -141,6 +144,8 @@ export class UnityEditor {
             .filter(f => f.endsWith('.tgz'))
             .map(f => path.join(templateDir, f));
         templates.push(...packages);
+        this.logger.ci(`Found ${templates.length} templates:`);
+        templates.forEach(t => this.logger.ci(`  - ${t}`));
         return templates;
     }
 
