@@ -336,11 +336,14 @@ export class UnityEditor {
                     '-Command',
                     `Start-Process -FilePath "${uninstallPath}" -ArgumentList "/S" -Wait`
                 ], { silent: true, showCommand: true });
-                // also delete the editor root directory if it still exists
+                // delete the editor root directory if it still exists
                 await DeleteDirectory(editorDir);
-                // also delete the MonoDevelop directory one level up if it still exists
-                const monoDevelopDir = path.join(path.dirname(editorDir), 'MonoDevelop');
-                await DeleteDirectory(monoDevelopDir);
+
+                if (this.version.isLegacy()) {
+                    // delete the MonoDevelop that is a sibling of the Unity editor directory
+                    const monoDevelopDir = path.join(path.dirname(editorDir), 'MonoDevelop');
+                    await DeleteDirectory(monoDevelopDir);
+                }
                 break;
         }
     }
