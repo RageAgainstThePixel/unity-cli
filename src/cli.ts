@@ -507,7 +507,7 @@ program.command('create-project')
         if (!unityEditor.version.isLegacy() && options.template && options.template.length > 0) {
             const templatePath = unityEditor.GetTemplatePath(options.template);
 
-            if (!templatePath) {
+            if (templatePath) {
                 args.push('-cloneFromTemplate', templatePath);
             }
         }
