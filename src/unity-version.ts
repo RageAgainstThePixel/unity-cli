@@ -108,6 +108,10 @@ export class UnityVersion {
         return satisfies(coercedVersion, `^${this.semVer.version}`);
     }
 
+    equals(other: UnityVersion): boolean {
+        return UnityVersion.compare(this, other) === 0;
+    }
+
     private static readonly UNITY_RELEASE_PATTERN = /^(\d{1,4})\.(\d+)\.(\d+)([abcfpx])(\d+)$/;
     private static readonly VERSION_TOKEN_PATTERN = /^(\d{1,4})(?:\.(\d+|x|\*))?(?:\.(\d+|x|\*))?/;
 

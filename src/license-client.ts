@@ -154,51 +154,48 @@ export class LicensingClient {
     private async patchLicenseVersion(): Promise<void> {
         if (!this.licenseVersion) {
             // check if the UNITY_EDITOR_PATH is set. If it is, use it to determine the license version
-            const unityEditorPath = process.env['UNITY_EDITOR_PATH'];
+            const versionMatch = process.env.UNITY_EDITOR_PATH?.match(/(\d+)\.(\d+)\.(\d+)/);
 
-            if (unityEditorPath) {
-                const versionMatch = unityEditorPath.match(/(\d+)\.(\d+)\.(\d+)/);
-
-                if (!versionMatch) {
-                    this.licenseVersion = '6.x'; // default to 6.x if version cannot be determined
-                } else {
-                    switch (versionMatch[1]) {
-                        case '4':
-                            this.licenseVersion = '4.x';
-                            break;
-                        case '5':
-                            this.licenseVersion = '5.x';
-                            break;
-                        default:
-                            this.licenseVersion = '6.x'; // default to 6.x for any other
-                            break;
+            if (versionMatch) {
+                switch (versionMatch[1]) {
+                    case '4': {
+                        this.licenseVersion = '4.x';
+                        break;
+                    }
+                    case '5': {
+                        this.licenseVersion = '5.x';
+                        break;
+                    }
+                    default: {
+                        this.licenseVersion = '6.x'; // default to 6.x for any other
+                        break;
                     }
                 }
-            }
-
-            if (!this.licenseVersion) {
+            } else {
                 this.licenseVersion = '6.x'; // default to 6.x if not set
             }
         }
 
-        if (this.licenseVersion === '6.x') {
-            return;
-        }
-
-        if (this.licenseVersion !== '5.x' && this.licenseVersion !== '4.x') {
-            this.logger.warn(`Warning: Specified license version '${this.licenseVersion}' is unsupported, skipping`);
-            return;
+        if (this.licenseVersion !== '6.x') {
+            if (this.licenseVersion !== '5.x' && this.licenseVersion !== '4.x') {
+                this.logger.warn(`Warning: Specified license version '${this.licenseVersion}' is unsupported, skipping`);
+                return;
+            }
         }
 
         if (!this.licenseClientPath) {
             this.licenseClientPath = await this.init();
         }
 
+        if (this.licenseVersion === '6.x') {
+            return; // no patching needed
+        }
+
         const clientDirectory = path.dirname(this.licenseClientPath);
         const patchedDirectory = path.join(os.tmpdir(), `UnityLicensingClient-${this.licenseVersion.replace('.', '_')}`);
 
         if (await fs.promises.mkdir(patchedDirectory, { recursive: true }) === undefined) {
-            this.logger.info('Unity Licensing Client was already patched, reusing');
+            this.logger.debug('Unity Licensing Client was already patched, reusing');
         } else {
             let found = false;
             for (const fileName of await fs.promises.readdir(clientDirectory)) {

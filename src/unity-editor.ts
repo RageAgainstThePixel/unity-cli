@@ -14,6 +14,8 @@ import {
     TailLogFile,
     LogTailResult,
     WaitForFileToBeCreatedAndReadable,
+    Exec,
+    DeleteDirectory,
 } from './utilities';
 
 export interface EditorCommand {
@@ -315,5 +317,37 @@ export class UnityEditor {
         }
         fs.accessSync(editorRootPath, fs.constants.R_OK);
         return editorRootPath;
+    }
+
+    /**
+     * Uninstall the Unity Editor.
+     */
+    public async Uninstall(): Promise<void> {
+        switch (process.platform) {
+            case 'darwin':
+            case 'linux':
+                await Exec('sudo', [
+                    'rm', '-rf', this.editorRootPath
+                ], { silent: true, showCommand: true });
+                break;
+            case 'win32':
+                const editorDir = path.dirname(this.editorPath);
+                const uninstallPath = path.join(editorDir, 'Uninstall.exe');
+                await fs.promises.access(uninstallPath, fs.constants.R_OK | fs.constants.X_OK);
+                await Exec('powershell', [
+                    '-NoProfile',
+                    '-Command',
+                    `Start-Process -FilePath "${uninstallPath}" -ArgumentList "/S" -Wait`
+                ], { silent: true, showCommand: true });
+                // delete the editor root directory if it still exists
+                await DeleteDirectory(editorDir);
+
+                if (this.version.isLegacy()) {
+                    // delete the MonoDevelop that is a sibling of the Unity editor directory
+                    const monoDevelopDir = path.join(path.dirname(editorDir), 'MonoDevelop');
+                    await DeleteDirectory(monoDevelopDir);
+                }
+                break;
+        }
     }
 }

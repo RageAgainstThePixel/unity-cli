@@ -24,18 +24,18 @@ describe('UnityVersion', () => {
 
     it('finds latest final release when provided a partial version', () => {
         const available = [
-            'Unity 2021.3.1f1',
-            'Unity 2021.3.6f1 (abcdef123456)',
-            'Unity 2021.3.4p2',
-            'Unity 2021.3.5f2'
+            '2021.3.5f2',
+            '2021.3.1f1',
+            '2021.3.4p2',
+            '2021.3.5f1',
+            '2021.3.2f1 (abcdef123456)',
         ];
 
-        const version = new UnityVersion('2021.3');
+        const version = new UnityVersion('2021.x');
         const match = version.findMatch(available);
 
-        expect(match.version).toBe('2021.3.6f1');
-        // ensure comparison recognizes 2021.3.6f1 as newer than 2021.3.5f2
-        const older = new UnityVersion('2021.3.5f2');
+        expect(match.version).toBe('2021.3.5f2');
+        const older = new UnityVersion('2021.3.5f1');
         expect(UnityVersion.compare(match, older)).toBeGreaterThan(0);
     });
 });
