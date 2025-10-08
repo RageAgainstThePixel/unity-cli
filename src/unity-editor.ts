@@ -13,7 +13,6 @@ import {
     KillChildProcesses,
     TailLogFile,
     LogTailResult,
-    WaitForFileToBeCreatedAndReadable,
     Exec,
     DeleteDirectory,
 } from './utilities';

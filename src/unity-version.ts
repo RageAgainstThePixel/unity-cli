@@ -68,7 +68,7 @@ export class UnityVersion {
         return UnityVersion.UNITY_RELEASE_PATTERN.test(this.version);
     }
 
-    findMatch(versions: string[]): UnityVersion {
+    findMatch(versions: string[] | UnityVersion[], channels: string[] = ['f']): UnityVersion {
         const releaseInfos = UnityVersion.extractReleaseVersions(versions);
         const releaseMap = new Map(releaseInfos.map(info => [info.version, info]));
         const exactMatch = releaseMap.get(this.version);
@@ -78,12 +78,17 @@ export class UnityVersion {
             return new UnityVersion(exactMatch.version, this.changeset ?? null, this.architecture);
         }
 
-        if (UnityVersion.needsGlobSearch(this.version)) {
-            const candidates = UnityVersion.resolveVersionCandidates(this.version, releaseInfos);
+        this.logger.debug(`ReleaseInfos:`);
+        releaseInfos.forEach(release => {
+            this.logger.debug(`  > ${release.version}`);
+        });
 
-            this.logger.debug(`Searching for match for ${this.version}:`);
-            candidates.forEach(release => {
-                this.logger.debug(`  > ${release.version}`);
+        if (UnityVersion.needsGlobSearch(this.version)) {
+            this.logger.debug(`Performing glob search for ${this.version} in channels: ${channels.join(', ')} ...`);
+            const candidates = UnityVersion.resolveVersionCandidates(this.version, releaseInfos, channels);
+            this.logger.debug(`Searching for match for ${this.version} from candidates:`);
+            candidates.forEach(candidate => {
+                this.logger.debug(`  > ${candidate.version}`);
             });
 
             const latest = candidates[0];
@@ -118,9 +123,9 @@ export class UnityVersion {
     private static readonly UNITY_CHANNEL_ORDER: Record<string, number> = {
         a: 0,
         b: 1,
-        c: 2,
-        f: 3,
-        p: 4,
+        p: 2,
+        c: 3,
+        f: 4,
         x: 5
     };
 
@@ -141,7 +146,7 @@ export class UnityVersion {
         return coercedVersion;
     }
 
-    private static extractReleaseVersions(versions: string[]): UnityReleaseInfo[] {
+    private static extractReleaseVersions(versions: string[] | UnityVersion[]): UnityReleaseInfo[] {
         return versions
             .map(UnityVersion.parseReleaseInfo)
             .filter((info): info is UnityReleaseInfo => info !== null);
@@ -185,7 +190,11 @@ export class UnityVersion {
         };
     }
 
-    private static parseReleaseInfo(release: string): UnityReleaseInfo | null {
+    private static parseReleaseInfo(release: string | UnityVersion): UnityReleaseInfo | null {
+        if (release instanceof UnityVersion) {
+            release = release.version;
+        }
+
         const versionMatch = release.match(/(\d{1,4}\.\d+\.\d+[abcfpx]\d+)/);
 
         if (!versionMatch) {
@@ -221,11 +230,13 @@ export class UnityVersion {
 
     private static resolveVersionCandidates(
         version: string,
-        releases: UnityReleaseInfo[]
+        releases: UnityReleaseInfo[],
+        channels: string[] = ['f']
     ): UnityReleaseInfo[] {
         const match = UnityVersion.VERSION_TOKEN_PATTERN.exec(version);
 
         if (!match) {
+            Logger.instance.warn(`Invalid version pattern: ${version}`);
             return [];
         }
 
@@ -234,11 +245,16 @@ export class UnityVersion {
         const normalizedMajor = Number.isNaN(majorValue) ? undefined : majorValue;
         const requestedMinor = UnityVersion.parseMinorToken(minorToken);
 
-        let candidates = UnityVersion.filterFinalReleases(releases, normalizedMajor, requestedMinor);
+        let candidates = UnityVersion.filterFinalReleases(releases, normalizedMajor, requestedMinor, channels);
 
         if (!candidates.length && minorToken === '0') {
-            candidates = UnityVersion.filterFinalReleases(releases, normalizedMajor);
+            candidates = UnityVersion.filterFinalReleases(releases, normalizedMajor, undefined, channels);
         }
+
+        Logger.instance.debug(`Found ${candidates.length} candidate(s) for version pattern ${version}`);
+        candidates.forEach(release => {
+            Logger.instance.debug(`  - ${release.version}`);
+        });
 
         return candidates.sort(UnityVersion.compareFinalReleaseInfo);
     }
@@ -255,10 +271,11 @@ export class UnityVersion {
     private static filterFinalReleases(
         releases: UnityReleaseInfo[],
         major: number | undefined,
-        minor?: number
+        minor?: number,
+        channels: string[] = ['f']
     ): UnityReleaseInfo[] {
         return releases.filter(release =>
-            release.channel === 'f' &&
+            channels.includes(release.channel) &&
             (major === undefined || release.major === major) &&
             (minor === undefined || release.minor === minor)
         );
@@ -267,6 +284,9 @@ export class UnityVersion {
     private static compareFinalReleaseInfo(a: UnityReleaseInfo, b: UnityReleaseInfo): number {
         if (a.minor !== b.minor) { return b.minor - a.minor; }
         if (a.patch !== b.patch) { return b.patch - a.patch; }
-        return b.revision - a.revision;
+        if (a.revision !== b.revision) { return b.revision - a.revision; }
+        // compare channels in reverse order (f > p > b > a)
+        return (UnityVersion.UNITY_CHANNEL_ORDER[b.channel] ?? Number.MAX_SAFE_INTEGER) -
+            (UnityVersion.UNITY_CHANNEL_ORDER[a.channel] ?? Number.MAX_SAFE_INTEGER);
     }
 }

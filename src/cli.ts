@@ -3,18 +3,19 @@
 import 'source-map-support/register';
 import * as fs from 'fs';
 import * as os from 'os';
+import * as tar from 'tar';
 import * as path from 'path';
 import { Command } from 'commander';
 import { UnityHub } from './unity-hub';
+import { UnityEditor } from './unity-editor';
 import updateNotifier from "update-notifier";
 import { Logger, LogLevel } from './logging';
-import { UnityEditor } from './unity-editor';
 import { UnityVersion } from './unity-version';
 import { UnityProject } from './unity-project';
 import { ChildProcess, spawn } from 'child_process';
-import { PromptForSecretInput } from './utilities';
 import { CheckAndroidSdkInstalled } from './android-sdk';
 import { LicenseType, LicensingClient } from './license-client';
+import { PromptForSecretInput, ResolveGlobToPath } from './utilities';
 
 const pkgPath = path.join(__dirname, '..', 'package.json');
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
@@ -340,45 +341,6 @@ program.command('uninstall-unity')
 
 program.commandsGroup('Unity Editor:');
 
-program.command('open-project')
-    .description('Open a Unity project in the Unity Editor.')
-    .option('-p, --unity-project <unityProject>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
-    .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000). If specified, it will override the version read from the project.')
-    .option('--verbose', 'Enable verbose logging.')
-    .action(async (options) => {
-        if (options.verbose) {
-            Logger.instance.logLevel = LogLevel.DEBUG;
-        }
-
-        Logger.instance.debug(JSON.stringify(options));
-        const projectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || undefined;
-        const unityProject = await UnityProject.GetProject(projectPath);
-
-        if (!unityProject) {
-            Logger.instance.error(`The specified path is not a valid Unity project: ${projectPath}`);
-            process.exit(1);
-        }
-
-        let unityVersion: UnityVersion | undefined = unityProject?.version;
-
-        if (options.unityVersion) {
-            unityVersion = new UnityVersion(options.unityVersion);
-        }
-
-        const unityHub = new UnityHub();
-        const unityEditor = await unityHub.GetEditor(unityVersion);
-
-        Logger.instance.info(`Opening project at "${unityProject.projectPath}" with Unity ${unityEditor.version}...`);
-
-        let child: ChildProcess | null = null;
-        try {
-            child = spawn(unityEditor.editorPath, ['-projectPath', unityProject.projectPath], { detached: true });
-            child.unref();
-        } finally {
-            process.exit(child?.pid !== undefined ? 0 : 1);
-        }
-    });
-
 program.command('run')
     .description('Run command line args directly to the Unity Editor.')
     .option('--unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, --unity-project or the UNITY_EDITOR_PATH environment variable must be set.')
@@ -553,6 +515,167 @@ program.command('create-project')
         }
 
         process.exit(0);
+    });
+
+program.command('open-project')
+    .description('Open a Unity project in the Unity Editor.')
+    .option('-p, --unity-project <unityProject>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
+    .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000). If specified, it will override the version read from the project.')
+    .option('--verbose', 'Enable verbose logging.')
+    .action(async (options) => {
+        if (options.verbose) {
+            Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        Logger.instance.debug(JSON.stringify(options));
+        const projectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || undefined;
+        const unityProject = await UnityProject.GetProject(projectPath);
+
+        if (!unityProject) {
+            Logger.instance.error(`The specified path is not a valid Unity project: ${projectPath}`);
+            process.exit(1);
+        }
+
+        let unityVersion: UnityVersion | undefined = unityProject?.version;
+
+        if (options.unityVersion) {
+            unityVersion = new UnityVersion(options.unityVersion);
+        }
+
+        const unityHub = new UnityHub();
+        const unityEditor = await unityHub.GetEditor(unityVersion);
+
+        Logger.instance.info(`Opening project at "${unityProject.projectPath}" with Unity ${unityEditor.version}...`);
+
+        let child: ChildProcess | null = null;
+        try {
+            child = spawn(unityEditor.editorPath, ['-projectPath', unityProject.projectPath], { detached: true });
+            child.unref();
+        } finally {
+            process.exit(child?.pid !== undefined ? 0 : 1);
+        }
+    });
+
+program.commandsGroup("Unity Package Manager:")
+
+program.command('sign-package')
+    .description('Sign a Unity package.')
+    .option('--package <package>', 'Required. The fully qualified path to the folder that contains the package.json file for the package you want to sign. Note: Don’t include package.json in this parameter value.')
+    .option('--output <output>', 'Optional. The output directory where you want to save the signed tarball file (.tgz). If unspecified, the package contents will be updated in place with the signed .attestation.p7m file.')
+    .option('--email <email>', 'Email associated with the Unity account. If unspecified, the UNITY_USERNAME environment variable will be used.')
+    .option('--password <password>', 'The password of the Unity account. If unspecified, the UNITY_PASSWORD environment variable will be used.')
+    .option('--organization <organization>', 'The Organization ID you copied from the Unity Cloud Dashboard. If unspecified, the UNITY_ORGANIZATION_ID environment variable will be used.')
+    .option('--verbose', 'Enable verbose logging.')
+    .action(async (options) => {
+        if (options.verbose) {
+            Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        Logger.instance.debug(JSON.stringify(options));
+
+        const packagePath = path.normalize(options.package?.toString()?.trim());
+
+        if (!packagePath || packagePath.length === 0) {
+            Logger.instance.error('The package path is required. Use --package to specify it.');
+            process.exit(1);
+        }
+
+        const packageJsonPath = path.join(packagePath, 'package.json');
+        try {
+            await fs.promises.access(packageJsonPath, fs.constants.R_OK);
+        } catch {
+            Logger.instance.error(`Failed to find a valid package.json file at: ${packageJsonPath}`);
+            process.exit(1);
+        }
+
+        const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+
+        let outputPath = options.output?.toString()?.trim();
+
+        if (outputPath && outputPath.length > 0) {
+            outputPath = path.resolve(outputPath);
+
+            if (outputPath.endsWith('.tgz')) {
+                // remove .tgz if present
+                outputPath = outputPath.substring(0, outputPath.length - 4);
+            }
+        } else {
+            outputPath = path.join(path.resolve(packagePath, '..'));
+        }
+
+        let username = options.email?.toString()?.trim() || process.env.UNITY_USERNAME || undefined;
+
+        if (!username || username.length === 0) {
+            username = await PromptForSecretInput('Email: ');
+        }
+
+        if (!username || username.length === 0) {
+            Logger.instance.error('The email is required. Use --email to specify it.');
+            process.exit(1);
+        }
+
+        let password = options.password?.toString()?.trim() || process.env.UNITY_PASSWORD || undefined;
+
+        if (!password || password.length === 0) {
+            password = await PromptForSecretInput('Password: ');
+        }
+
+        if (!password || password.length === 0) {
+            Logger.instance.error('The password is required. Use --password to specify it.');
+            process.exit(1);
+        }
+
+        let organization = options.organization?.toString()?.trim() || process.env.UNITY_ORGANIZATION_ID || undefined;
+
+        if (!organization || organization.length === 0) {
+            organization = await PromptForSecretInput('Organization ID: ');
+        }
+
+        if (!organization || organization.length === 0) {
+            Logger.instance.error('The organization ID is required. Use --organization to specify it.');
+            process.exit(1);
+        }
+
+        // must use a unity editor 6000.3 or newer
+        const unityVersion = new UnityVersion('6000.3');
+        const unityHub = new UnityHub();
+        const unityEditor = await unityHub.GetEditor(unityVersion, undefined, ['f', 'b']);
+        try {
+            await unityEditor.Run({
+                args: [
+                    '-batchmode',
+                    '-username', username,
+                    '-password', password,
+                    '-upmPack', packagePath, path.normalize(outputPath),
+                    '-cloudOrganization', organization
+                ]
+            });
+        } catch (error) {
+            // currently the editor returns exit code 1 even on success
+        } finally {
+            if (fs.existsSync(outputPath)) {
+                const pkg = await ResolveGlobToPath([outputPath, `${path.basename(packageJson.name)}*.tgz`]);
+                Logger.instance.info(`Package signed successfully: ${pkg}`);
+
+                // if the output directory was not specified in the command options,
+                // then unpack the .tgz file and overwrite the package contents.
+                if (!options.output || options.output.length === 0) {
+                    await tar.x({
+                        file: pkg,
+                        cwd: packagePath,
+                        strip: 1
+                    });
+
+                    Logger.instance.info(`Package contents extracted to: ${packagePath}`);
+                    fs.unlinkSync(pkg);
+                }
+
+                process.exit(0);
+            } else {
+                Logger.instance.error('Failed to sign the package.');
+                process.exit(1);
+            }
+        }
     });
 
 program.parse(process.argv);

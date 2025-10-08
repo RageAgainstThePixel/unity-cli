@@ -350,6 +350,10 @@ export function TailLogFile(logPath: string): LogTailResult {
 
     async function readNewLogContent(): Promise<void> {
         try {
+            if (!fs.existsSync(logPath)) {
+                return;
+            }
+
             const stats = await fs.promises.stat(logPath);
 
             if (stats.size < lastSize) {
@@ -390,8 +394,6 @@ export function TailLogFile(logPath: string): LogTailResult {
     const tailPromise = new Promise<void>((resolve, reject) => {
         (async () => {
             try {
-                await WaitForFileToBeCreatedAndReadable(logPath, 60_000);
-
                 while (!logEnded) {
                     await Delay(logPollingInterval);
                     await readNewLogContent();
@@ -424,27 +426,6 @@ export function TailLogFile(logPath: string): LogTailResult {
 }
 
 /**
- * Waits for a file to be created and become readable within a timeout.
- * @param filePath The path of the file to wait for.
- * @param timeout The maximum time to wait in milliseconds. Default is 30000 (30 seconds).
- */
-export async function WaitForFileToBeCreatedAndReadable(filePath: string, timeout: number = 30000): Promise<void> {
-    const pollInterval = 100;
-    const deadline = Date.now() + timeout;
-
-    while (Date.now() < deadline) {
-        // test file access by attempting to open the file with read only access
-        if (await TestFileAccess(filePath, fs.constants.O_RDONLY)) {
-            return;
-        }
-
-        await Delay(pollInterval);
-    }
-
-    throw new Error(`Timed out waiting for file to become readable: ${filePath}`);
-}
-
-/**
  * Waits for a file to be unlocked (not exclusively locked by another process).
  * If the file does not exist, it is considered unlocked.
  * If the file exists, attempts to open it with read/write access.
@@ -465,7 +446,7 @@ export async function WaitForFileToBeUnlocked(filePath: string, timeout: number 
         await Delay(pollInterval);
     }
 
-    throw new Error(`Timed out waiting for file to be unlocked: ${filePath}`);
+    throw new Error(`Timed out after ${timeout / 1000} seconds waiting for file to be unlocked: ${filePath}`);
 }
 
 /**

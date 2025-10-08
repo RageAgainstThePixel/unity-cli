@@ -34,25 +34,29 @@ With options always using double dashes (`--option`) and arguments passed direct
 
 #### Auth
 
-- `unity-cli license-version`: Print the Unity License Client version
-- `unity-cli activate-license [options]`: Activate a Unity license
-- `unity-cli return-license [options]`: Return a Unity license
+- `unity-cli license-version`: Print the Unity License Client version.
+- `unity-cli activate-license [options]`: Activate a Unity license.
+- `unity-cli return-license [options]`: Return a Unity license.
 
 #### Unity Hub
 
-- `unity-cli hub-version`: Print the Unity Hub version
-- `unity-cli hub-install [options]`: Install or update the Unity Hub
-- `unity-cli hub-path`: Print the Unity Hub executable path
-- `unity-cli hub [options] <args...>`: Run Unity Hub command line arguments (passes args directly to the hub executable)
+- `unity-cli hub-version`: Print the Unity Hub version.
+- `unity-cli hub-install [options]`: Install or update the Unity Hub.
+- `unity-cli hub-path`: Print the Unity Hub executable path.
+- `unity-cli hub [options] <args...>`: Run Unity Hub command line arguments (passes args directly to the hub executable).
 
 #### Unity Editor
 
-- `unity-cli setup-unity [options]`: Find or install the Unity Editor for a project or specific version
-- `unity-cli uninstall-unity [options]`: Uninstall a Unity Editor version
-- `unity-cli list-project-templates [options]`: List available Unity project templates for an editor
-- `unity-cli create-project [options]`: Create a new Unity project from a template
-- `unity-cli open-project [options]`: Open a Unity project in the Unity Editor
-- `unity-cli run [options] <args...>`: Run Unity Editor command line arguments (passes args directly to the editor)
+- `unity-cli setup-unity [options]`: Find or install the Unity Editor for a project or specific version.
+- `unity-cli uninstall-unity [options]`: Uninstall a Unity Editor version.
+- `unity-cli list-project-templates [options]`: List available Unity project templates for an editor.
+- `unity-cli create-project [options]`: Create a new Unity project from a template.
+- `unity-cli open-project [options]`: Open a Unity project in the Unity Editor.
+- `unity-cli run [options] <args...>`: Run Unity Editor command line arguments (passes args directly to the editor).
+
+#### Unity Package Manager
+
+- `unity-cli sign-package [options]`: Sign a Unity package for distribution.
 
 Run `unity-cli --help` for a full list of commands and options.
 
@@ -93,4 +97,13 @@ unity-cli open-project
 
 ```bash
 unity-cli run --unity-project <path-to-project> -quit -batchmode -executeMethod StartCommandLineBuild
+```
+
+#### Sign a Unity Package
+
+> [!NOTE]
+> The `--output` option is optional. If not specified, the package contents will be updated in place with the signed `.attestation.p7m` file. Otherwise a signed `.tgz` file will be created in the specified output directory.
+
+```bash
+unity-cli sign-package --package <path-to-package-folder> --email <your-email> --password <your-password> --organization <your-organization-id>
 ```
