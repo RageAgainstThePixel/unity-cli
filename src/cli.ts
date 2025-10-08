@@ -677,4 +677,5 @@ program.command('sign-package')
             }
         }
     });
+
 program.parse(process.argv);
