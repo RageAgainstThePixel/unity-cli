@@ -637,9 +637,9 @@ program.command('sign-package')
         }
 
         // must use a unity editor 6000.3 or newer
-        const unityVersion = new UnityVersion('6000.3.0b4');
+        const unityVersion = new UnityVersion('6000.3');
         const unityHub = new UnityHub();
-        const unityEditor = await unityHub.GetEditor(unityVersion);
+        const unityEditor = await unityHub.GetEditor(unityVersion, undefined, ['f', 'b']);
         try {
             await unityEditor.Run({
                 args: [

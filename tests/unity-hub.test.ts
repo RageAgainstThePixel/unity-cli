@@ -54,4 +54,22 @@ describe('UnityHub', () => {
         expect(releaseInfo).toBeDefined();
         expect(releaseInfo.version).toMatch(/^2021.3.\d+[abcfpx]\d+$/);
     });
+
+    it('should get release info for multiple channels', async () => {
+        const unityHub = new UnityHub();
+        const requestedVersionGlob = new UnityVersion('6000.3');
+        const channels = ['f', 'b'];
+        const releases = await unityHub.ListAvailableReleases();
+        expect(releases).toBeDefined();
+        expect(Array.isArray(releases)).toBe(true);
+        const versionMatch = requestedVersionGlob.findMatch(releases, channels);
+        expect(versionMatch).toBeDefined();
+        expect(versionMatch.version).toMatch(/^6000.3.\d+[bf]\d+$/);
+        const unityReleaseInfo: UnityRelease = await unityHub.GetEditorReleaseInfo(versionMatch);
+        expect(unityReleaseInfo).toBeDefined();
+        expect(unityReleaseInfo.version).toBe(versionMatch.version);
+        expect(unityReleaseInfo.shortRevision).toBeDefined();
+        const resolvedVersion = new UnityVersion(unityReleaseInfo.version, unityReleaseInfo.shortRevision, versionMatch.architecture);
+        expect(resolvedVersion.isFullyQualified()).toBe(true);
+    });
 });

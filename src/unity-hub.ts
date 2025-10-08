@@ -528,9 +528,10 @@ chmod -R 777 "$hubPath"`]);
      * Attempts to find or install the specified Unity Editor version with the requested modules.
      * @param unityVersion The Unity version to find or install.
      * @param modules The modules to install alongside the editor.
+     * @param channels The channels to consider when searching for the editor. Can be 'f' (final), 'p' (patch), 'b' (beta), 'a' (alpha), or 'x' (experimental). Default is ['f'].
      * @returns The path to the Unity Editor executable.
      */
-    public async GetEditor(unityVersion: UnityVersion, modules: string[] = []): Promise<UnityEditor> {
+    public async GetEditor(unityVersion: UnityVersion, modules: string[] = [], channels: string[] = ['f']): Promise<UnityEditor> {
         const retryErrorMessages = [
             'Editor already installed in this location',
             'failed to download. Error given: Request timeout'
@@ -543,7 +544,8 @@ chmod -R 777 "$hubPath"`]);
             try {
                 if (!resolvedVersion.isFullyQualified()) {
                     const releases = await this.ListAvailableReleases();
-                    resolvedVersion = resolvedVersion.findMatch(releases);
+                    Logger.instance.debug(`Found ${releases.length} available Unity releases, searching channels: ${channels.join(', ')}`);
+                    resolvedVersion = resolvedVersion.findMatch(releases, channels);
                 }
 
                 if (!resolvedVersion?.changeset) {
@@ -666,12 +668,18 @@ chmod -R 777 "$hubPath"`]);
      * Lists the available Unity releases.
      * @returns A list of available Unity release versions.
      */
-    public async ListAvailableReleases(): Promise<string[]> {
+    public async ListAvailableReleases(): Promise<UnityVersion[]> {
         const output = await this.Exec(['editors', '--releases']);
         // filter out version lines only 2021.3.45f2 (may include installed path following version)
         return output.split('\n')
-            .filter(line => /^\d{1,4}\.\d+\.\d+[abcfpx]?\d*/.test(line.trim()))
-            .map(line => line.trim());
+            .map(line => line.trim())
+            .map(line => {
+                const match = line.match(/^(\d{1,4}\.\d+\.\d+[abcfpx]?\d*)/);
+                return match ? match[1] : undefined;
+            })
+            .filter((line): line is string => !!line && /^\d{1,4}\.\d+\.\d+[abcfpx]?\d*/.test(line))
+            .map(line => new UnityVersion(line!))
+            .sort((a, b) => UnityVersion.compare(b, a)); // Sort descending by version
     }
 
     private async checkInstalledEditors(

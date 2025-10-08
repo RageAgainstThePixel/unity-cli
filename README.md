@@ -34,25 +34,25 @@ With options always using double dashes (`--option`) and arguments passed direct
 
 #### Auth
 
-- `unity-cli license-version`: Print the Unity License Client version
-- `unity-cli activate-license [options]`: Activate a Unity license
-- `unity-cli return-license [options]`: Return a Unity license
+- `unity-cli license-version`: Print the Unity License Client version.
+- `unity-cli activate-license [options]`: Activate a Unity license.
+- `unity-cli return-license [options]`: Return a Unity license.
 
 #### Unity Hub
 
-- `unity-cli hub-version`: Print the Unity Hub version
-- `unity-cli hub-install [options]`: Install or update the Unity Hub
-- `unity-cli hub-path`: Print the Unity Hub executable path
-- `unity-cli hub [options] <args...>`: Run Unity Hub command line arguments (passes args directly to the hub executable)
+- `unity-cli hub-version`: Print the Unity Hub version.
+- `unity-cli hub-install [options]`: Install or update the Unity Hub.
+- `unity-cli hub-path`: Print the Unity Hub executable path.
+- `unity-cli hub [options] <args...>`: Run Unity Hub command line arguments (passes args directly to the hub executable).
 
 #### Unity Editor
 
-- `unity-cli setup-unity [options]`: Find or install the Unity Editor for a project or specific version
-- `unity-cli uninstall-unity [options]`: Uninstall a Unity Editor version
-- `unity-cli list-project-templates [options]`: List available Unity project templates for an editor
-- `unity-cli create-project [options]`: Create a new Unity project from a template
-- `unity-cli open-project [options]`: Open a Unity project in the Unity Editor
-- `unity-cli run [options] <args...>`: Run Unity Editor command line arguments (passes args directly to the editor)
+- `unity-cli setup-unity [options]`: Find or install the Unity Editor for a project or specific version.
+- `unity-cli uninstall-unity [options]`: Uninstall a Unity Editor version.
+- `unity-cli list-project-templates [options]`: List available Unity project templates for an editor.
+- `unity-cli create-project [options]`: Create a new Unity project from a template.
+- `unity-cli open-project [options]`: Open a Unity project in the Unity Editor.
+- `unity-cli run [options] <args...>`: Run Unity Editor command line arguments (passes args directly to the editor).
 
 #### Unity Package Manager
 
