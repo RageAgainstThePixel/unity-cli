@@ -1,4 +1,4 @@
-name: unity-build
+name: integration-tests
 on:
   push:
     branches: ['main']
