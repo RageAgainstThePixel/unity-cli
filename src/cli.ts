@@ -22,11 +22,11 @@ const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
 updateNotifier({ pkg }).notify();
 const program = new Command();
 
-program.commandsGroup('Auth:');
-
 program.name('unity-cli')
     .description('A command line utility for the Unity Game Engine.')
     .version(pkg.version);
+
+program.commandsGroup('Auth:');
 
 program.command('license-version')
     .description('Print the version of the Unity License Client.')

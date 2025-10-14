@@ -7,20 +7,32 @@
   "unity-version": [
     "4.7.2",
     "5.6.7f1 (e80cc3114ac1)",
-    "2017.x",
-    "2018.x",
-    "2019.x",
-    "2020.x",
-    "2021.x",
-    "2022.x",
-    "6000.0.x",
-    "6000.1.x",
-    "6000.2.x"
+    "2017",
+    "2018",
+    "2019",
+    "2020",
+    "2021",
+    "2022",
+    "6000.0",
+    "6000.1",
+    "6000.2"
   ],
   "include": [
     {
       "os": "ubuntu-latest",
       "build-target": "StandaloneLinux64"
+    },
+    {
+      "os": "ubuntu-latest",
+      "build-target": "WebGL"
+    },
+    {
+      "os": "ubuntu-latest",
+      "build-target": "Android"
+    },
+    {
+      "os": "ubuntu-latest",
+      "build-target": "iOS"
     },
     {
       "os": "windows-latest",

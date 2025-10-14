@@ -1,4 +1,4 @@
-name: tests
+name: unity-build
 on:
   push:
     branches: ['main']
