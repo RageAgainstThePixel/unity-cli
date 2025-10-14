@@ -100,7 +100,7 @@ jobs:
         if: ${{ env.RUN_BUILD == 'true' }}
         shell: bash
         run: |
-          unity-cli run --log-name Validate-${{ matrix.build-target }} -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
+          unity-cli run --log-name Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
           unity-cli run --log-name Build-${{ matrix.build-target }} -quit -nographics -batchmode -buildTarget ${{ matrix.build-target }} -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity
       - name: Uninstall editor
         shell: bash
