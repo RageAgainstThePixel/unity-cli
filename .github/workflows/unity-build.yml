@@ -21,7 +21,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       UNITY_PROJECT_PATH: '' # Set from create-project step
       RUN_BUILD: '' # Set to true if the build pipeline package can be installed and used
