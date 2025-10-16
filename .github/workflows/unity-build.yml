@@ -21,7 +21,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-    timeout-minutes: 45
     env:
       UNITY_PROJECT_PATH: '' # Set from create-project step
       RUN_BUILD: '' # Set to true if the build pipeline package can be installed and used
@@ -98,6 +97,7 @@ jobs:
           openupm add com.utilities.buildpipeline
       - name: Build project
         if: ${{ env.RUN_BUILD == 'true' }}
+        timeout-minutes: 60
         shell: bash
         run: |
           unity-cli run --log-name Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
