@@ -963,8 +963,6 @@ done
     }
 
     private async installUnity(unityVersion: UnityVersion, modules: string[]): Promise<string | undefined> {
-        this.logger.ci(`Installing Unity ${unityVersion.toString()}...`);
-
         if (unityVersion.isLegacy()) {
             return await this.installUnity4x(unityVersion);
         }
@@ -997,8 +995,19 @@ done
                     fs.promises.unlink(downloadPath);
                 }
             }
+
+            if (['2019', '2020'].some(v => unityVersion.version.startsWith(v)) && modules.includes('webgl')) {
+                try {
+                    await Exec('python3', ['--version'], { silent: true, showCommand: false });
+                } catch {
+                    this.logger.info('Installing python3 for Unity...');
+                    await Exec('sudo', ['apt-get', 'update'], { silent: true, showCommand: true });
+                    await Exec('sudo', ['apt-get', 'install', 'python3'], { silent: true, showCommand: true });
+                }
+            }
         }
 
+        this.logger.ci(`Installing Unity ${unityVersion.toString()}...`);
         const args = ['install', '--version', unityVersion.version];
 
         if (unityVersion.changeset) {
@@ -1026,6 +1035,7 @@ done
     }
 
     private async installUnity4x(unityVersion: UnityVersion): Promise<string> {
+        this.logger.ci(`Installing Unity ${unityVersion.toString()}...`);
         const hubInstallDir = await this.GetInstallPath();
 
         switch (process.platform) {
