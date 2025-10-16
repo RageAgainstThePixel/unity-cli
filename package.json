@@ -60,7 +60,7 @@
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "@types/node": "^24.7.2",
+    "@types/node": "^24.8.0",
     "@types/semver": "^7.7.1",
     "@types/update-notifier": "^6.0.8",
     "jest": "^30.2.0",
