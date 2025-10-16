@@ -548,7 +548,6 @@ program.command('open-project')
 
         if (buildTarget && buildTarget.length > 0) {
             const moduleBuildTargetMap = UnityHub.GetPlatformTargetModuleMap();
-            moduleBuildTargetMap[buildTarget] || undefined;
             module = moduleBuildTargetMap[buildTarget] ? [moduleBuildTargetMap[buildTarget]] : undefined;
         }
 

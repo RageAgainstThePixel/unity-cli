@@ -970,6 +970,7 @@ done
         if (process.platform === 'linux') {
             const arch = process.arch === 'x64' ? 'amd64' : process.arch === 'arm64' ? 'arm64' : process.arch;
 
+            // install older versions of libssl for older Unity versions
             if (['2019.1', '2019.2'].some(v => unityVersion.version.startsWith(v))) {
                 const url = `https://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.0.0_1.0.2g-1ubuntu4.20_${arch}.deb`;
                 const downloadPath = path.join(GetTempDir(), `libssl1.0.0_1.0.2g-1ubuntu4.20_${arch}.deb`);
@@ -996,6 +997,7 @@ done
                 }
             }
 
+            // install python3 for WebGL builds on older Unity versions
             if (['2019', '2020'].some(v => unityVersion.version.startsWith(v)) && modules.includes('webgl')) {
                 try {
                     await Exec('python3', ['--version'], { silent: true, showCommand: false });
