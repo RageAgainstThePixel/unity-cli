@@ -521,6 +521,7 @@ program.command('open-project')
     .description('Open a Unity project in the Unity Editor.')
     .option('-p, --unity-project <unityProject>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
     .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000). If specified, it will override the version read from the project.')
+    .option('-t, --build-target <buildTarget>', 'The Unity build target to switch the project to (e.g. StandaloneWindows64, StandaloneOSX, iOS, Android).')
     .option('--verbose', 'Enable verbose logging.')
     .action(async (options) => {
         if (options.verbose) {
@@ -542,14 +543,29 @@ program.command('open-project')
             unityVersion = new UnityVersion(options.unityVersion);
         }
 
-        const unityHub = new UnityHub();
-        const unityEditor = await unityHub.GetEditor(unityVersion);
+        const buildTarget = options.buildTarget?.toString()?.trim();
+        let module: string[] | undefined = undefined;
 
-        Logger.instance.info(`Opening project at "${unityProject.projectPath}" with Unity ${unityEditor.version}...`);
+        if (buildTarget && buildTarget.length > 0) {
+            const moduleBuildTargetMap = UnityHub.GetPlatformTargetModuleMap();
+            moduleBuildTargetMap[buildTarget] || undefined;
+            module = moduleBuildTargetMap[buildTarget] ? [moduleBuildTargetMap[buildTarget]] : undefined;
+        }
+
+        const unityHub = new UnityHub();
+        const unityEditor = await unityHub.GetEditor(unityVersion, module);
+
+        Logger.instance.info(`Opening "${unityProject.projectPath}" with Unity ${unityEditor.version}${buildTarget ? ` - ${buildTarget}` : ''}...`);
+
+        const openArgs = ['-projectPath', unityProject.projectPath];
+
+        if (buildTarget && buildTarget.length > 0) {
+            openArgs.push('-buildTarget', buildTarget);
+        }
 
         let child: ChildProcess | null = null;
         try {
-            child = spawn(unityEditor.editorPath, ['-projectPath', unityProject.projectPath], { detached: true });
+            child = spawn(unityEditor.editorPath, openArgs, { detached: true });
             child.unref();
         } finally {
             process.exit(child?.pid !== undefined ? 0 : 1);
