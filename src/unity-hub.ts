@@ -235,22 +235,26 @@ export class UnityHub {
         } finally {
             this.logger.endGroup();
             const match = output.match(/Assertion (?<assert>.+) failed/g);
+            const retryConditions = [
+                'async hook stack has become corrupted',
+                'failed to download'
+            ];
 
             if (match ||
-                output.includes('async hook stack has become corrupted')) {
+                retryConditions.some(s => output.includes(s))) {
                 this.logger.warn(`Install failed, retrying...`);
                 return await this.Exec(args);
             }
 
-            if (exitCode > 0 || output.includes('Error:')) {
-                const error = output.match(/Error: (.+)/);
+            if (exitCode > 0 || output.includes('Error')) {
+                const error = output.match(/Error(?: given)?:\s*(.+)/);
                 const errorMessage = error && error[1] ? error[1] : 'Unknown Error';
 
                 switch (errorMessage) {
                     case 'No modules found to install.':
                         break;
                     default:
-                        throw new Error(`Failed to execute Unity Hub: [${exitCode}] ${errorMessage}`);
+                        throw new Error(`Failed to execute Unity Hub (exit code: ${exitCode}) ${errorMessage}`);
                 }
             }
 
@@ -996,17 +1000,6 @@ done
                     fs.promises.unlink(downloadPath);
                 }
             }
-
-            // install python3 for WebGL builds on older Unity versions
-            if (['2019', '2020'].some(v => unityVersion.version.startsWith(v)) && modules.includes('webgl')) {
-                try {
-                    await Exec('python', ['--version'], { silent: false, showCommand: true });
-                } catch {
-                    this.logger.info('Installing python for Unity...');
-                    await Exec('sudo', ['apt-get', 'update'], { silent: true, showCommand: true });
-                    await Exec('sudo', ['apt-get', 'install', 'python'], { silent: true, showCommand: true });
-                }
-            }
         }
 
         this.logger.ci(`Installing Unity ${unityVersion.toString()}...`);
@@ -1031,7 +1024,8 @@ done
 
         const output = await this.Exec(args, { showCommand: true, silent: false });
 
-        if (output.includes(`Error while installing an editor or a module from changeset`)) {
+        if (output.includes(`Error while installing an editor or a module from changeset`) ||
+            output.includes(`failed to download.`)) {
             throw new Error(`Failed to install Unity ${unityVersion.toString()}`);
         }
     }
