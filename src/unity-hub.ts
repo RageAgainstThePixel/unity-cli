@@ -235,22 +235,26 @@ export class UnityHub {
         } finally {
             this.logger.endGroup();
             const match = output.match(/Assertion (?<assert>.+) failed/g);
+            const retryConditions = [
+                'async hook stack has become corrupted',
+                'failed to download'
+            ];
 
             if (match ||
-                output.includes('async hook stack has become corrupted')) {
+                retryConditions.some(s => output.includes(s))) {
                 this.logger.warn(`Install failed, retrying...`);
                 return await this.Exec(args);
             }
 
-            if (exitCode > 0 || output.includes('Error:')) {
-                const error = output.match(/Error: (.+)/);
+            if (exitCode > 0 || output.includes('Error')) {
+                const error = output.match(/Error(?: given)?:\s*(.+)/);
                 const errorMessage = error && error[1] ? error[1] : 'Unknown Error';
 
                 switch (errorMessage) {
                     case 'No modules found to install.':
                         break;
                     default:
-                        throw new Error(`Failed to execute Unity Hub: [${exitCode}] ${errorMessage}`);
+                        throw new Error(`Failed to execute Unity Hub (exit code: ${exitCode}) ${errorMessage}`);
                 }
             }
 
@@ -963,8 +967,6 @@ done
     }
 
     private async installUnity(unityVersion: UnityVersion, modules: string[]): Promise<string | undefined> {
-        this.logger.ci(`Installing Unity ${unityVersion.toString()}...`);
-
         if (unityVersion.isLegacy()) {
             return await this.installUnity4x(unityVersion);
         }
@@ -972,6 +974,7 @@ done
         if (process.platform === 'linux') {
             const arch = process.arch === 'x64' ? 'amd64' : process.arch === 'arm64' ? 'arm64' : process.arch;
 
+            // install older versions of libssl for older Unity versions
             if (['2019.1', '2019.2'].some(v => unityVersion.version.startsWith(v))) {
                 const url = `https://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.0.0_1.0.2g-1ubuntu4.20_${arch}.deb`;
                 const downloadPath = path.join(GetTempDir(), `libssl1.0.0_1.0.2g-1ubuntu4.20_${arch}.deb`);
@@ -999,6 +1002,7 @@ done
             }
         }
 
+        this.logger.ci(`Installing Unity ${unityVersion.toString()}...`);
         const args = ['install', '--version', unityVersion.version];
 
         if (unityVersion.changeset) {
@@ -1020,12 +1024,14 @@ done
 
         const output = await this.Exec(args, { showCommand: true, silent: false });
 
-        if (output.includes(`Error while installing an editor or a module from changeset`)) {
+        if (output.includes(`Error while installing an editor or a module from changeset`) ||
+            output.includes(`failed to download.`)) {
             throw new Error(`Failed to install Unity ${unityVersion.toString()}`);
         }
     }
 
     private async installUnity4x(unityVersion: UnityVersion): Promise<string> {
+        this.logger.ci(`Installing Unity ${unityVersion.toString()}...`);
         const hubInstallDir = await this.GetInstallPath();
 
         switch (process.platform) {

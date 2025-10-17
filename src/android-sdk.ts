@@ -98,9 +98,10 @@ async function getSdkManager(rootEditorPath: string): Promise<string> {
 
 async function getAndroidSdkPath(rootEditorPath: string, androidTargetSdk: number): Promise<string | undefined> {
     logger.ci(`Attempting to locate Android SDK Path...\n  > editorPath: ${rootEditorPath}\n  > androidTargetSdk: ${androidTargetSdk}`);
-    const sdkPath = await ResolveGlobToPath([rootEditorPath, '**', 'PlaybackEngines', 'AndroidPlayer', 'SDK', 'platforms', `android-${androidTargetSdk}/`]);
+    let sdkPath: string;
 
     try {
+        sdkPath = await ResolveGlobToPath([rootEditorPath, '**', 'PlaybackEngines', 'AndroidPlayer', 'SDK', 'platforms', `android-${androidTargetSdk}/`]);
         await fs.promises.access(sdkPath, fs.constants.R_OK);
     } catch (error) {
         logger.debug(`android-${androidTargetSdk} not installed`);

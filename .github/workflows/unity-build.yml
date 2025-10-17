@@ -21,7 +21,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-    timeout-minutes: 30
     env:
       UNITY_PROJECT_PATH: '' # Set from create-project step
       RUN_BUILD: '' # Set to true if the build pipeline package can be installed and used
@@ -30,19 +29,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24.x
-      - name: setup unity-cli
+      - name: Setup unity-cli
         shell: bash
         run: |
           npm ci
           npm run build
           npm run link
           unity-cli --version
-      - name: setup unity
+      - name: Setup Unity
         shell: bash
         run: |
           unity-cli hub-install --auto-update
           unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-target }}" --json
-      - name: verify UNITY_HUB_PATH and UNITY_EDITOR_PATH variables
+      - name: Verify UNITY_HUB_PATH and UNITY_EDITOR_PATH variables
         shell: bash
         run: |
           echo "UNITY_HUB_PATH: ${UNITY_HUB_PATH}"
@@ -58,16 +57,16 @@ jobs:
             echo "Error: UNITY_EDITOR_PATH is not set"
             exit 1
           fi
-      - name: activate license
+      - name: Activate License
         shell: bash
         run: |
           unity-cli activate-license --license personal --email "${{ secrets.UNITY_USERNAME }}" --password "${{ secrets.UNITY_PASSWORD }}"
-      - name: create unity project
+      - name: Create Unity Project
         shell: bash
         run: |
           unity-cli list-project-templates --unity-editor "${UNITY_EDITOR_PATH}" --json
           unity-cli create-project --name "Unity Project" --unity-editor "${UNITY_EDITOR_PATH}" --json
-      - name: verify UNITY_PROJECT_PATH variable
+      - name: Verify UNITY_PROJECT_PATH variable
         shell: bash
         run: |
           if [ -z "${UNITY_PROJECT_PATH}" ]; then
@@ -96,13 +95,14 @@ jobs:
           npm install -g openupm-cli
           cd "${UNITY_PROJECT_PATH}"
           openupm add com.utilities.buildpipeline
-      - name: Build project
+      - name: Build Project
         if: ${{ env.RUN_BUILD == 'true' }}
+        timeout-minutes: 60
         shell: bash
         run: |
           unity-cli run --log-name Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
-          unity-cli run --log-name Build -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity
-      - name: Uninstall editor
+          unity-cli run --log-name Build -quit -nographics -batchmode -buildTarget ${{ matrix.build-target }} -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity ${{ matrix.build-args }}
+      - name: Uninstall Editor
         shell: bash
         run: |
           if [ -z "${UNITY_EDITOR_PATH}" ]; then
@@ -110,12 +110,12 @@ jobs:
             exit 0
           fi
           unity-cli uninstall-unity --unity-editor "${UNITY_EDITOR_PATH}"
-      - name: Return license
+      - name: Return License
         if: always()
         shell: bash
         run: |
           unity-cli return-license --license personal
-      - name: upload logs
+      - name: Upload Logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
