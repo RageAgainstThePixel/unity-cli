@@ -1000,11 +1000,11 @@ done
             // install python3 for WebGL builds on older Unity versions
             if (['2019', '2020'].some(v => unityVersion.version.startsWith(v)) && modules.includes('webgl')) {
                 try {
-                    await Exec('python3', ['--version'], { silent: true, showCommand: false });
+                    await Exec('python', ['--version'], { silent: false, showCommand: true });
                 } catch {
-                    this.logger.info('Installing python3 for Unity...');
+                    this.logger.info('Installing python for Unity...');
                     await Exec('sudo', ['apt-get', 'update'], { silent: true, showCommand: true });
-                    await Exec('sudo', ['apt-get', 'install', 'python3'], { silent: true, showCommand: true });
+                    await Exec('sudo', ['apt-get', 'install', 'python'], { silent: true, showCommand: true });
                 }
             }
         }
