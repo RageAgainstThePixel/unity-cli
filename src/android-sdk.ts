@@ -113,7 +113,6 @@ async function getAndroidSdkPath(rootEditorPath: string, androidTargetSdk: numbe
 }
 
 async function execSdkManager(sdkManagerPath: string, javaPath: string, args: string[]): Promise<void> {
-    const acceptBuffer = Buffer.from(Array(10).fill('y').join('\n'), 'utf8');
     let output = '';
     let exitCode = 0;
 
@@ -127,7 +126,10 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
         exitCode = await new Promise<number>((resolve, reject) => {
             const child = spawn(sdkManagerPath, args, {
                 stdio: ['pipe', 'pipe', 'pipe'],
-                env: { ...process.env, JAVA_HOME: javaPath }
+                env: {
+                    ...process.env,
+                    JAVA_HOME: process.platform === 'win32' ? `"${javaPath}"` : javaPath
+                }
             });
             const sigintHandler = () => child.kill('SIGINT');
             const sigtermHandler = () => child.kill('SIGTERM');
@@ -142,22 +144,15 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
                 process.removeListener('SIGTERM', sigtermHandler);
             }
 
-            child.stdout.on('data', (data: Buffer) => {
-                const chunk = data.toString();
-                output += chunk;
-
-                if (output.includes('Accept? (y/N):')) {
-                    child.stdin?.write(acceptBuffer);
-                    output = '';
-                }
-
-                process.stdout.write(chunk);
-            });
-            child.stderr.on('data', (data: Buffer) => {
+            function handleDataStream(data: Buffer) {
                 const chunk = data.toString();
                 output += chunk;
                 process.stderr.write(chunk);
-            });
+            }
+            const acceptBuffer = Buffer.from(Array(10).fill('y').join(os.EOL), 'utf8');
+            child.stdin.write(acceptBuffer);
+            child.stdout.on('data', (data: Buffer) => handleDataStream(data));
+            child.stderr.on('data', (data: Buffer) => handleDataStream(data));
             child.on('error', (error) => {
                 removeListeners();
                 reject(error);
