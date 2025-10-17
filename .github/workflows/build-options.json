@@ -25,7 +25,7 @@
     {
       "os": "ubuntu-latest",
       "build-target": "WebGL",
-      "build-args": "-colorSpace Linear"
+      "build-args": "-colorSpace Gamma"
     },
     {
       "os": "ubuntu-latest",
