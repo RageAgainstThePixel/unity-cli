@@ -109,7 +109,7 @@ jobs:
         run: |
           # update AndroidTargetSdkVersion to 32 in ProjectSettings/ProjectSettings.asset
           sed -i 's/AndroidTargetSdkVersion: [0-9]*/AndroidTargetSdkVersion: 32/' "${UNITY_PROJECT_PATH}/ProjectSettings/ProjectSettings.asset"
-          unity-cli setup-unity -e "${UNITY_EDITOR_PATH}" -p "${UNITY_PROJECT_PATH}" -m android
+          unity-cli setup-unity -u ${{ matrix.unity-version }} -p "${UNITY_PROJECT_PATH}" -m android
       - name: Build Project
         if: ${{ env.RUN_BUILD == 'true' }}
         timeout-minutes: 60
