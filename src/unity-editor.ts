@@ -68,6 +68,25 @@ export class UnityEditor {
         }
 
         this.autoAddNoGraphics = this.version.satisfies('>2018.0.0');
+
+        const hubMetaDataPath = path.join(this.editorRootPath, 'metadata.hub.json');
+        if (!fs.existsSync(hubMetaDataPath)) {
+            const metadata = {
+                productName: `Unity ${this.version.version.toString()}`,
+                entitlements: [],
+                releaseStream: '',
+                isLTS: null
+            };
+            fs.writeFileSync(hubMetaDataPath, JSON.stringify(metadata), { encoding: 'utf-8' });
+        } else {
+            const metadataContent = fs.readFileSync(hubMetaDataPath, { encoding: 'utf-8' });
+            const metadata = JSON.parse(metadataContent);
+
+            if (!metadata.productName) {
+                metadata.productName = `Unity ${this.version.version.toString()}`;
+                fs.writeFileSync(hubMetaDataPath, JSON.stringify(metadata), { encoding: 'utf-8' });
+            }
+        }
     }
 
     /**
