@@ -63,21 +63,17 @@ export class UnityProject {
         this.projectVersionPath = path.join(this.projectPath, 'ProjectSettings', 'ProjectVersion.txt');
         fs.accessSync(this.projectVersionPath, fs.constants.R_OK);
         const versionText = fs.readFileSync(this.projectVersionPath, 'utf-8');
-        const match = versionText.match(/m_EditorVersionWithRevision: (?<version>(?:(?<major>\d+)\.)?(?:(?<minor>\d+)\.)?(?:(?<patch>\d+[abcfpx]\d+)\b))\s?(?:\((?<changeset>\w+)\))?/);
+        const match = versionText.match(/(?:m_EditorVersion|m_EditorVersionWithRevision): (?<version>(?:(?<major>\d+)\.)?(?:(?<minor>\d+)\.)?(?:(?<patch>\d+[abcfpx]\d+)\b))\s?(?:\((?<changeset>\w+)\))?/);
 
         if (!match) {
-            throw Error(`No version match found!`);
+            throw Error(`No version match found!\nProjectVersion.txt content:\n${versionText}`);
         }
 
         if (!match.groups?.version) {
-            throw Error(`No version group found!`);
+            throw Error(`No version group found!\nProjectVersion.txt content:\n${versionText}`);
         }
 
-        if (!match.groups?.changeset) {
-            throw Error(`No changeset group found!`);
-        }
-
-        this.version = new UnityVersion(match.groups.version, match.groups.changeset, undefined);
+        this.version = new UnityVersion(match.groups!.version!, match.groups?.changeset, undefined);
     }
 
     /**
