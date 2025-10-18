@@ -66,15 +66,15 @@ export class UnityProject {
         const match = versionText.match(/m_EditorVersionWithRevision: (?<version>(?:(?<major>\d+)\.)?(?:(?<minor>\d+)\.)?(?:(?<patch>\d+[abcfpx]\d+)\b))\s?(?:\((?<changeset>\w+)\))?/);
 
         if (!match) {
-            throw Error(`No version match found!`);
+            throw Error(`No version match found!\nProjectVersion.txt content:\n${versionText}`);
         }
 
         if (!match.groups?.version) {
-            throw Error(`No version group found!`);
+            throw Error(`No version group found!\nProjectVersion.txt content:\n${versionText}`);
         }
 
         if (!match.groups?.changeset) {
-            throw Error(`No changeset group found!`);
+            throw Error(`No changeset group found!\nProjectVersion.txt content:\n${versionText}`);
         }
 
         this.version = new UnityVersion(match.groups.version, match.groups.changeset, undefined);
