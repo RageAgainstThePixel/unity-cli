@@ -86,6 +86,7 @@ async function getSdkManager(rootEditorPath: string): Promise<string> {
         default:
             throw new Error(`Unsupported platform: ${process.platform}`);
     }
+
     const sdkmanagerPath = await ResolveGlobToPath(globPath);
 
     if (!sdkmanagerPath) {
@@ -103,7 +104,6 @@ async function getAndroidSdkPath(rootEditorPath: string, androidTargetSdk: numbe
 
     try {
         sdkPath = await ResolveGlobToPath([rootEditorPath, '**', 'PlaybackEngines', 'AndroidPlayer', 'SDK', 'platforms', `android-${androidTargetSdk}/`]);
-        await fs.promises.access(sdkPath, fs.constants.R_OK);
     } catch (error) {
         logger.debug(`android-${androidTargetSdk} not installed`);
         return undefined;
@@ -124,12 +124,12 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
     }
 
     try {
-        exitCode = await new Promise<number>((resolve, reject) => {
+        exitCode = await new Promise<number>(async (resolve, reject) => {
             let cmd = sdkManagerPath;
             let cmdArgs = args;
 
             if (process.platform === 'win32') {
-                if (!isProcessElevated()) {
+                if (!await isProcessElevated()) {
                     throw new Error('Android SDK installation requires elevated (administrator) privileges. Please rerun as Administrator.');
                 }
 
@@ -140,6 +140,7 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
             const child = spawn(cmd, cmdArgs, {
                 stdio: ['pipe', 'pipe', 'pipe'],
                 env: {
+                    ...process.env,
                     JAVA_HOME: process.platform === 'win32' ? `"${javaPath}"` : javaPath
                 }
             });

@@ -578,11 +578,11 @@ export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
  * Checks if the current process is running with elevated (administrator) privileges.
  * @returns True if the process is elevated, false otherwise.
  */
-export function isProcessElevated(): boolean {
+export async function isProcessElevated(): Promise<boolean> {
     if (process.platform !== 'win32') { return true; } // We can sudo easily on non-windows platforms
-    const probe = spawnSync('powershell.exe', [
+    const output = await Exec('powershell', [
         '-NoLogo', '-NoProfile', '-Command',
-        "[Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent().IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
-    ], { encoding: 'utf8' });
-    return probe.status === 0 && probe.stdout.trim().toLowerCase() === 'true';
+        "(New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
+    ], { silent: true, showCommand: false });
+    return output.trim().toLowerCase() === 'true';
 }

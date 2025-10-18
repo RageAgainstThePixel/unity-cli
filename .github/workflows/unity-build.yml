@@ -42,6 +42,18 @@ jobs:
         run: |
           unity-cli hub-install --auto-update
           unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-target }}" --json
+      - name: Clean Disk Space
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        shell: bash
+        run: |
+          echo "Disk space before cleanup:"
+          df -h
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/lib/android/sdk/ndk
+          sudo rm -rf /opt/ghc
+          echo "Disk space after cleanup:"
+          df -h
       - name: Verify UNITY_HUB_PATH and UNITY_EDITOR_PATH variables
         shell: bash
         run: |
