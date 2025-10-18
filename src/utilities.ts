@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as https from 'https';
 import * as readline from 'readline';
 import { glob } from 'glob';
-import { spawn, spawnSync } from 'child_process';
+import { spawn } from 'child_process';
 import { Logger, LogLevel } from './logging';
 
 const logger = Logger.instance;

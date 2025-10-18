@@ -20,7 +20,7 @@ const logger = Logger.instance;
  * @returns A promise that resolves when the check is complete.
  */
 export async function CheckAndroidSdkInstalled(editor: UnityEditor, projectPath: string): Promise<void> {
-    logger.ci(`Checking Android SDK installation for:\n  > Editor: ${editor.editorPath}\n  > Project: ${projectPath}`);
+    logger.ci(`Checking Android SDK installation for:\n  > Editor: ${editor.editorRootPath}\n  > Project: ${projectPath}`);
     let sdkPath = undefined;
     await createRepositoryCfg();
     const projectSettingsPath = path.join(projectPath, 'ProjectSettings/ProjectSettings.asset');
@@ -65,14 +65,14 @@ async function getJDKPath(editor: UnityEditor): Promise<string> {
     let jdkPath: string | undefined = undefined;
 
     if (editor.version.isGreaterThanOrEqualTo('2019.0.0')) {
-        logger.info('Using JDK bundled with Unity 2019+');
-        jdkPath = await ResolveGlobToPath([editor.editorRootPath, '**', 'AndroidPlayer', 'OpenJDK']);
+        logger.debug('Using JDK bundled with Unity 2019+');
+        jdkPath = await ResolveGlobToPath([editor.editorRootPath, '**', 'AndroidPlayer', 'OpenJDK/']);
 
         if (!jdkPath) {
             throw new Error(`Failed to resolve OpenJDK in ${editor.editorRootPath}`);
         }
     } else {
-        logger.info('Using system JDK for Unity versions prior to 2019');
+        logger.debug('Using system JDK for Unity versions prior to 2019');
         jdkPath = process.env.JAVA_HOME || process.env.JDK_HOME;
 
         if (!jdkPath) {
@@ -88,7 +88,7 @@ async function getJDKPath(editor: UnityEditor): Promise<string> {
 async function getSdkManager(editor: UnityEditor): Promise<string> {
     let globPath: string[] = [];
     if (editor.version.isGreaterThanOrEqualTo('2019.0.0')) {
-        logger.info('Using sdkmanager bundled with Unity 2019+');
+        logger.debug('Using sdkmanager bundled with Unity 2019+');
         switch (process.platform) {
             case 'darwin':
             case 'linux':
@@ -101,7 +101,7 @@ async function getSdkManager(editor: UnityEditor): Promise<string> {
                 throw new Error(`Unsupported platform: ${process.platform}`);
         }
     } else {
-        logger.info('Using system sdkmanager for Unity versions prior to 2019');
+        logger.debug('Using system sdkmanager for Unity versions prior to 2019');
         const systemSdkPath = process.env.ANDROID_SDK_ROOT || process.env.ANDROID_HOME;
 
         if (!systemSdkPath) {
@@ -133,20 +133,20 @@ async function getSdkManager(editor: UnityEditor): Promise<string> {
 }
 
 async function getAndroidSdkPath(editor: UnityEditor, androidTargetSdk: number): Promise<string | undefined> {
-    logger.ci(`Attempting to locate Android SDK Path...\n  > editorPath: ${editor.editorPath}\n  > androidTargetSdk: ${androidTargetSdk}`);
+    logger.ci(`Attempting to locate Android SDK Path...\n  > editorRootPath: ${editor.editorRootPath}\n  > androidTargetSdk: ${androidTargetSdk}`);
     let sdkPath: string;
 
     // if 2019+ test editor path, else use system android installation
     if (editor.version.isGreaterThanOrEqualTo('2019.0.0')) {
-        logger.info('Using Android SDK bundled with Unity 2019+');
+        logger.debug('Using Android SDK bundled with Unity 2019+');
         try {
-            sdkPath = await ResolveGlobToPath([editor.editorPath, '**', 'PlaybackEngines', 'AndroidPlayer', 'SDK', 'platforms', `android-${androidTargetSdk}/`]);
+            sdkPath = await ResolveGlobToPath([editor.editorRootPath, '**', 'PlaybackEngines', 'AndroidPlayer', 'SDK', 'platforms', `android-${androidTargetSdk}/`]);
         } catch (error) {
             logger.debug(`android-${androidTargetSdk} not installed`);
             return undefined;
         }
     } else { // fall back to system android installation
-        logger.info('Using system Android SDK for Unity versions prior to 2019');
+        logger.debug('Using system Android SDK for Unity versions prior to 2019');
         try {
             const systemSdkPath = process.env.ANDROID_SDK_ROOT || process.env.ANDROID_HOME;
 
@@ -162,7 +162,6 @@ async function getAndroidSdkPath(editor: UnityEditor, androidTargetSdk: number):
         }
     }
 
-    logger.ci(`Android sdkPath:\n  > "${sdkPath}"`);
     return sdkPath;
 }
 
