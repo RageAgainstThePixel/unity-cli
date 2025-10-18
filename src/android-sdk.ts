@@ -138,6 +138,7 @@ async function getAndroidSdkPath(editor: UnityEditor, androidTargetSdk: number):
 
     // if 2019+ test editor path, else use system android installation
     if (editor.version.isGreaterThanOrEqualTo('2019.0.0')) {
+        logger.info('Using Android SDK bundled with Unity 2019+');
         try {
             sdkPath = await ResolveGlobToPath([editor.editorPath, '**', 'PlaybackEngines', 'AndroidPlayer', 'SDK', 'platforms', `android-${androidTargetSdk}/`]);
         } catch (error) {
@@ -145,6 +146,7 @@ async function getAndroidSdkPath(editor: UnityEditor, androidTargetSdk: number):
             return undefined;
         }
     } else { // fall back to system android installation
+        logger.info('Using system Android SDK for Unity versions prior to 2019');
         try {
             const systemSdkPath = process.env.ANDROID_SDK_ROOT || process.env.ANDROID_HOME;
 

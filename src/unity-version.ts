@@ -42,13 +42,17 @@ export class UnityVersion {
     }
 
     static compare(a: UnityVersion, b: UnityVersion): number {
-        const baseComparison = compare(a.semVer, b.semVer, true);
+        const baseComparison = UnityVersion.baseCompare(a, b);
 
         if (baseComparison !== 0) {
             return baseComparison;
         }
 
         return UnityVersion.compareBuildMetadata(a.semVer, b.semVer);
+    }
+
+    static baseCompare(a: UnityVersion, b: UnityVersion): number {
+        return compare(a.semVer, b.semVer, true);
     }
 
     toString(): string {
@@ -109,22 +113,22 @@ export class UnityVersion {
 
     isGreaterThan(other: string | UnityVersion): boolean {
         const otherVersion = other instanceof UnityVersion ? other : new UnityVersion(other);
-        return UnityVersion.compare(this, otherVersion) > 0;
+        return UnityVersion.baseCompare(this, otherVersion) > 0;
     }
 
     isGreaterThanOrEqualTo(other: string | UnityVersion): boolean {
         const otherVersion = other instanceof UnityVersion ? other : new UnityVersion(other);
-        return UnityVersion.compare(this, otherVersion) >= 0;
+        return UnityVersion.baseCompare(this, otherVersion) >= 0;
     }
 
     isLessThan(other: string | UnityVersion): boolean {
         const otherVersion = other instanceof UnityVersion ? other : new UnityVersion(other);
-        return UnityVersion.compare(this, otherVersion) < 0;
+        return UnityVersion.baseCompare(this, otherVersion) < 0;
     }
 
     isLessThanOrEqualTo(other: string | UnityVersion): boolean {
         const otherVersion = other instanceof UnityVersion ? other : new UnityVersion(other);
-        return UnityVersion.compare(this, otherVersion) <= 0;
+        return UnityVersion.baseCompare(this, otherVersion) <= 0;
     }
 
     equals(other: UnityVersion): boolean {
