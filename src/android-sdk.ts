@@ -140,7 +140,7 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
             const child = spawn(cmd, cmdArgs, {
                 stdio: ['pipe', 'pipe', 'pipe'],
                 env: {
-                    JAVA_HOME: javaPath
+                    JAVA_HOME: process.platform === 'win32' ? `"${javaPath}"` : javaPath
                 }
             });
             const sigintHandler = () => child.kill('SIGINT');

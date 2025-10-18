@@ -582,8 +582,7 @@ export function isProcessElevated(): boolean {
     if (process.platform !== 'win32') { return true; }
     const probe = spawnSync('powershell.exe', [
         '-NoLogo', '-NoProfile', '-Command',
-        "[Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()"
-        + ".IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
+        "[Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent().IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
     ], { encoding: 'utf8' });
     return probe.status === 0 && probe.stdout.trim().toLowerCase() === 'true';
 }
