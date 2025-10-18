@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as https from 'https';
 import * as readline from 'readline';
 import { glob } from 'glob';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { Logger, LogLevel } from './logging';
 
 const logger = Logger.instance;
@@ -572,4 +572,17 @@ export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
     } catch (error) {
         logger.error(`Failed to kill child processes of pid ${procInfo.pid}:\n${JSON.stringify(error)}`);
     }
+}
+
+/**
+ * Checks if the current process is running with elevated (administrator) privileges.
+ * @returns True if the process is elevated, false otherwise.
+ */
+export function isProcessElevated(): boolean {
+    if (process.platform !== 'win32') { return true; } // We can sudo easily on non-windows platforms
+    const probe = spawnSync('powershell.exe', [
+        '-NoLogo', '-NoProfile', '-Command',
+        "[Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent().IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
+    ], { encoding: 'utf8' });
+    return probe.status === 0 && probe.stdout.trim().toLowerCase() === 'true';
 }

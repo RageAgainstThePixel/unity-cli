@@ -5,6 +5,7 @@ import { spawn } from 'child_process';
 import { Logger } from './logging';
 import { UnityEditor } from './unity-editor';
 import {
+    isProcessElevated,
     ReadFileContents,
     ResolveGlobToPath
 } from './utilities';
@@ -124,10 +125,21 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
 
     try {
         exitCode = await new Promise<number>((resolve, reject) => {
-            const child = spawn(sdkManagerPath, args, {
+            let cmd = sdkManagerPath;
+            let cmdArgs = args;
+
+            if (process.platform === 'win32') {
+                if (!isProcessElevated()) {
+                    throw new Error('Android SDK installation requires elevated (administrator) privileges. Please rerun as Administrator.');
+                }
+
+                cmd = 'cmd.exe';
+                cmdArgs = ['/c', sdkManagerPath, ...args];
+            }
+
+            const child = spawn(cmd, cmdArgs, {
                 stdio: ['pipe', 'pipe', 'pipe'],
                 env: {
-                    ...process.env,
                     JAVA_HOME: process.platform === 'win32' ? `"${javaPath}"` : javaPath
                 }
             });
@@ -147,7 +159,7 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
             function handleDataStream(data: Buffer) {
                 const chunk = data.toString();
                 output += chunk;
-                process.stderr.write(chunk);
+                process.stdout.write(chunk);
             }
             const acceptBuffer = Buffer.from(Array(10).fill('y').join(os.EOL), 'utf8');
             child.stdin.write(acceptBuffer);

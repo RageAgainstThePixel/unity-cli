@@ -38,6 +38,7 @@ jobs:
           unity-cli --version
       - name: Setup Unity
         shell: bash
+        timeout-minutes: 30
         run: |
           unity-cli hub-install --auto-update
           unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-target }}" --json
