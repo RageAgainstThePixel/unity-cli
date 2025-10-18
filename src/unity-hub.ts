@@ -92,17 +92,18 @@ export class UnityHub {
             'Unexpected error attempting to determine if executable file exists',
             'dri3 extension not supported',
             'Failed to connect to the bus:',
+            'Error: No modules found to install.',
             'Checking for beta autoupdate feature for deb/rpm distributions',
             'Found package-type: deb',
             'XPC error for connection com.apple.backupd.sandbox.xpc: Connection invalid',
-            'Error: No modules found to install.',
             'Failed to execute the command due the following, please see \'-- --headless help\' for assistance.',
-            'Invalid key: The GraphQL query at the field at',
-            'You have to request `id` or `_id` fields for all selection sets or create a custom `keys` config for `UnityReleaseLabel`.',
+            'Unable to move the cache: Access is denied.',
             'Entities without keys will be embedded directly on the parent entity. If this is intentional, create a `keys` config for `UnityReleaseLabel` that always returns null.',
             'https://bit.ly/2XbVrpR#15',
             'Interaction is not allowed with the Security Server." (-25308)',
             'Network service crashed, restarting service.',
+            'Invalid key: The GraphQL query at the field at',
+            'You have to request `id` or `_id` fields for all selection sets or create a custom `keys` config for `UnityReleaseLabel`.',
         ];
 
         try {
@@ -131,8 +132,7 @@ export class UnityHub {
                     try {
                         const chunk = data.toString();
                         const fullChunk = lineBuffer + chunk;
-                        const lines = fullChunk.split('\n') // split by newline
-                            .map(line => line.replace(/\r$/, '')) // remove trailing carriage return
+                        const lines = fullChunk.split(/\r?\n/) // split by newline
                             .filter(line => line.length > 0); // filter out empty lines
 
                         if (!chunk.endsWith('\n')) {
@@ -141,9 +141,7 @@ export class UnityHub {
                             lineBuffer = '';
                         }
 
-                        const outputLines = lines.filter(line => !ignoredLines.some(ignored => line.includes(ignored)));
-
-                        if (outputLines.includes(tasksCompleteMessage)) {
+                        if (lines.includes(tasksCompleteMessage)) {
                             isHubTaskComplete = true;
 
                             if (child?.pid) {
@@ -167,10 +165,10 @@ export class UnityHub {
                             }
                         }
 
-                        for (const line of outputLines) {
+                        for (const line of lines) {
                             output += `${line}\n`;
 
-                            if (!options.silent) {
+                            if (!options.silent && !ignoredLines.some(ignored => line.includes(ignored))) {
                                 process.stdout.write(`${line}\n`);
                             }
                         }
@@ -184,8 +182,7 @@ export class UnityHub {
                 function flushOutput(): void {
                     try {
                         if (lineBuffer.length > 0) {
-                            const lines = lineBuffer.split('\n') // split by newline
-                                .map(line => line.replace(/\r$/, '')) // remove trailing carriage return
+                            const lines = lineBuffer.split(/\r?\n/) // split by newline
                                 .filter(line => line.length > 0); // filter out empty lines
                             lineBuffer = '';
                             const outputLines = lines.filter(line => !ignoredLines.some(ignored => line.includes(ignored)));
@@ -254,7 +251,7 @@ export class UnityHub {
                     case 'No modules found to install.':
                         break;
                     default:
-                        throw new Error(`Failed to execute Unity Hub (exit code: ${exitCode}) ${errorMessage}`);
+                        throw new Error(`Failed to execute Unity Hub (exit code: ${exitCode}) ${errorMessage}\nOutput:\n${output}`);
                 }
             }
 
@@ -606,7 +603,7 @@ chmod -R 777 "$hubPath"`]);
         }
 
         try {
-            this.logger.info(`Checking installed modules for Unity ${unityVersion.toString()}...`);
+            this.logger.info(`Validating installed modules for Unity ${unityVersion.toString()}...`);
             const [installedModules, additionalModules] = await this.checkEditorModules(editorPath, unityVersion, modules);
 
             if (installedModules && installedModules.length > 0) {
@@ -616,6 +613,7 @@ chmod -R 777 "$hubPath"`]);
                     this.logger.info(`  > ${module}`);
                 }
             }
+
             if (additionalModules && additionalModules.length > 0) {
                 this.logger.info(`Additional Modules:`);
 
@@ -627,6 +625,8 @@ chmod -R 777 "$hubPath"`]);
             if (error.message.includes(`No modules found`)) {
                 await DeleteDirectory(editorPath);
                 await this.GetEditor(unityVersion, modules);
+            } else {
+                throw error;
             }
         }
 
@@ -931,8 +931,7 @@ done
         const editorRootPath = UnityEditor.GetEditorRootPath(editorPath);
         const modulesPath = path.join(editorRootPath, 'modules.json');
         this.logger.debug(`Editor Modules Manifest:\n  > "${modulesPath}"`);
-
-        const output = await this.Exec([...args, '--cm']);
+        const output = await this.Exec([...args, '--cm'], { showCommand: true, silent: false });
         const moduleMatches = output.matchAll(/Omitting module (?<module>.+) because it's already installed/g);
 
         if (moduleMatches) {
