@@ -36,6 +36,10 @@
       "build-target": "StandaloneWindows64"
     },
     {
+      "os": "windows-latest",
+      "build-target": "Android"
+    },
+    {
       "os": "macos-latest",
       "build-target": "StandaloneOSX"
     },
