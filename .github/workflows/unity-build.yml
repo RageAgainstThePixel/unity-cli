@@ -135,7 +135,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.run_id }}.${{ github.run_attempt }} ${{ matrix.unity-version }} ${{ matrix.build-target }} logs
+          name: ${{ github.run_id }}.${{ github.run_attempt }} ${{ matrix.os }} ${{ matrix.unity-version }} ${{ matrix.build-target }} logs
           retention-days: 1
           path: |
             ${{ github.workspace }}/**/*.log
