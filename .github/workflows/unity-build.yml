@@ -107,8 +107,8 @@ jobs:
         if: ${{ matrix.build-target == 'Android' }}
         shell: bash
         run: |
-          # update targetSdkVersion to 32 in ProjectSettings/PlayerSettings.asset
-          sed -i 's/targetSdkVersion: [0-9]*/targetSdkVersion: 32/' "${UNITY_PROJECT_PATH}/ProjectSettings/PlayerSettings.asset"
+          # update AndroidTargetSdkVersion to 32 in ProjectSettings/ProjectSettings.asset
+          sed -i 's/AndroidTargetSdkVersion: [0-9]*/AndroidTargetSdkVersion: 32/' "${UNITY_PROJECT_PATH}/ProjectSettings/ProjectSettings.asset"
       - name: Build Project
         if: ${{ env.RUN_BUILD == 'true' }}
         timeout-minutes: 60
