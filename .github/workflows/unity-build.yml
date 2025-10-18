@@ -25,6 +25,13 @@ jobs:
       UNITY_PROJECT_PATH: '' # Set from create-project step
       RUN_BUILD: '' # Set to true if the build pipeline package can be installed and used
     steps:
+      - name: Free Disk Space
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        uses: endersonmenezes/free-disk-space@v2
+        with:
+          remove_android: true
+          remove_dotnet: false
+          remove_tool_cache: false
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
@@ -42,13 +49,6 @@ jobs:
         run: |
           unity-cli hub-install --auto-update
           unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-target }}" --json
-      - name: Free Disk Space
-        if: ${{ matrix.os == 'ubuntu-latest' }}
-        uses: endersonmenezes/free-disk-space@v2
-        with:
-          remove_android: true
-          remove_dotnet: false
-          remove_tool_cache: false
       - name: Verify UNITY_HUB_PATH and UNITY_EDITOR_PATH variables
         shell: bash
         run: |
