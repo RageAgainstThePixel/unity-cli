@@ -67,7 +67,7 @@ export class UnityEditor {
             this.version = version;
         }
 
-        this.autoAddNoGraphics = this.version.satisfies('>2018.0.0');
+        this.autoAddNoGraphics = this.version.isGreaterThan('2018.0.0');
 
         const hubMetaDataPath = path.join(this.editorRootPath, 'metadata.hub.json');
         if (!fs.existsSync(hubMetaDataPath)) {

@@ -705,7 +705,7 @@ chmod -R 777 "$hubPath"`]);
                     editorPath = exactEditor.editorPath;
                 } else if (allowPartialMatches) {
                     // Fallback: semver satisfies
-                    const versionEditors = editors.filter(e => e.version && unityVersion.satisfies(e.version.version));
+                    const versionEditors = editors.filter(e => e.version && unityVersion.satisfies(e.version));
 
                     if (versionEditors.length === 0) {
                         return undefined;

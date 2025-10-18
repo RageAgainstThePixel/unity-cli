@@ -64,7 +64,7 @@ async function createRepositoryCfg(): Promise<void> {
 async function getJDKPath(editor: UnityEditor): Promise<string> {
     let jdkPath: string | undefined = undefined;
 
-    if (satisfies(editor.version.version, '>=2019.0.0')) {
+    if (editor.version.isGreaterThanOrEqualTo('2019.0.0')) {
         logger.info('Using JDK bundled with Unity 2019+');
         jdkPath = await ResolveGlobToPath([editor.editorRootPath, '**', 'AndroidPlayer', 'OpenJDK']);
 
@@ -73,7 +73,6 @@ async function getJDKPath(editor: UnityEditor): Promise<string> {
         }
     } else {
         logger.info('Using system JDK for Unity versions prior to 2019');
-        // use system JDK
         jdkPath = process.env.JAVA_HOME || process.env.JDK_HOME;
 
         if (!jdkPath) {
@@ -88,7 +87,7 @@ async function getJDKPath(editor: UnityEditor): Promise<string> {
 
 async function getSdkManager(editor: UnityEditor): Promise<string> {
     let globPath: string[] = [];
-    if (satisfies(editor.version.version, '>=2019.0.0')) {
+    if (editor.version.isGreaterThanOrEqualTo('2019.0.0')) {
         logger.info('Using sdkmanager bundled with Unity 2019+');
         switch (process.platform) {
             case 'darwin':
@@ -138,7 +137,7 @@ async function getAndroidSdkPath(editor: UnityEditor, androidTargetSdk: number):
     let sdkPath: string;
 
     // if 2019+ test editor path, else use system android installation
-    if (satisfies(editor.version.version, '>=2019.0.0')) {
+    if (editor.version.isGreaterThanOrEqualTo('2019.0.0')) {
         try {
             sdkPath = await ResolveGlobToPath([editor.editorPath, '**', 'PlaybackEngines', 'AndroidPlayer', 'SDK', 'platforms', `android-${androidTargetSdk}/`]);
         } catch (error) {
@@ -185,7 +184,6 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
             cmdEnv.JAVA_HOME = process.platform === 'win32' ? `"${javaPath}"` : javaPath;
             cmdEnv.JDK_HOME = process.platform === 'win32' ? `"${javaPath}"` : javaPath;
             cmdEnv.SKIP_JDK_VERSION_CHECK = 'true';
-            cmdEnv.JAVA_TOOL_OPTIONS = '--enable-native-access=ALL-UNNAMED';
             let cmd = sdkManagerPath;
             let cmdArgs = args;
 

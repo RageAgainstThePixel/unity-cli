@@ -103,14 +103,28 @@ export class UnityVersion {
         return this;
     }
 
-    satisfies(version: string): boolean {
-        const coercedVersion = coerce(version);
+    satisfies(version: UnityVersion): boolean {
+        return satisfies(version.semVer, `^${this.semVer.version}`);
+    }
 
-        if (!coercedVersion) {
-            throw new Error(`Invalid version to check against: ${version}`);
-        }
+    isGreaterThan(other: string | UnityVersion): boolean {
+        const otherVersion = other instanceof UnityVersion ? other : new UnityVersion(other);
+        return UnityVersion.compare(this, otherVersion) > 0;
+    }
 
-        return satisfies(coercedVersion, `^${this.semVer.version}`);
+    isGreaterThanOrEqualTo(other: string | UnityVersion): boolean {
+        const otherVersion = other instanceof UnityVersion ? other : new UnityVersion(other);
+        return UnityVersion.compare(this, otherVersion) >= 0;
+    }
+
+    isLessThan(other: string | UnityVersion): boolean {
+        const otherVersion = other instanceof UnityVersion ? other : new UnityVersion(other);
+        return UnityVersion.compare(this, otherVersion) < 0;
+    }
+
+    isLessThanOrEqualTo(other: string | UnityVersion): boolean {
+        const otherVersion = other instanceof UnityVersion ? other : new UnityVersion(other);
+        return UnityVersion.compare(this, otherVersion) <= 0;
     }
 
     equals(other: UnityVersion): boolean {
