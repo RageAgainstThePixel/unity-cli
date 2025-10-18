@@ -83,8 +83,15 @@ export class UnityEditor {
             const metadata = JSON.parse(metadataContent);
 
             if (!metadata.productName) {
-                metadata.productName = `Unity ${this.version.version.toString()}`;
-                fs.writeFileSync(hubMetaDataPath, JSON.stringify(metadata), { encoding: 'utf-8' });
+                // projectName must be the first property
+                const newMetadata: any = {
+                    productName: `Unity ${this.version.version.toString()}`
+                };
+                Object.keys(metadata).forEach(key => {
+                    if (key === 'productName') { return; }
+                    newMetadata[key] = metadata[key];
+                });
+                fs.writeFileSync(hubMetaDataPath, JSON.stringify(newMetadata), { encoding: 'utf-8' });
             }
         }
     }

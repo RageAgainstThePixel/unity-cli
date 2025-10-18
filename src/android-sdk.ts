@@ -9,6 +9,7 @@ import {
     ReadFileContents,
     ResolveGlobToPath
 } from './utilities';
+import { satisfies } from 'semver';
 
 const logger = Logger.instance;
 
@@ -63,7 +64,7 @@ async function createRepositoryCfg(): Promise<void> {
 async function getJDKPath(editor: UnityEditor): Promise<string> {
     let jdkPath: string | undefined = undefined;
 
-    if (editor.version.satisfies('>=2019')) {
+    if (satisfies(editor.version.version, '>=2019.0.0')) {
         logger.info('Using JDK bundled with Unity 2019+');
         jdkPath = await ResolveGlobToPath([editor.editorRootPath, '**', 'AndroidPlayer', 'OpenJDK']);
 
@@ -87,7 +88,7 @@ async function getJDKPath(editor: UnityEditor): Promise<string> {
 
 async function getSdkManager(editor: UnityEditor): Promise<string> {
     let globPath: string[] = [];
-    if (editor.version.satisfies('>=2019')) {
+    if (satisfies(editor.version.version, '>=2019.0.0')) {
         logger.info('Using sdkmanager bundled with Unity 2019+');
         switch (process.platform) {
             case 'darwin':
@@ -132,14 +133,14 @@ async function getSdkManager(editor: UnityEditor): Promise<string> {
     return sdkmanagerPath;
 }
 
-async function getAndroidSdkPath(unityEditor: UnityEditor, androidTargetSdk: number): Promise<string | undefined> {
-    logger.ci(`Attempting to locate Android SDK Path...\n  > editorPath: ${unityEditor.editorPath}\n  > androidTargetSdk: ${androidTargetSdk}`);
+async function getAndroidSdkPath(editor: UnityEditor, androidTargetSdk: number): Promise<string | undefined> {
+    logger.ci(`Attempting to locate Android SDK Path...\n  > editorPath: ${editor.editorPath}\n  > androidTargetSdk: ${androidTargetSdk}`);
     let sdkPath: string;
 
     // if 2019+ test editor path, else use system android installation
-    if (unityEditor.version.satisfies('>=2019')) {
+    if (satisfies(editor.version.version, '>=2019.0.0')) {
         try {
-            sdkPath = await ResolveGlobToPath([unityEditor.editorPath, '**', 'PlaybackEngines', 'AndroidPlayer', 'SDK', 'platforms', `android-${androidTargetSdk}/`]);
+            sdkPath = await ResolveGlobToPath([editor.editorPath, '**', 'PlaybackEngines', 'AndroidPlayer', 'SDK', 'platforms', `android-${androidTargetSdk}/`]);
         } catch (error) {
             logger.debug(`android-${androidTargetSdk} not installed`);
             return undefined;
