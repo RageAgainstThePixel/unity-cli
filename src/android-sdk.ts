@@ -123,16 +123,16 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
         fs.accessSync(sdkManagerPath, fs.constants.R_OK | fs.constants.X_OK);
     }
 
+    if (process.platform === 'win32' && !await isProcessElevated()) {
+        throw new Error('Android SDK installation requires elevated (administrator) privileges. Please rerun as Administrator.');
+    }
+
     try {
         exitCode = await new Promise<number>(async (resolve, reject) => {
             let cmd = sdkManagerPath;
             let cmdArgs = args;
 
             if (process.platform === 'win32') {
-                if (!await isProcessElevated()) {
-                    throw new Error('Android SDK installation requires elevated (administrator) privileges. Please rerun as Administrator.');
-                }
-
                 cmd = 'cmd.exe';
                 cmdArgs = ['/c', sdkManagerPath, ...args];
             }
