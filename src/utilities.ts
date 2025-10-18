@@ -43,9 +43,8 @@ export async function PromptForSecretInput(prompt: string): Promise<string> {
             // mask the previous line with asterisks in place of each character
             readline.moveCursor(process.stdout, 0, -1);
             readline.clearLine(process.stdout, 0);
-            process.stdout.write(prompt + '*'.repeat(input.length) + '\n');
+            process.stdout.write(`${prompt + '*'.repeat(input.length)}\n`);
             rl.close();
-            console.log(); // Don't use logger. Move to next line after input.
             resolve(input);
         });
     });
