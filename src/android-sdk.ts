@@ -87,8 +87,8 @@ async function getJDKPath(editor: UnityEditor): Promise<string> {
 
 async function getSdkManager(editor: UnityEditor): Promise<string> {
     let globPath: string[] = [];
-    if (editor.version.range('>=2019.0.0')) {
-        logger.debug('Using sdkmanager bundled with Unity 2019 && 2020');
+    if (editor.version.range('>=2019.0.0 <2021.0.0')) {
+        logger.debug('Using sdkmanager bundled with Unity 2019 and 2020');
         switch (process.platform) {
             case 'darwin':
             case 'linux':
@@ -100,7 +100,7 @@ async function getSdkManager(editor: UnityEditor): Promise<string> {
             default:
                 throw new Error(`Unsupported platform: ${process.platform}`);
         }
-    } else if (editor.version.range('>2021.0.0')) {
+    } else if (editor.version.range('>=2021.0.0')) {
         logger.debug('Using cmdline-tools sdkmanager bundled with Unity 2021+');
         switch (process.platform) {
             case 'darwin':
