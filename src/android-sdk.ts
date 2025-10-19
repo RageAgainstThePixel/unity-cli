@@ -92,10 +92,10 @@ async function getSdkManager(editor: UnityEditor): Promise<string> {
         switch (process.platform) {
             case 'darwin':
             case 'linux':
-                globPath = [editor.editorRootPath, '**', 'AndroidPlayer', '**', 'sdkmanager'];
+                globPath = [editor.editorRootPath, '**', 'AndroidPlayer', '**', 'cmdline-tools', '**', 'sdkmanager'];
                 break;
             case 'win32':
-                globPath = [editor.editorRootPath, '**', 'AndroidPlayer', '**', 'sdkmanager.bat'];
+                globPath = [editor.editorRootPath, '**', 'AndroidPlayer', '**', 'cmdline-tools', '**', 'sdkmanager.bat'];
                 break;
             default:
                 throw new Error(`Unsupported platform: ${process.platform}`);
@@ -182,8 +182,8 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
     try {
         exitCode = await new Promise<number>(async (resolve, reject) => {
             let cmdEnv = { ...process.env };
-            cmdEnv.JAVA_HOME = process.platform === 'win32' ? `"${javaPath}"` : javaPath;
-            cmdEnv.JDK_HOME = process.platform === 'win32' ? `"${javaPath}"` : javaPath;
+            cmdEnv.JAVA_HOME = javaPath;
+            cmdEnv.JDK_HOME = javaPath;
             cmdEnv.SKIP_JDK_VERSION_CHECK = 'true';
             let cmd = sdkManagerPath;
             let cmdArgs = args;
