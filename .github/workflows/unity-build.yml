@@ -25,6 +25,13 @@ jobs:
       UNITY_PROJECT_PATH: '' # Set from create-project step
       RUN_BUILD: '' # Set to true if the build pipeline package can be installed and used
     steps:
+      - name: Free Disk Space
+        if: ${{ matrix.os == 'ubuntu-latest' && matrix.unity-version == '6000.2' }}
+        uses: endersonmenezes/free-disk-space@v2
+        with:
+          remove_android: true
+          remove_dotnet: false
+          remove_tool_cache: false
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v4
         with:
@@ -96,6 +103,14 @@ jobs:
           npm install -g openupm-cli
           cd "${UNITY_PROJECT_PATH}"
           openupm add com.utilities.buildpipeline
+      - name: Update Android Target Sdk Version
+        if: ${{ matrix.build-target == 'Android' }}
+        shell: bash
+        run: |
+          # update AndroidTargetSdkVersion to 32 in ProjectSettings/ProjectSettings.asset
+          sed -i 's/AndroidTargetSdkVersion: [0-9]*/AndroidTargetSdkVersion: 32/' "${UNITY_PROJECT_PATH}/ProjectSettings/ProjectSettings.asset"
+          # ensure android dependencies are installed
+          unity-cli setup-unity -p "${UNITY_PROJECT_PATH}" -m android
       - name: Build Project
         if: ${{ env.RUN_BUILD == 'true' }}
         timeout-minutes: 60
@@ -120,7 +135,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.run_id }}.${{ github.run_attempt }} ${{ matrix.unity-version }} ${{ matrix.build-target }} logs
+          name: ${{ github.run_id }}.${{ github.run_attempt }} ${{ matrix.os }} ${{ matrix.unity-version }} ${{ matrix.build-target }} logs
           retention-days: 1
           path: |
             ${{ github.workspace }}/**/*.log

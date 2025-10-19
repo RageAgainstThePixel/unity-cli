@@ -225,7 +225,14 @@ program.command('setup-unity')
             process.exit(1);
         }
 
-        const unityVersion = unityProject?.version ?? new UnityVersion(options.unityVersion, options.changeset, options.arch);
+        let unityVersion: UnityVersion;
+
+        if (options.unityVersion) {
+            unityVersion = new UnityVersion(options.unityVersion, options.changeset, options.arch);
+        } else {
+            unityVersion = unityProject!.version;
+        }
+
         const modules: string[] = options.modules ? options.modules.split(/[ ,]+/).filter(Boolean) : [];
         const buildTargets: string[] = options.buildTargets ? options.buildTargets.split(/[ ,]+/).filter(Boolean) : [];
         const moduleBuildTargetMap = UnityHub.GetPlatformTargetModuleMap();
@@ -262,7 +269,7 @@ program.command('setup-unity')
             output['UNITY_PROJECT_PATH'] = unityProject.projectPath;
 
             if (modules.includes('android')) {
-                await CheckAndroidSdkInstalled(unityEditor.editorPath, unityProject.projectPath);
+                await CheckAndroidSdkInstalled(unityEditor, unityProject.projectPath);
             }
         }
 

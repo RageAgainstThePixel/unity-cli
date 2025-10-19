@@ -9,20 +9,20 @@ import {
     ReadFileContents,
     ResolveGlobToPath
 } from './utilities';
+import { satisfies } from 'semver';
 
 const logger = Logger.instance;
 
 /**
  * Checks if the required Android SDK is installed for the given Unity Editor and Project.
- * @param editorPath The path to the Unity Editor executable.
+ * @param editor The UnityEditor instance.
  * @param projectPath The path to the Unity project.
  * @returns A promise that resolves when the check is complete.
  */
-export async function CheckAndroidSdkInstalled(editorPath: string, projectPath: string): Promise<void> {
-    logger.ci(`Checking Android SDK installation for:\n  > Editor: ${editorPath}\n  > Project: ${projectPath}`);
+export async function CheckAndroidSdkInstalled(editor: UnityEditor, projectPath: string): Promise<void> {
+    logger.ci(`Checking Android SDK installation for:\n  > Editor: ${editor.editorRootPath}\n  > Project: ${projectPath}`);
     let sdkPath = undefined;
     await createRepositoryCfg();
-    const rootEditorPath = UnityEditor.GetEditorRootPath(editorPath);
     const projectSettingsPath = path.join(projectPath, 'ProjectSettings/ProjectSettings.asset');
     const projectSettingsContent = await ReadFileContents(projectSettingsPath);
     const matchResult = projectSettingsContent.match(/(?<=AndroidTargetSdkVersion: )\d+/);
@@ -31,7 +31,7 @@ export async function CheckAndroidSdkInstalled(editorPath: string, projectPath: 
 
     if (androidTargetSdk === undefined || androidTargetSdk === 0) { return; }
 
-    sdkPath = await getAndroidSdkPath(rootEditorPath, androidTargetSdk);
+    sdkPath = await getAndroidSdkPath(editor, androidTargetSdk);
 
     if (sdkPath) {
         logger.ci(`Target Android SDK android-${androidTargetSdk} Installed in:\n  > "${sdkPath}"`);
@@ -39,15 +39,15 @@ export async function CheckAndroidSdkInstalled(editorPath: string, projectPath: 
     }
 
     logger.info(`Installing Android Target SDK:\n  > android-${androidTargetSdk}`);
-    const sdkManagerPath = await getSdkManager(rootEditorPath);
-    const javaSdk = await getJDKPath(rootEditorPath);
+    const sdkManagerPath = await getSdkManager(editor);
+    const javaSdk = await getJDKPath(editor);
     await execSdkManager(sdkManagerPath, javaSdk, ['--licenses']);
     await execSdkManager(sdkManagerPath, javaSdk, ['--update']);
     await execSdkManager(sdkManagerPath, javaSdk, ['platform-tools', `platforms;android-${androidTargetSdk}`]);
-    sdkPath = await getAndroidSdkPath(rootEditorPath, androidTargetSdk);
+    sdkPath = await getAndroidSdkPath(editor, androidTargetSdk);
 
     if (!sdkPath) {
-        throw new Error(`Failed to install android-${androidTargetSdk} in ${rootEditorPath}`);
+        throw new Error(`Failed to install android-${androidTargetSdk} in ${editor.editorRootPath}`);
     }
 
     logger.ci(`Target Android SDK Installed in:\n  > "${sdkPath}"`);
@@ -61,11 +61,23 @@ async function createRepositoryCfg(): Promise<void> {
     await fileHandle.close();
 }
 
-async function getJDKPath(rootEditorPath: string): Promise<string> {
-    const jdkPath = await ResolveGlobToPath([rootEditorPath, '**', 'AndroidPlayer', 'OpenJDK']);
+async function getJDKPath(editor: UnityEditor): Promise<string> {
+    let jdkPath: string | undefined = undefined;
 
-    if (!jdkPath) {
-        throw new Error(`Failed to resolve OpenJDK in ${rootEditorPath}`);
+    if (editor.version.isGreaterThanOrEqualTo('2019.0.0')) {
+        logger.debug('Using JDK bundled with Unity 2019+');
+        jdkPath = await ResolveGlobToPath([editor.editorRootPath, '**', 'AndroidPlayer', 'OpenJDK/']);
+
+        if (!jdkPath) {
+            throw new Error(`Failed to resolve OpenJDK in ${editor.editorRootPath}`);
+        }
+    } else {
+        logger.debug('Using system JDK for Unity versions prior to 2019');
+        jdkPath = process.env.JAVA_HOME || process.env.JDK_HOME;
+
+        if (!jdkPath) {
+            throw new Error('JDK installation not found: No system JAVA_HOME or JDK_HOME defined');
+        }
     }
 
     await fs.promises.access(jdkPath, fs.constants.R_OK);
@@ -73,19 +85,55 @@ async function getJDKPath(rootEditorPath: string): Promise<string> {
     return jdkPath;
 }
 
-async function getSdkManager(rootEditorPath: string): Promise<string> {
+async function getSdkManager(editor: UnityEditor): Promise<string> {
     let globPath: string[] = [];
-    switch (process.platform) {
-        case 'darwin':
-        case 'linux':
-            globPath = [rootEditorPath, '**', 'AndroidPlayer', '**', 'sdkmanager'];
-            break;
-        case 'win32':
-            globPath = [rootEditorPath, '**', 'AndroidPlayer', '**', 'sdkmanager.bat'];
-            break;
-        default:
-            throw new Error(`Unsupported platform: ${process.platform}`);
+    if (editor.version.range('>=2019.0.0 <2021.0.0')) {
+        logger.debug('Using sdkmanager bundled with Unity 2019 and 2020');
+        switch (process.platform) {
+            case 'darwin':
+            case 'linux':
+                globPath = [editor.editorRootPath, '**', 'AndroidPlayer', '**', 'sdkmanager'];
+                break;
+            case 'win32':
+                globPath = [editor.editorRootPath, '**', 'AndroidPlayer', '**', 'sdkmanager.bat'];
+                break;
+            default:
+                throw new Error(`Unsupported platform: ${process.platform}`);
+        }
+    } else if (editor.version.range('>=2021.0.0')) {
+        logger.debug('Using cmdline-tools sdkmanager bundled with Unity 2021+');
+        switch (process.platform) {
+            case 'darwin':
+            case 'linux':
+                globPath = [editor.editorRootPath, '**', 'AndroidPlayer', '**', 'cmdline-tools', '**', 'sdkmanager'];
+                break;
+            case 'win32':
+                globPath = [editor.editorRootPath, '**', 'AndroidPlayer', '**', 'cmdline-tools', '**', 'sdkmanager.bat'];
+                break;
+            default:
+                throw new Error(`Unsupported platform: ${process.platform}`);
+        }
+    } else {
+        logger.debug('Using system sdkmanager');
+        const systemSdkPath = process.env.ANDROID_SDK_ROOT || process.env.ANDROID_HOME;
+
+        if (!systemSdkPath) {
+            throw new Error('Android installation not found: No system ANDROID_SDK_ROOT or ANDROID_HOME defined');
+        }
+
+        switch (process.platform) {
+            case 'darwin':
+            case 'linux':
+                globPath = [systemSdkPath, 'cmdline-tools', 'latest', 'bin', 'sdkmanager'];
+                break;
+            case 'win32':
+                globPath = [systemSdkPath, 'cmdline-tools', 'latest', 'bin', 'sdkmanager.bat'];
+                break;
+            default:
+                throw new Error(`Unsupported platform: ${process.platform}`);
+        }
     }
+
     const sdkmanagerPath = await ResolveGlobToPath(globPath);
 
     if (!sdkmanagerPath) {
@@ -97,19 +145,36 @@ async function getSdkManager(rootEditorPath: string): Promise<string> {
     return sdkmanagerPath;
 }
 
-async function getAndroidSdkPath(rootEditorPath: string, androidTargetSdk: number): Promise<string | undefined> {
-    logger.ci(`Attempting to locate Android SDK Path...\n  > editorPath: ${rootEditorPath}\n  > androidTargetSdk: ${androidTargetSdk}`);
+async function getAndroidSdkPath(editor: UnityEditor, androidTargetSdk: number): Promise<string | undefined> {
+    logger.ci(`Attempting to locate Android SDK Path...\n  > editorRootPath: ${editor.editorRootPath}\n  > androidTargetSdk: ${androidTargetSdk}`);
     let sdkPath: string;
 
-    try {
-        sdkPath = await ResolveGlobToPath([rootEditorPath, '**', 'PlaybackEngines', 'AndroidPlayer', 'SDK', 'platforms', `android-${androidTargetSdk}/`]);
-        await fs.promises.access(sdkPath, fs.constants.R_OK);
-    } catch (error) {
-        logger.debug(`android-${androidTargetSdk} not installed`);
-        return undefined;
+    // if 2019+ test editor path, else use system android installation
+    if (editor.version.isGreaterThanOrEqualTo('2019.0.0')) {
+        logger.debug('Using Android SDK bundled with Unity 2019+');
+        try {
+            sdkPath = await ResolveGlobToPath([editor.editorRootPath, '**', 'PlaybackEngines', 'AndroidPlayer', 'SDK', 'platforms', `android-${androidTargetSdk}/`]);
+        } catch (error) {
+            logger.debug(`android-${androidTargetSdk} not installed`);
+            return undefined;
+        }
+    } else { // fall back to system android installation
+        logger.debug('Using system Android SDK for Unity versions prior to 2019');
+        try {
+            const systemSdkPath = process.env.ANDROID_SDK_ROOT || process.env.ANDROID_HOME;
+
+            if (!systemSdkPath) {
+                logger.debug('Android installation not found: No system ANDROID_SDK_ROOT or ANDROID_HOME defined');
+                return undefined;
+            }
+
+            sdkPath = await ResolveGlobToPath([systemSdkPath, 'platforms', `android-${androidTargetSdk}/`]);
+        } catch (error) {
+            logger.debug(`android-${androidTargetSdk} not installed`);
+            return undefined;
+        }
     }
 
-    logger.ci(`Android sdkPath:\n  > "${sdkPath}"`);
     return sdkPath;
 }
 
@@ -123,25 +188,27 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
         fs.accessSync(sdkManagerPath, fs.constants.R_OK | fs.constants.X_OK);
     }
 
+    if (process.platform === 'win32' && !await isProcessElevated()) {
+        throw new Error('Android SDK installation requires elevated (administrator) privileges. Please rerun as Administrator.');
+    }
+
     try {
-        exitCode = await new Promise<number>((resolve, reject) => {
+        exitCode = await new Promise<number>(async (resolve, reject) => {
+            let cmdEnv = { ...process.env };
+            cmdEnv.JAVA_HOME = javaPath;
+            cmdEnv.JDK_HOME = javaPath;
+            cmdEnv.SKIP_JDK_VERSION_CHECK = 'true';
             let cmd = sdkManagerPath;
             let cmdArgs = args;
 
             if (process.platform === 'win32') {
-                if (!isProcessElevated()) {
-                    throw new Error('Android SDK installation requires elevated (administrator) privileges. Please rerun as Administrator.');
-                }
-
                 cmd = 'cmd.exe';
                 cmdArgs = ['/c', sdkManagerPath, ...args];
             }
 
             const child = spawn(cmd, cmdArgs, {
                 stdio: ['pipe', 'pipe', 'pipe'],
-                env: {
-                    JAVA_HOME: process.platform === 'win32' ? `"${javaPath}"` : javaPath
-                }
+                env: cmdEnv
             });
             const sigintHandler = () => child.kill('SIGINT');
             const sigtermHandler = () => child.kill('SIGTERM');

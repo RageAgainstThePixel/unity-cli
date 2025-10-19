@@ -1,6 +1,8 @@
 import * as os from 'os';
 import { Logger } from './logging';
 import {
+    Range,
+    RangeOptions,
     SemVer,
     coerce,
     compare,
@@ -42,13 +44,17 @@ export class UnityVersion {
     }
 
     static compare(a: UnityVersion, b: UnityVersion): number {
-        const baseComparison = compare(a.semVer, b.semVer, true);
+        const baseComparison = UnityVersion.baseCompare(a, b);
 
         if (baseComparison !== 0) {
             return baseComparison;
         }
 
         return UnityVersion.compareBuildMetadata(a.semVer, b.semVer);
+    }
+
+    static baseCompare(a: UnityVersion, b: UnityVersion): number {
+        return compare(a.semVer, b.semVer, true);
     }
 
     toString(): string {
@@ -103,14 +109,32 @@ export class UnityVersion {
         return this;
     }
 
-    satisfies(version: string): boolean {
-        const coercedVersion = coerce(version);
+    satisfies(version: UnityVersion): boolean {
+        return satisfies(version.semVer, `^${this.semVer.version}`);
+    }
 
-        if (!coercedVersion) {
-            throw new Error(`Invalid version to check against: ${version}`);
-        }
+    isGreaterThan(other: string | UnityVersion): boolean {
+        const otherVersion = other instanceof UnityVersion ? other : new UnityVersion(other);
+        return UnityVersion.baseCompare(this, otherVersion) > 0;
+    }
 
-        return satisfies(coercedVersion, `^${this.semVer.version}`);
+    isGreaterThanOrEqualTo(other: string | UnityVersion): boolean {
+        const otherVersion = other instanceof UnityVersion ? other : new UnityVersion(other);
+        return UnityVersion.baseCompare(this, otherVersion) >= 0;
+    }
+
+    isLessThan(other: string | UnityVersion): boolean {
+        const otherVersion = other instanceof UnityVersion ? other : new UnityVersion(other);
+        return UnityVersion.baseCompare(this, otherVersion) < 0;
+    }
+
+    isLessThanOrEqualTo(other: string | UnityVersion): boolean {
+        const otherVersion = other instanceof UnityVersion ? other : new UnityVersion(other);
+        return UnityVersion.baseCompare(this, otherVersion) <= 0;
+    }
+
+    range(string: string | Range, options: RangeOptions | undefined = undefined): boolean {
+        return satisfies(this.semVer, string, options);
     }
 
     equals(other: UnityVersion): boolean {

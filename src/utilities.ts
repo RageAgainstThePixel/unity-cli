@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as https from 'https';
 import * as readline from 'readline';
 import { glob } from 'glob';
-import { spawn, spawnSync } from 'child_process';
+import { spawn } from 'child_process';
 import { Logger, LogLevel } from './logging';
 
 const logger = Logger.instance;
@@ -43,9 +43,8 @@ export async function PromptForSecretInput(prompt: string): Promise<string> {
             // mask the previous line with asterisks in place of each character
             readline.moveCursor(process.stdout, 0, -1);
             readline.clearLine(process.stdout, 0);
-            process.stdout.write(prompt + '*'.repeat(input.length) + '\n');
+            process.stdout.write(`${prompt + '*'.repeat(input.length)}\n`);
             rl.close();
-            console.log(); // Don't use logger. Move to next line after input.
             resolve(input);
         });
     });
@@ -578,11 +577,11 @@ export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
  * Checks if the current process is running with elevated (administrator) privileges.
  * @returns True if the process is elevated, false otherwise.
  */
-export function isProcessElevated(): boolean {
+export async function isProcessElevated(): Promise<boolean> {
     if (process.platform !== 'win32') { return true; } // We can sudo easily on non-windows platforms
-    const probe = spawnSync('powershell.exe', [
+    const output = await Exec('powershell', [
         '-NoLogo', '-NoProfile', '-Command',
-        "[Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent().IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
-    ], { encoding: 'utf8' });
-    return probe.status === 0 && probe.stdout.trim().toLowerCase() === 'true';
+        "(New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
+    ], { silent: true, showCommand: false });
+    return output.trim().toLowerCase() === 'true';
 }

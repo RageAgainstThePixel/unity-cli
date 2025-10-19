@@ -1,7 +1,6 @@
 import { UnityRelease } from '@rage-against-the-pixel/unity-releases-api';
 import { UnityHub } from '../src/unity-hub';
 import { UnityVersion } from '../src/unity-version';
-import { Logger, LogLevel } from '../src/logging';
 
 jest.setTimeout(30000); // UnityHub operations can be slow
 

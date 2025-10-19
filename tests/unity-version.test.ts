@@ -1,4 +1,3 @@
-import { UnityHub } from '../src/unity-hub';
 import { UnityVersion } from '../src/unity-version';
 
 describe('UnityVersion', () => {
@@ -61,5 +60,34 @@ describe('UnityVersion', () => {
         expect(match.version).toBe('2021.3.2b1');
         const older = new UnityVersion('2021.3.2a1');
         expect(UnityVersion.compare(match, older)).toBeGreaterThan(0);
+    });
+
+    it('evaluates caret compatibility with satisfies', () => {
+        const baseline = new UnityVersion('2021.3.5f1');
+        const compatible = new UnityVersion('2021.4.0f1');
+        const incompatible = new UnityVersion('2022.1.0f1');
+
+        expect(baseline.satisfies(compatible)).toBe(true);
+        expect(baseline.satisfies(incompatible)).toBe(false);
+    });
+
+    it('evaluates semantic version ranges using range()', () => {
+        const version = new UnityVersion('2021.3.5f1');
+
+        expect(version.range('>=2021.3.0 <2021.4.0')).toBe(true);
+        expect(version.range('<2021.3.0')).toBe(false);
+    });
+
+    it('compares versions with helper predicates', () => {
+        const older = new UnityVersion('2021.3.5f1');
+        const newer = new UnityVersion('2021.3.6f1');
+
+        expect(newer.isGreaterThan(older)).toBe(true);
+        expect(newer.isGreaterThan('2021.3.5f1')).toBe(true);
+        expect(newer.isGreaterThanOrEqualTo('2021.3.6f1')).toBe(true);
+        expect(older.isGreaterThanOrEqualTo(newer)).toBe(false);
+        expect(older.isLessThan(newer)).toBe(true);
+        expect(older.isLessThanOrEqualTo('2021.3.5f1')).toBe(true);
+        expect(newer.isLessThanOrEqualTo(older)).toBe(false);
     });
 });
