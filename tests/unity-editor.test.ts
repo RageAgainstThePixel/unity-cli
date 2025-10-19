@@ -30,6 +30,10 @@ describe('UnityEditor', () => {
         expect(Array.isArray(editors)).toBe(true);
 
         for (const editor of editors) {
+            if (editor.version.isLessThan('2018.0.0')) {
+                continue; // Skip versions that do not support templates
+            }
+
             const template = editor.GetTemplatePath(pattern);
             expect(template).toBeDefined();
         }

@@ -1,6 +1,8 @@
 import * as os from 'os';
 import { Logger } from './logging';
 import {
+    Range,
+    RangeOptions,
     SemVer,
     coerce,
     compare,
@@ -129,6 +131,10 @@ export class UnityVersion {
     isLessThanOrEqualTo(other: string | UnityVersion): boolean {
         const otherVersion = other instanceof UnityVersion ? other : new UnityVersion(other);
         return UnityVersion.baseCompare(this, otherVersion) <= 0;
+    }
+
+    range(string: string | Range, options: RangeOptions | undefined = undefined): boolean {
+        return satisfies(this.semVer, string, options);
     }
 
     equals(other: UnityVersion): boolean {

@@ -87,8 +87,21 @@ async function getJDKPath(editor: UnityEditor): Promise<string> {
 
 async function getSdkManager(editor: UnityEditor): Promise<string> {
     let globPath: string[] = [];
-    if (editor.version.isGreaterThanOrEqualTo('2019.0.0')) {
-        logger.debug('Using sdkmanager bundled with Unity 2019+');
+    if (editor.version.range('>=2019.0.0')) {
+        logger.debug('Using sdkmanager bundled with Unity 2019 && 2020');
+        switch (process.platform) {
+            case 'darwin':
+            case 'linux':
+                globPath = [editor.editorRootPath, '**', 'AndroidPlayer', '**', 'sdkmanager'];
+                break;
+            case 'win32':
+                globPath = [editor.editorRootPath, '**', 'AndroidPlayer', '**', 'sdkmanager.bat'];
+                break;
+            default:
+                throw new Error(`Unsupported platform: ${process.platform}`);
+        }
+    } else if (editor.version.range('>2021.0.0')) {
+        logger.debug('Using cmdline-tools sdkmanager bundled with Unity 2021+');
         switch (process.platform) {
             case 'darwin':
             case 'linux':
@@ -101,7 +114,7 @@ async function getSdkManager(editor: UnityEditor): Promise<string> {
                 throw new Error(`Unsupported platform: ${process.platform}`);
         }
     } else {
-        logger.debug('Using system sdkmanager for Unity versions prior to 2019');
+        logger.debug('Using system sdkmanager');
         const systemSdkPath = process.env.ANDROID_SDK_ROOT || process.env.ANDROID_HOME;
 
         if (!systemSdkPath) {

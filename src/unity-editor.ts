@@ -110,12 +110,12 @@ export class UnityEditor {
             return undefined;
         }
 
-        // Build a regex to match the template name and version
-        // e.g., com.unity.template.3d(-cross-platform)?.*[0-9]+\.[0-9]+\.[0-9]+\.tgz
-        // Accepts either a full regex or a simple string
+        // Build a regex to match the template name and optional version suffix
+        // e.g., com.unity.template.3d(-cross-platform)?.*
+        // Supports files (.tgz / .tar.gz) and legacy folder templates without a suffix.
         let regex: RegExp;
         try {
-            regex = new RegExp(`^${template}.*[0-9]+\\.[0-9]+\\.[0-9]+\\.tgz$`);
+            regex = new RegExp(`^${template}(?:[-.].*)?(?:\.tgz|\.tar\.gz)?$`);
         } catch (e) {
             throw new Error(`Invalid template regex: ${template}`);
         }
@@ -145,10 +145,13 @@ export class UnityEditor {
      * @returns An array of available template file names.
      */
     public GetAvailableTemplates(): string[] {
+        if (this.version.isLessThan('2018.0.0')) {
+            this.logger.warn(`Unity version ${this.version.toString()} does not support project templates.`);
+            return [];
+        }
+
         let templateDir: string;
         let editorRoot = path.dirname(this.editorPath);
-
-        const templates: string[] = [];
 
         if (process.platform === 'darwin') {
             templateDir = path.join(path.dirname(editorRoot), 'Resources', 'PackageManager', 'ProjectTemplates');
@@ -158,17 +161,20 @@ export class UnityEditor {
 
         this.logger.debug(`Looking for templates in: ${templateDir}`);
 
-        // Check if the template directory exists
         if (!fs.existsSync(templateDir) ||
             !fs.statSync(templateDir).isDirectory()) {
-            return templates;
+            return [];
         }
 
-        // Find all .tgz packages in the template directory
-        const packages = fs.readdirSync(templateDir)
-            .filter(f => f.endsWith('.tgz'))
-            .map(f => path.join(templateDir, f));
-        templates.push(...packages);
+        const templates: string[] = [];
+        const entries = fs.readdirSync(templateDir, { withFileTypes: true });
+
+        for (const entry of entries) {
+            if (entry.isFile() && (entry.name.endsWith('.tgz') || entry.name.endsWith('.tar.gz'))) {
+                templates.push(path.join(templateDir, entry.name));
+            }
+        }
+
         this.logger.debug(`Found ${templates.length} templates:\n${templates.map(t => `  - ${t}`).join('\n')}`);
         return templates;
     }
