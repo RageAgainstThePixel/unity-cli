@@ -244,7 +244,7 @@ export class UnityHub {
                 return await this.Exec(args);
             }
 
-            if (exitCode > 0 || output.includes('Error')) {
+            if (exitCode > 0) {
                 const error = output.match(/Error(?: given)?:\s*(.+)/);
                 const errorMessage = error && error[1] ? error[1] : 'Unknown Error';
 
