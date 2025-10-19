@@ -27,6 +27,7 @@ import {
     UnityRelease,
     Release
 } from '@rage-against-the-pixel/unity-releases-api';
+import { get } from 'http';
 
 interface ReleaseInfo {
     unityRelease: UnityRelease;
@@ -251,7 +252,8 @@ export class UnityHub {
                     case 'No modules found to install.':
                         break;
                     default:
-                        throw new Error(`Failed to execute Unity Hub (exit code: ${exitCode}) ${errorMessage}\nOutput:\n${output}`);
+                        this.logger.debug(output);
+                        throw new Error(`Failed to execute Unity Hub (exit code: ${exitCode}) ${errorMessage}`);
                 }
             }
 
@@ -812,6 +814,7 @@ done
         //  - otherwise "YYYY"
         const fullUnityVersionPattern = /^\d{1,4}\.\d+\.\d+[abcfpx]\d+$/;
         let version: string;
+
         if (fullUnityVersionPattern.test(unityVersion.version)) {
             version = unityVersion.version;
         } else {
@@ -851,40 +854,58 @@ done
         };
 
         this.logger.debug(`Get Unity Release: ${JSON.stringify(request, null, 2)}`);
-        const { data, error } = await releasesClient.api.Release.getUnityReleases(request);
 
-        if (error) {
-            throw new Error(`Failed to get Unity releases: ${JSON.stringify(error, null, 2)}`);
+        async function getRelease() {
+            const { data, error } = await releasesClient.api.Release.getUnityReleases(request);
+
+            if (error) {
+                throw new Error(`Failed to get Unity releases: ${JSON.stringify(error, null, 2)}`);
+            }
+
+            if (!data || !data.results || data.results.length === 0) {
+                throw new Error(`No Unity releases found for version: ${version}`);
+            }
+
+            // Filter to stable 'f' releases only unless the user explicitly asked for a pre-release
+            const isExplicitPrerelease = /[abcpx]$/.test(unityVersion.version) || /[abcpx]/.test(unityVersion.version);
+            const releases: ReleaseInfo[] = (data.results || [])
+                .filter(release => isExplicitPrerelease || release.version.includes('f'))
+                .map(release => ({
+                    unityRelease: release,
+                    unityVersion: new UnityVersion(release.version, release.shortRevision, unityVersion.architecture)
+                }));
+
+            if (releases.length === 0) {
+                throw new Error(`No suitable Unity releases (stable) found for version: ${version}`);
+            }
+
+            releases.sort((a, b) => UnityVersion.compare(b.unityVersion, a.unityVersion));
+
+            Logger.instance.debug(`Found ${releases.length} matching Unity releases for version: ${version}`);
+            releases.forEach(release => {
+                Logger.instance.debug(` - ${release.unityRelease.version} (${release.unityRelease.shortRevision}) - ${release.unityRelease.recommended}`);
+            });
+            const latest = releases[0]!.unityRelease!;
+            return latest;
         }
 
-        if (!data || !data.results || data.results.length === 0) {
-            throw new Error(`No Unity releases found for version: ${version}`);
+        try {
+            return await getRelease();
+        } catch (error) {
+            if (error instanceof Error && error.message.includes('fetch failed')) {
+                // Transient network error, retry once
+                return await getRelease();
+            }
+
+            throw new Error(`Failed to get Unity releases: ${error}`);
         }
-
-        // Filter to stable 'f' releases only unless the user explicitly asked for a pre-release
-        const isExplicitPrerelease = /[abcpx]$/.test(unityVersion.version) || /[abcpx]/.test(unityVersion.version);
-        const releases: ReleaseInfo[] = (data.results || [])
-            .filter(release => isExplicitPrerelease || release.version.includes('f'))
-            .map(release => ({
-                unityRelease: release,
-                unityVersion: new UnityVersion(release.version, release.shortRevision, unityVersion.architecture)
-            }));
-
-        if (releases.length === 0) {
-            throw new Error(`No suitable Unity releases (stable) found for version: ${version}`);
-        }
-
-        releases.sort((a, b) => UnityVersion.compare(b.unityVersion, a.unityVersion));
-
-        this.logger.debug(`Found ${releases.length} matching Unity releases for version: ${version}`);
-        releases.forEach(release => {
-            this.logger.debug(` - ${release.unityRelease.version} (${release.unityRelease.shortRevision}) - ${release.unityRelease.recommended}`);
-        });
-        const latest = releases[0]!.unityRelease!;
-        return latest;
     }
 
     private async fallbackVersionLookup(unityVersion: UnityVersion): Promise<UnityVersion> {
+        if (!unityVersion.isFullyQualified()) {
+            throw new Error(`Cannot lookup changeset for non-fully-qualified Unity version: ${unityVersion.toString()}`);
+        }
+
         const url = `https://unity.com/releases/editor/whats-new/${unityVersion.version}`;
         this.logger.debug(`Fetching release page: "${url}"`);
         let response: Response;
