@@ -578,7 +578,7 @@ program.command('open-project')
         }
     });
 
-program.commandsGroup("Unity Package Manager:")
+program.commandsGroup("Unity Package Manager:");
 
 program.command('sign-package')
     .description('Sign a Unity package.')
