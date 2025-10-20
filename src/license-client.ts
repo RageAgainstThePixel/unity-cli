@@ -322,15 +322,18 @@ export class LicensingClient {
     /**
      * Activates a Unity license.
      * @param options The activation options including license type, services config, serial, username, and password.
+     * @param skipEntitlementCheck Whether to skip the entitlement check.
      * @returns A promise that resolves when the license is activated.
      * @throws Error if activation fails or required parameters are missing.
      */
-    public async Activate(options: ActivateOptions): Promise<void> {
-        let activeLicenses = await this.GetActiveEntitlements();
+    public async Activate(options: ActivateOptions, skipEntitlementCheck: boolean = false): Promise<void> {
+        if (!skipEntitlementCheck) {
+            let activeLicenses = await this.GetActiveEntitlements();
 
-        if (activeLicenses.includes(options.licenseType)) {
-            this.logger.info(`License of type '${options.licenseType}' is already active, skipping activation`);
-            return;
+            if (activeLicenses.includes(options.licenseType)) {
+                this.logger.info(`License of type '${options.licenseType}' is already active, skipping activation`);
+                return;
+            }
         }
 
         switch (options.licenseType) {

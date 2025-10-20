@@ -23,7 +23,7 @@ jobs:
         id: setup-jobs
         with:
           build-options: ./.github/workflows/build-options.json
-          group-by: 'unity-version'
+          group-by: unity-version
     outputs:
       jobs: ${{ steps.setup-jobs.outputs.jobs }}
   validate:
@@ -40,3 +40,12 @@ jobs:
     uses: ./.github/workflows/unity-build.yml
     with:
       matrix: ${{ toJSON(matrix.jobs.matrix) }}
+  timeline:
+    needs: [setup, validate]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: Kesin11/actions-timeline@c2f474758e8e9ac6f37ec64a6442dead7fd1dad2 # v2.2.5
+        continue-on-error: true
