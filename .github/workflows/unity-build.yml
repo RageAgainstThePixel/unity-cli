@@ -116,8 +116,8 @@ jobs:
         timeout-minutes: 60
         shell: bash
         run: |
-          unity-cli run --log-name Validate -quit -nographics -batchmode -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
-          unity-cli run --log-name Build -quit -nographics -batchmode -buildTarget ${{ matrix.build-target }} -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity ${{ matrix.build-args }}
+          unity-cli run --log-name Validate -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
+          unity-cli run --log-name Build -buildTarget ${{ matrix.build-target }} -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity ${{ matrix.build-args }}
       - name: Uninstall Editor
         shell: bash
         run: |
