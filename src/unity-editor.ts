@@ -19,7 +19,7 @@ import {
 
 export interface EditorCommand {
     args: string[];
-    projectPath?: string;
+    projectPath?: string | undefined;
 }
 
 export class UnityEditor {
@@ -212,22 +212,42 @@ export class UnityEditor {
                 throw Error('No command arguments provided for Unity execution');
             }
 
-            if (!command.args.includes(`-automated`)) {
-                command.args.push(`-automated`);
-            }
-
-            if (!command.args.includes(`-batchmode`)) {
-                command.args.push(`-batchmode`);
-            }
-
             if (this.autoAddNoGraphics &&
                 !command.args.includes(`-nographics`) &&
                 !command.args.includes(`-force-graphics`)) {
-                command.args.push(`-nographics`);
+                command.args.unshift(`-nographics`);
+            }
+
+            if (!command.args.includes(`-batchmode`)) {
+                command.args.unshift(`-batchmode`);
+            }
+
+            if (!command.args.includes(`-automated`)) {
+                command.args.unshift(`-automated`);
             }
 
             if (!command.args.includes('-logFile')) {
-                command.args.push('-logFile', this.GenerateLogFilePath(command.projectPath));
+                command.args.unshift('-logFile', this.GenerateLogFilePath(command.projectPath));
+            } else {
+                const existingLogPath = GetArgumentValueAsString('-logFile', command.args);
+                command.args.splice(command.args.indexOf(existingLogPath) - 1, 2);
+                command.args.unshift('-logFile', existingLogPath);
+            }
+
+            if (command.projectPath) {
+                if (!command.args.includes('-projectPath')) {
+                    command.args.unshift('-projectPath', command.projectPath);
+                } else {
+                    const existingPath = GetArgumentValueAsString('-projectPath', command.args);
+
+                    if (existingPath !== command.projectPath) {
+                        throw Error(`Conflicting project paths provided. Argument: "${existingPath}", Command: "${command.projectPath}"`);
+                    }
+
+                    // Ensure -projectPath is the first argument
+                    command.args.splice(command.args.indexOf(existingPath) - 1, 2);
+                    command.args.unshift('-projectPath', command.projectPath);
+                }
             }
 
             const logPath: string = GetArgumentValueAsString('-logFile', command.args);

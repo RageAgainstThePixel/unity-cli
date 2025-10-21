@@ -351,7 +351,7 @@ program.commandsGroup('Unity Editor:');
 program.command('run')
     .description('Run command line args directly to the Unity Editor.')
     .option('--unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, --unity-project or the UNITY_EDITOR_PATH environment variable must be set.')
-    .option('--unity-project <unityProject>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
+    .option('--unity-project <unityProject>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable will be used, otherwise no project will be specified.')
     .option('--log-name <logName>', 'The name of the log file.')
     .option('--verbose', 'Enable verbose logging.')
     .allowUnknownOption(true)
@@ -367,20 +367,38 @@ program.command('run')
         const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH || undefined;
 
         if (editorPath && editorPath.length > 0) {
-            unityEditor = new UnityEditor(editorPath);
+            try {
+                unityEditor = new UnityEditor(editorPath);
+            } catch {
+                Logger.instance.error(`The specified Unity Editor path is invalid: ${editorPath}. Use --unity-editor or set the UNITY_EDITOR_PATH environment variable.`);
+                process.exit(1);
+            }
         }
 
-        const projectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || process.cwd();
-        const unityProject = await UnityProject.GetProject(projectPath);
+        let unityProject: UnityProject | undefined;
+        const projectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || undefined;
 
-        if (!unityProject) {
-            Logger.instance.error(`The specified path is not a valid Unity project: ${projectPath}`);
-            process.exit(1);
-        }
+        if (projectPath && projectPath.length > 0) {
+            try {
+                unityProject = await UnityProject.GetProject(projectPath);
 
-        if (!unityEditor) {
-            const unityHub = new UnityHub();
-            unityEditor = await unityHub.GetEditor(unityProject.version);
+                if (!unityProject) {
+                    throw Error('Invalid Unity project path.');
+                }
+            } catch (error) {
+                Logger.instance.error(`The specified path is not a valid Unity project: ${projectPath}. Use --unity-project or set the UNITY_PROJECT_PATH environment variable.`);
+                process.exit(1);
+            }
+
+            if (!unityEditor) {
+                const unityHub = new UnityHub();
+                try {
+                    unityEditor = await unityHub.GetEditor(unityProject.version);
+                } catch {
+                    Logger.instance.error(`Could not find Unity Editor version ${unityProject.version.version} installed for project at ${unityProject.projectPath}. Please specify the editor path with --unity-editor or set the UNITY_EDITOR_PATH environment variable.`);
+                    process.exit(1);
+                }
+            }
         }
 
         if (!unityEditor) {
@@ -389,11 +407,12 @@ program.command('run')
         }
 
         if (!args.includes('-logFile')) {
-            const logPath = unityEditor.GenerateLogFilePath(unityProject.projectPath, options.logName);
+            const logPath = unityEditor.GenerateLogFilePath(unityProject?.projectPath, options.logName);
             args.push('-logFile', logPath);
         }
 
         await unityEditor.Run({
+            projectPath: unityProject?.projectPath,
             args: [...args]
         });
         process.exit(0);
