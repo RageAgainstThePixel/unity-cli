@@ -212,18 +212,6 @@ export class UnityEditor {
                 throw Error('No command arguments provided for Unity execution');
             }
 
-            if (command.projectPath) {
-                if (!command.args.includes('-projectPath')) {
-                    command.args.unshift('-projectPath', command.projectPath);
-                } else {
-                    const existingPath = GetArgumentValueAsString('-projectPath', command.args);
-
-                    if (existingPath !== command.projectPath) {
-                        throw Error(`Conflicting project paths provided. Argument: "${existingPath}", Command: "${command.projectPath}"`);
-                    }
-                }
-            }
-
             if (!command.args.includes('-logFile')) {
                 command.args.unshift('-logFile', this.GenerateLogFilePath(command.projectPath));
             }
@@ -240,6 +228,22 @@ export class UnityEditor {
 
             if (!command.args.includes(`-automated`)) {
                 command.args.unshift(`-automated`);
+            }
+
+            if (command.projectPath) {
+                if (!command.args.includes('-projectPath')) {
+                    command.args.unshift('-projectPath', command.projectPath);
+                } else {
+                    const existingPath = GetArgumentValueAsString('-projectPath', command.args);
+
+                    if (existingPath !== command.projectPath) {
+                        throw Error(`Conflicting project paths provided. Argument: "${existingPath}", Command: "${command.projectPath}"`);
+                    }
+
+                    // Ensure -projectPath is the first argument
+                    command.args.splice(command.args.indexOf(existingPath), 1);
+                    command.args.unshift('-projectPath', command.projectPath);
+                }
             }
 
             const logPath: string = GetArgumentValueAsString('-logFile', command.args);
