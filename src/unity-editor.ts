@@ -212,8 +212,16 @@ export class UnityEditor {
                 throw Error('No command arguments provided for Unity execution');
             }
 
-            if (command.projectPath && !command.args.includes('-projectPath')) {
-                command.args.unshift('-projectPath', command.projectPath);
+            if (command.projectPath) {
+                if (!command.args.includes('-projectPath')) {
+                    command.args.unshift('-projectPath', command.projectPath);
+                } else {
+                    const existingPath = GetArgumentValueAsString('-projectPath', command.args);
+
+                    if (existingPath !== command.projectPath) {
+                        throw Error(`Conflicting project paths provided. Argument: "${existingPath}", Command: "${command.projectPath}"`);
+                    }
+                }
             }
 
             if (!command.args.includes('-logFile')) {
