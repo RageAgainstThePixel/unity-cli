@@ -351,7 +351,7 @@ program.commandsGroup('Unity Editor:');
 program.command('run')
     .description('Run command line args directly to the Unity Editor.')
     .option('--unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, --unity-project or the UNITY_EDITOR_PATH environment variable must be set.')
-    .option('--unity-project <unityProject>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
+    .option('--unity-project <unityProject>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable will be used, otherwise no project will be specified.')
     .option('--log-name <logName>', 'The name of the log file.')
     .option('--verbose', 'Enable verbose logging.')
     .allowUnknownOption(true)
@@ -370,17 +370,16 @@ program.command('run')
             unityEditor = new UnityEditor(editorPath);
         }
 
-        const projectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || process.cwd();
-        const unityProject = await UnityProject.GetProject(projectPath);
+        let unityProject: UnityProject | undefined;
+        const projectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || undefined;
 
-        if (!unityProject) {
-            Logger.instance.error(`The specified path is not a valid Unity project: ${projectPath}`);
-            process.exit(1);
-        }
+        if (projectPath && projectPath.length > 0) {
+            unityProject = await UnityProject.GetProject(projectPath);
 
-        if (!unityEditor) {
-            const unityHub = new UnityHub();
-            unityEditor = await unityHub.GetEditor(unityProject.version);
+            if (!unityEditor) {
+                const unityHub = new UnityHub();
+                unityEditor = await unityHub.GetEditor(unityProject.version);
+            }
         }
 
         if (!unityEditor) {
@@ -389,11 +388,12 @@ program.command('run')
         }
 
         if (!args.includes('-logFile')) {
-            const logPath = unityEditor.GenerateLogFilePath(unityProject.projectPath, options.logName);
+            const logPath = unityEditor.GenerateLogFilePath(unityProject?.projectPath, options.logName);
             args.push('-logFile', logPath);
         }
 
         await unityEditor.Run({
+            projectPath: unityProject?.projectPath,
             args: [...args]
         });
         process.exit(0);
