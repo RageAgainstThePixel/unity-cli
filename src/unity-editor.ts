@@ -110,12 +110,13 @@ export class UnityEditor {
             return undefined;
         }
 
-        // Build a regex to match the template name and optional version suffix
-        // e.g., com.unity.template.3d(-cross-platform)?.*
-        // Supports files (.tgz / .tar.gz) and legacy folder templates without a suffix.
+        // Build a regex to match the template name and an optional numeric version suffix
+        // Example input: com.unity.template.3d(-cross-platform)?.*
+        // Example match: com.unity.template.3d-cross-platform-1.2.3 or com.unity.template.3d-1.2.3.tgz
         let regex: RegExp;
         try {
-            regex = new RegExp(`^${template}(?:[-.].*)?(?:\.tgz|\.tar\.gz)?$`);
+            // allow either no suffix, the numeric suffix, then required .tgz or .tar.gz
+            regex = new RegExp(`^${template}(?:-\\d+\\.\\d+\\.\\d+)?(?:\\.tgz|\\.tar\\.gz)$`);
         } catch (e) {
             throw new Error(`Invalid template regex: ${template}`);
         }
@@ -145,7 +146,7 @@ export class UnityEditor {
      * @returns An array of available template file names.
      */
     public GetAvailableTemplates(): string[] {
-        if (this.version.isLessThan('2018.0.0')) {
+        if (this.version.isLessThan('2019.0.0')) {
             this.logger.warn(`Unity version ${this.version.toString()} does not support project templates.`);
             return [];
         }
