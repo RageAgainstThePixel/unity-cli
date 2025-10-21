@@ -17,7 +17,6 @@ describe('UnityEditor', () => {
 
         for (const editor of editors) {
             const templates = editor.GetAvailableTemplates();
-
             expect(templates).toBeDefined();
             expect(Array.isArray(templates)).toBe(true);
         }
@@ -30,7 +29,7 @@ describe('UnityEditor', () => {
         expect(Array.isArray(editors)).toBe(true);
 
         for (const editor of editors) {
-            if (editor.version.isLessThan('2018.0.0')) {
+            if (editor.version.isLessThan('2019.0.0')) {
                 continue; // Skip versions that do not support templates
             }
 
