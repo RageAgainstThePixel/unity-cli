@@ -367,23 +367,37 @@ program.command('run')
         const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH || undefined;
 
         if (editorPath && editorPath.length > 0) {
-            unityEditor = new UnityEditor(editorPath);
+            try {
+                unityEditor = new UnityEditor(editorPath);
+            } catch {
+                Logger.instance.error(`The specified Unity Editor path is invalid: ${editorPath}. Use --unity-editor or set the UNITY_EDITOR_PATH environment variable.`);
+                process.exit(1);
+            }
         }
 
         let unityProject: UnityProject | undefined;
         const projectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || undefined;
 
         if (projectPath && projectPath.length > 0) {
-            unityProject = await UnityProject.GetProject(projectPath);
+            try {
+                unityProject = await UnityProject.GetProject(projectPath);
 
-            if (!unityProject) {
-                Logger.instance.error(`The specified path is not a valid Unity project: ${projectPath}. Use --unity-project or UNITY_PROJECT_PATH environment variable.`);
+                if (!unityProject) {
+                    throw Error('Invalid Unity project path.');
+                }
+            } catch (error) {
+                Logger.instance.error(`The specified path is not a valid Unity project: ${projectPath}. Use --unity-project or set the UNITY_PROJECT_PATH environment variable.`);
                 process.exit(1);
             }
 
             if (!unityEditor) {
                 const unityHub = new UnityHub();
-                unityEditor = await unityHub.GetEditor(unityProject.version);
+                try {
+                    unityEditor = await unityHub.GetEditor(unityProject.version);
+                } catch {
+                    Logger.instance.error(`Could not find Unity Editor version ${unityProject.version.version} installed for project at ${unityProject.projectPath}. Please specify the editor path with --unity-editor or set the UNITY_EDITOR_PATH environment variable.`);
+                    process.exit(1);
+                }
             }
         }
 
