@@ -20,6 +20,14 @@ export class Logger {
         }
     }
 
+    private printLine(message: any, lineColor: string | undefined, optionalParams: any[] = []): void {
+        if (lineColor && lineColor.length > 0) {
+            process.stdout.write(`${lineColor}${message}\x1b[0m\n`, ...optionalParams);
+        } else {
+            process.stdout.write(`${message}\n`, ...optionalParams);
+        }
+    }
+
     /**
      * Logs a message to the console.
      * @param level The log level for this message.
@@ -50,15 +58,14 @@ export class Logger {
                     break;
                 }
                 default: {
-                    const clear = '\x1b[0m';
-                    const stringColor: string = {
+                    const stringColor: string | undefined = {
                         [LogLevel.DEBUG]: '\x1b[35m', // Purple
-                        [LogLevel.INFO]: clear,       // No color / White
-                        [LogLevel.CI]: clear,         // No color / White
+                        [LogLevel.INFO]: undefined,   // No color / White
+                        [LogLevel.CI]: undefined,     // No color / White
                         [LogLevel.WARN]: '\x1b[33m',  // Yellow
                         [LogLevel.ERROR]: '\x1b[31m', // Red
-                    }[level] || clear;                // Default to no color / White
-                    process.stdout.write(`${stringColor}${message}${clear}\n`, ...optionalParams);
+                    }[level] || undefined;            // Default to no color / White
+                    this.printLine(message, stringColor, optionalParams);
                     break;
                 }
             }
@@ -75,11 +82,9 @@ export class Logger {
                 // then print the rest of the lines inside the group in cyan color
                 const firstLine: string = message.toString().split('\n')[0];
                 const restLines: string[] = message.toString().split('\n').slice(1);
-                const cyan = '\x1b[36m';
-                const clear = '\x1b[0m';
                 process.stdout.write(`::group::${firstLine}\n`, ...optionalParams);
                 restLines.forEach(line => {
-                    process.stdout.write(`${cyan}${line}${clear}\n`, ...optionalParams);
+                    this.printLine(line, '\x1b[36m', ...optionalParams);
                 });
                 break;
             }
