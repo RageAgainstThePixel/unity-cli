@@ -110,12 +110,11 @@ export class UnityEditor {
             return undefined;
         }
 
-        // Build a regex to match the template name and an optional numeric version suffix
+        // Build a regex to match the template name, an optional numeric version suffix, and required file extension
         // Example input: com.unity.template.3d(-cross-platform)?.*
-        // Example match: com.unity.template.3d-cross-platform-1.2.3 or com.unity.template.3d-1.2.3.tgz
+        // Example match: com.unity.template.3d-cross-platform-1.2.3.tar.gz or com.unity.template.3d-1.2.3.tgz
         let regex: RegExp;
         try {
-            // allow either no suffix, the numeric suffix, then required .tgz or .tar.gz
             regex = new RegExp(`^${template}(?:-\\d+\\.\\d+\\.\\d+)?(?:\\.tgz|\\.tar\\.gz)$`);
         } catch (e) {
             throw new Error(`Invalid template regex: ${template}`);
