@@ -376,6 +376,11 @@ program.command('run')
         if (projectPath && projectPath.length > 0) {
             unityProject = await UnityProject.GetProject(projectPath);
 
+            if (!unityProject) {
+                Logger.instance.error(`The specified path is not a valid Unity project: ${projectPath}. Use --unity-project or UNITY_PROJECT_PATH environment variable.`);
+                process.exit(1);
+            }
+
             if (!unityEditor) {
                 const unityHub = new UnityHub();
                 unityEditor = await unityHub.GetEditor(unityProject.version);
