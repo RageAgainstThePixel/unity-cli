@@ -69,6 +69,14 @@ export class UnityEditor {
 
         this.autoAddNoGraphics = this.version.isGreaterThan('2018.0.0');
 
+        // check if we have permissions to write to this file
+        try {
+            fs.accessSync(this.editorRootPath, fs.constants.W_OK);
+        } catch (error) {
+            return;
+        }
+
+        // ensure metadata.hub.json exists and has a productName entry
         const hubMetaDataPath = path.join(this.editorRootPath, 'metadata.hub.json');
         if (!fs.existsSync(hubMetaDataPath)) {
             const metadata = {
