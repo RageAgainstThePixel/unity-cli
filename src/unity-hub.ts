@@ -417,6 +417,7 @@ apt-get clean
 sed -i 's/^\\(.*DISPLAY=:.*XAUTHORITY=.*\\)\\( "\\$@" \\)2>&1$/\\1\\2/' /usr/bin/xvfb-run
 printf '#!/bin/bash\nxvfb-run --auto-servernum /opt/unityhub/unityhub "$@" 2>/dev/null' | tee /usr/bin/unity-hub >/dev/null
 chmod 777 /usr/bin/unity-hub
+which unityhub || { echo "Unity Hub installation failed"; exit 1; }
 hubPath=$(which unityhub)
 
 if [ -z "$hubPath" ]; then
