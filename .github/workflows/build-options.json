@@ -5,6 +5,7 @@
     "macos-latest"
   ],
   "unity-version": [
+    "none",
     "4.7.2",
     "5.6.7f1 (e80cc3114ac1)",
     "2017",
