@@ -48,7 +48,9 @@ jobs:
         timeout-minutes: 30
         run: |
           unity-cli hub-install --auto-update
-          unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-target }}" --json
+          if [ "${{ matrix.unity-version }}" != "none" ]; then
+            unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-target }}" --json
+          fi
       - name: Verify UNITY_HUB_PATH and UNITY_EDITOR_PATH variables
         shell: bash
         run: |
@@ -61,20 +63,23 @@ jobs:
             exit 1
           fi
 
-          if [ -z "${UNITY_EDITOR_PATH}" ]; then
+          if [ "${{ matrix.unity-version }}" != "none" ] && [ -z "${UNITY_EDITOR_PATH}" ]; then
             echo "Error: UNITY_EDITOR_PATH is not set"
             exit 1
           fi
       - name: Activate License
+        if : ${{ matrix.unity-version != 'none' }}
         shell: bash
         run: |
           unity-cli activate-license --license personal --email "${{ secrets.UNITY_USERNAME }}" --password "${{ secrets.UNITY_PASSWORD }}"
       - name: Create Unity Project
+        if : ${{ matrix.unity-version != 'none' }}
         shell: bash
         run: |
           unity-cli list-project-templates --unity-editor "${UNITY_EDITOR_PATH}" --json
           unity-cli create-project --name "Unity Project" --unity-editor "${UNITY_EDITOR_PATH}" --json
       - name: Verify UNITY_PROJECT_PATH variable
+        if : ${{ matrix.unity-version != 'none' }}
         shell: bash
         run: |
           if [ -z "${UNITY_PROJECT_PATH}" ]; then
@@ -119,6 +124,7 @@ jobs:
           unity-cli run --log-name Validate -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
           unity-cli run --log-name Build -buildTarget ${{ matrix.build-target }} -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity ${{ matrix.build-args }}
       - name: Uninstall Editor
+        if: ${{ matrix.unity-version != 'none' }}
         shell: bash
         run: |
           if [ -z "${UNITY_EDITOR_PATH}" ]; then
