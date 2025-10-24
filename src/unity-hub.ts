@@ -77,7 +77,7 @@ export class UnityHub {
         let exitCode: number = 0;
 
         const filteredArgs = args.filter(arg => arg !== '--headless' && arg !== '--');
-        const executable = process.platform === 'linux' ? 'unity-hub' : this.executable;
+        const executable = process.platform === 'linux' ? 'unityhub' : this.executable;
         const execArgs = process.platform === 'linux' ? ['--headless', ...filteredArgs] : ['--', '--headless', ...filteredArgs];
 
         if (options.showCommand) {
