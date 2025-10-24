@@ -433,7 +433,8 @@ chmod -R 777 "$hubPath"`]);
         }
 
         await fs.promises.access(this.executable, fs.constants.X_OK);
-        this.logger.debug(`Unity Hub install complete`);
+        const installedVersion = await this.getInstalledHubVersion();
+        this.logger.info(`Unity Hub ${installedVersion} installed successfully.`);
     }
 
     private async getInstalledHubVersion(): Promise<SemVer> {
