@@ -77,7 +77,7 @@ export class UnityHub {
         let exitCode: number = 0;
 
         const filteredArgs = args.filter(arg => arg !== '--headless' && arg !== '--');
-        const executable = process.platform === 'linux' ? 'unityhub' : this.executable;
+        const executable = process.platform === 'linux' ? 'unity-hub' : this.executable;
         const execArgs = process.platform === 'linux' ? ['--headless', ...filteredArgs] : ['--', '--headless', ...filteredArgs];
 
         if (options.showCommand) {
@@ -415,8 +415,8 @@ sudo apt-get update --allow-releaseinfo-change
 apt-get install -y --no-install-recommends unityhub ffmpeg libgtk2.0-0 libglu1-mesa libgconf-2-4 libncurses5
 apt-get clean
 sed -i 's/^\\(.*DISPLAY=:.*XAUTHORITY=.*\\)\\( "\\$@" \\)2>&1$/\\1\\2/' /usr/bin/xvfb-run
-printf '#!/bin/bash\nxvfb-run --auto-servernum /opt/unityhub/unityhub "$@" 2>/dev/null' | tee /usr/bin/unityhub >/dev/null
-chmod 777 /usr/bin/unityhub
+printf '#!/bin/bash\nxvfb-run --auto-servernum /opt/unityhub/unityhub "$@" 2>/dev/null' | tee /usr/bin/unity-hub >/dev/null
+chmod 777 /usr/bin/unity-hub
 which unityhub || { echo "Unity Hub installation failed"; exit 1; }
 hubPath=$(which unityhub)
 
