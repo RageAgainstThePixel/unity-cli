@@ -4,6 +4,23 @@
 
 A powerful command line utility for the Unity Game Engine. Automate Unity project setup, editor installation, license management, building, and more—ideal for CI/CD pipelines and developer workflows.
 
+## Table of Contents
+
+- [Features](#features)
+- [Installation](#installation)
+- [Usage](#usage)
+  - [Common Commands](#common-commands)
+    - [Auth](#auth)
+    - [Unity Hub](#unity-hub)
+    - [Unity Editor](#unity-editor)
+    - [Unity Package Manager](#unity-package-manager)
+    - [Install Unity Hub and Editor](#install-unity-hub-and-editor)
+    - [Activate a Unity License](#activate-a-unity-license)
+    - [Create a New Project from a Template](#create-a-new-project-from-a-template)
+    - [Open a project from the command line](#open-a-project-from-the-command-line)
+    - [Build a Project](#build-a-project)
+    - [Sign a Unity Package](#sign-a-unity-package)
+
 ## Features
 
 - Install and manage Unity Hub and Unity Editors (multi-platform)
@@ -107,7 +124,7 @@ With options always using double dashes (`--option`) and arguments passed direct
   - `--unity-editor <unityEditor>` The path to the Unity Editor executable. If unspecified, `--unity-project` or the `UNITY_EDITOR_PATH` environment variable must be set.
   - `--unity-project <unityProject>` The path to a Unity project. If unspecified, the `UNITY_PROJECT_PATH` environment variable will be used, otherwise no project will be specified.
   - `--log-name <logName>` The name of the log file.
-    - `<args...>` Arguments to pass directly to the Unity Editor executable.
+  - `<args...>` Arguments to pass directly to the Unity Editor executable.
   - `--verbose` Enable verbose logging.
 
 #### Unity Package Manager
