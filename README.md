@@ -122,7 +122,7 @@ unity-cli hub-path
 
 ##### Unity Hub Install
 
-`unity-cli hub-install [options]`: Install or update the Unity Hub
+`hub-install [options]`: Install or update the Unity Hub
 
 - `--auto-update`: Automatically updates the Unity Hub if it is already installed. Cannot be used with --hub-version.
 - `--hub-version`: Specify to install a specific version of Unity Hub. Cannot be used with --auto-update.
@@ -135,7 +135,7 @@ unity-cli hub-install
 
 ##### Run Unity Hub Commands
 
-`unity-cli hub [options] <args...>`: Run Unity Hub command line arguments (passes args directly to the hub executable).
+`hub [options] <args...>`: Run Unity Hub command line arguments (passes args directly to the hub executable).
 
 - `<args...>`: Arguments to pass directly to the Unity Hub executable.
 - `--verbose`: Enable verbose output.
