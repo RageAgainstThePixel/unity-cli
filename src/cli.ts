@@ -136,6 +136,23 @@ program.command('hub-version')
         }
     });
 
+program.command('hub-path')
+    .description('Print the path to the Unity Hub executable.')
+    .option('--json', 'Prints the last line of output as JSON string.')
+    .action(async (options) => {
+        const hub = new UnityHub();
+
+        Logger.instance.CI_setEnvironmentVariable('UNITY_HUB_PATH', hub.executable);
+
+        if (options.json) {
+            process.stdout.write(`\n${JSON.stringify({ UNITY_HUB_PATH: hub.executable })}\n`);
+        } else {
+            process.stdout.write(`${hub.executable}\n`);
+        }
+
+        process.exit(0);
+    });
+
 program.command('hub-install')
     .description('Install the Unity Hub.')
     .option('--verbose', 'Enable verbose logging.')
@@ -163,23 +180,6 @@ program.command('hub-install')
             process.stdout.write(`\n${JSON.stringify({ UNITY_HUB_PATH: hubPath })}\n`);
         } else {
             process.stdout.write(`${hubPath}\n`);
-        }
-
-        process.exit(0);
-    });
-
-program.command('hub-path')
-    .description('Print the path to the Unity Hub executable.')
-    .option('--json', 'Prints the last line of output as JSON string.')
-    .action(async (options) => {
-        const hub = new UnityHub();
-
-        Logger.instance.CI_setEnvironmentVariable('UNITY_HUB_PATH', hub.executable);
-
-        if (options.json) {
-            process.stdout.write(`\n${JSON.stringify({ UNITY_HUB_PATH: hub.executable })}\n`);
-        } else {
-            process.stdout.write(`${hub.executable}\n`);
         }
 
         process.exit(0);

@@ -54,13 +54,12 @@ With options always using double dashes (`--option`) and arguments passed direct
 #### Unity Hub
 
 - `unity-cli hub-version`: Print the Unity Hub version.
-
+- `unity-cli hub-path`: Print the Unity Hub executable path.
 - `unity-cli hub-install [options]`: Install or update the Unity Hub
   - `--auto-update`: Automatically updates the Unity Hub if it is already installed. Cannot be used with --hub-version.
   - `--hub-version`: Specify to install a specific version of Unity Hub. Cannot be used with --auto-update.
   - `--verbose`: Enable verbose output.
   - `--json`: Output installation information in JSON format.
-- `unity-cli hub-path`: Print the Unity Hub executable path.
 - `unity-cli hub [options] <args...>`: Run Unity Hub command line arguments (passes args directly to the hub executable).
   - `<args...>`: Arguments to pass directly to the Unity Hub executable.
   - `--verbose`: Enable verbose output.
