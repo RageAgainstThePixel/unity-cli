@@ -60,7 +60,10 @@ With options always using double dashes (`--option`) and arguments passed direct
 - `unity-cli --help` for a full list of commands and options.
 - `unity-cli [command] --help` for details on a specific command.
 - `unity-cli [command] --json` to get the output in JSON format (if supported).
-- `unity-cli [command] --verbose` to enable verbose logging for debugging.
+- `unity-cli [command] --verbose <args...>` to enable verbose logging for debugging.
+
+> [!IMPORTANT]
+> `<args...>` must always be the last parameters passed to the command when using any command options.
 
 ```bash
 unity-cli --help
@@ -124,8 +127,8 @@ unity-cli hub-path
 
 `hub-install [options]`: Install or update the Unity Hub
 
-- `--auto-update`: Automatically updates the Unity Hub if it is already installed. Cannot be used with --hub-version.
-- `--hub-version`: Specify to install a specific version of Unity Hub. Cannot be used with --auto-update.
+- `--auto-update`: Automatically updates the Unity Hub if it is already installed. Cannot be used with `--hub-version`.
+- `--hub-version`: Specify to install a specific version of Unity Hub. Cannot be used with `--auto-update`.
 - `--verbose`: Enable verbose output.
 - `--json`: Output installation information in JSON format.
 
@@ -137,13 +140,13 @@ unity-cli hub-install
 
 `hub [options] <args...>`: Run Unity Hub command line arguments (passes args directly to the hub executable).
 
-- `<args...>`: Arguments to pass directly to the Unity Hub executable.
 - `--verbose`: Enable verbose output.
+- `<args...>`: Arguments to pass directly to the Unity Hub executable.
 
 Lists available Unity Hub commands:
 
 ```bash
-unity-cli hub help
+unity-cli --verbose hub help
 ```
 
 Gets a list of installed editors:
@@ -162,8 +165,8 @@ unity-cli hub editors --installed
 - `-u`, `--unity-version <unityVersion>` The Unity version to get (e.g. `2020.3.1f1`, `2021.x`, `2022.1.*`, `6000`). If specified, it will override the version read from the project.
 - `-c`, `--changeset <changeset>` The Unity changeset to get (e.g. `1234567890ab`).
 - `-a`, `--arch <arch>` The Unity architecture to get (e.g. `x86_64`, `arm64`). Defaults to the architecture of the current process.
-- `-b`, `--build-targets <buildTargets>` The Unity build target to get (e.g. `iOS,Android`).
-- `-m`, `--modules <modules>` The Unity module to get (e.g. ios, android).
+- `-b`, `--build-targets <buildTargets>` The Unity build target to get/install as comma-separated values (e.g. `iOS,Android`).
+- `-m`, `--modules <modules>` The Unity module to get/install as comma-separated values (e.g. `ios,android`).
 - `-i`, `--install-path <installPath>` The path to install the Unity Editor to. By default, it will be installed to the default Unity Hub location.
 - `--verbose` Enable verbose logging.
 - `--json` Prints the last line of output as JSON string.
@@ -236,10 +239,10 @@ unity-cli create-project --name "MyGame" --template com.unity.template.3d(-cross
 - `-t`, `--build-target <buildTarget>` The Unity build target to switch the project to (e.g. `StandaloneWindows64`, `StandaloneOSX`, `iOS`, `Android`, etc).
 - `--verbose` Enable verbose logging.
 
-Opens a specific Unity project with the latest Unity 6 version:
+Opens a specific Unity project with the latest Unity 6 version and switches the active platform to Android:
 
 ```bash
-unity-cli open-project --unity-project <path-to-project> --unity-version 6000
+unity-cli open-project --unity-project <path-to-project> --unity-version 6000 --build-target Android
 ```
 
 > [!TIP]
@@ -256,8 +259,8 @@ unity-cli open-project
 - `--unity-editor <unityEditor>` The path to the Unity Editor executable. If unspecified, `--unity-project` or the `UNITY_EDITOR_PATH` environment variable must be set.
 - `--unity-project <unityProject>` The path to a Unity project. If unspecified, the `UNITY_PROJECT_PATH` environment variable will be used, otherwise no project will be specified.
 - `--log-name <logName>` The name of the log file.
-- `<args...>` Arguments to pass directly to the Unity Editor executable.
 - `--verbose` Enable verbose logging.
+- `<args...>` Arguments to pass directly to the Unity Editor executable.
 
 ```bash
 unity-cli run --unity-project <path-to-project> -quit -batchmode -executeMethod StartCommandLineBuild
