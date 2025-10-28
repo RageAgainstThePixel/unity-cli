@@ -25,9 +25,7 @@ import {
     UnityReleasesClient,
     GetUnityReleasesData,
     UnityRelease,
-    Release
 } from '@rage-against-the-pixel/unity-releases-api';
-import { get } from 'http';
 
 interface ReleaseInfo {
     unityRelease: UnityRelease;
@@ -298,7 +296,7 @@ export class UnityHub {
             await this.installHub(version);
         }
 
-        if (isInstalled && autoUpdate || version) {
+        if (isInstalled && autoUpdate) {
             const installedVersion: SemVer = await this.getInstalledHubVersion();
             this.logger.ci(`Installed Unity Hub version: ${installedVersion.version}`);
             let versionToInstall: SemVer | null = null;
