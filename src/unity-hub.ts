@@ -295,10 +295,6 @@ export class UnityHub {
             await fs.promises.access(this.executable, fs.constants.X_OK);
             isInstalled = true;
         } catch {
-            // ignore
-        }
-
-        if (!isInstalled) {
             await this.installHub(version);
         }
 
@@ -343,13 +339,15 @@ export class UnityHub {
                 } else if (process.platform === 'linux') {
                     await this.installHub(version);
                 } else {
-                    this.logger.info(`Unity Hub is already installed and up to date.`);
+                    throw new Error(`Unsupported platform: ${process.platform}`);
                 }
+            } else {
+                this.logger.info(`Unity Hub is already installed and up to date.`);
             }
-
-            await fs.promises.access(this.executable, fs.constants.X_OK);
-            return this.executable;
         }
+
+        await fs.promises.access(this.executable, fs.constants.X_OK);
+        return this.executable;
     }
 
     private async installHub(version: string | undefined): Promise<void> {
