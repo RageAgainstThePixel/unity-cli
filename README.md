@@ -32,33 +32,97 @@ With options always using double dashes (`--option`) and arguments passed direct
 
 ### Common Commands
 
+- `unity-cli --help` for a full list of commands and options.
+- `unity-cli [command] --help` for details on a specific command.
+- `unity-cli [command] --json` to get the output in JSON format (if supported).
+- `unity-cli [command] --verbose` to enable verbose logging for debugging.
+
 #### Auth
 
 - `unity-cli license-version`: Print the Unity License Client version.
 - `unity-cli activate-license [options]`: Activate a Unity license.
+  - `-l`, `--license`: License type (personal, professional, floating). Required.
+  - `-e`, `--email`: Email associated with the Unity account. Required when activating a personal or professional license.
+  - `-p`, `--password`: Password for the Unity account. Required when activating a personal or professional license.
+  - `-s`, `--serial`: License serial number. Required when activating a professional license.
+  - `-c`, `--config`: Path to the configuration file, or base64 encoded JSON string. Required when activating a floating license.
+  - `--verbose`: Enable verbose output.
 - `unity-cli return-license [options]`: Return a Unity license.
+  - `-l`, `--license`: License type (personal, professional, floating)
+  - `--verbose`: Enable verbose output.
 
 #### Unity Hub
 
 - `unity-cli hub-version`: Print the Unity Hub version.
-- `unity-cli hub-install [options]`: Install or update the Unity Hub.
+
+- `unity-cli hub-install [options]`: Install or update the Unity Hub
+  - `--auto-update`: Automatically updates the Unity Hub if it is already installed. Cannot be used with --hub-version.
+  - `--hub-version`: Specify to install a specific version of Unity Hub. Cannot be used with --auto-update.
+  - `--verbose`: Enable verbose output.
+  - `--json`: Output installation information in JSON format.
 - `unity-cli hub-path`: Print the Unity Hub executable path.
 - `unity-cli hub [options] <args...>`: Run Unity Hub command line arguments (passes args directly to the hub executable).
+  - `<args...>`: Arguments to pass directly to the Unity Hub executable.
+  - `--verbose`: Enable verbose output.
 
 #### Unity Editor
 
 - `unity-cli setup-unity [options]`: Find or install the Unity Editor for a project or specific version.
+  - `-p`, `--unity-project <unityProject>` The path to a Unity project or `none` to skip project detection.
+  - `-u`, `--unity-version <unityVersion>` The Unity version to get (e.g. `2020.3.1f1`, `2021.x`, `2022.1.*`, `6000`). If specified, it will override the version read from the project.
+  - `-c`, `--changeset <changeset>` The Unity changeset to get (e.g. `1234567890ab`).
+  - `-a`, `--arch <arch>` The Unity architecture to get (e.g. `x86_64`, `arm64`). Defaults to the architecture of the current process.
+  - `-b`, `--build-targets <buildTargets>` The Unity build target to get (e.g. `iOS,Android`).
+  - `-m`, `--modules <modules>` The Unity module to get (e.g. ios, android).
+  - `-i`, `--install-path <installPath>` The path to install the Unity Editor to. By default, it will be installed to the default Unity Hub location.
+  - `--verbose` Enable verbose logging.
+  - `--json` Prints the last line of output as JSON string.
 - `unity-cli uninstall-unity [options]`: Uninstall a Unity Editor version.
+  - `-e`, `--unity-editor <unityEditor>` The path to the Unity Editor executable. If unspecified, `-u`, `--unity-version` or the `UNITY_EDITOR_PATH` environment variable must be set.
+  - `-u`, `--unity-version <unityVersion>` The Unity version to get (e.g. `2020.3.1f1`, `2021.x`, `2022.1.*`, `6000`). If unspecified, then `--unity-editor` must be specified.
+  - `-c`, `--changeset <changeset>` The Unity changeset to get (e.g. `1234567890ab`).
+  - `-a`, `--arch <arch>` The Unity architecture to get (e.g. `x86_64`, `arm64`). Defaults to the architecture of the current process.
+  - `--verbose` Enable verbose logging.
 - `unity-cli list-project-templates [options]`: List available Unity project templates for an editor.
+  - `-e`, `--unity-editor <unityEditor>` The path to the Unity Editor executable. If unspecified, `-u`, `--unity-version` or the `UNITY_EDITOR_PATH` environment variable must be set.
+  - `-u`, `--unity-version <unityVersion>` The Unity version to get (e.g. `2020.3.1f1`, `2021.x`, `2022.1.*`, `6000`). If unspecified, then `--unity-editor` must be specified.
+  - `-c`, `--changeset <changeset>` The Unity changeset to get (e.g. `1234567890ab`).
+  - `-a`, `--arch <arch>` The Unity architecture to get (e.g. `x86_64`, `arm64`). Defaults to the architecture of the current process.
+  - `--verbose` Enable verbose logging.
+  - `--json` Prints the last line of output as JSON string.
 - `unity-cli create-project [options]`: Create a new Unity project from a template.
+  - `-n`, `--name <projectName>` The name of the new Unity project. If unspecified, the project will be created in the specified path or the current working directory.
+  - `-p`, `--path <projectPath>` The path to create the new Unity project. If unspecified, the current working directory will be used.
+  - `-t`, `--template <projectTemplate>` The name of the template package to use for creating the unity project. Supports regex patterns. (default:
+ `com.unity.template.3d(-cross-platform)?`)
+  - `-u`, `--unity-version <unityVersion>` The Unity version to get (e.g. `2020.3.1f1`, `2021.x`, `2022.1.*`, `6000`). If unspecified, then `--unity-editor` must be specified.
+  - `-e`, `--unity-editor <unityEditor>` The path to the Unity Editor executable. If unspecified, `-u`, `--unity-version`, or the `UNITY_EDITOR_PATH` environment variable must be set.
+  - `--verbose` Enable verbose logging.
+  - `--json` Prints the last line of output as JSON string.
 - `unity-cli open-project [options]`: Open a Unity project in the Unity Editor.
+  - `-p`, `--unity-project <unityProject>` The path to a Unity project. If unspecified, the `UNITY_PROJECT_PATH` environment variable or the current working directory will be used.
+  - `-u`, `--unity-version <unityVersion>` The Unity version to get (e.g. `2020.3.1f1`, `2021.x`, `2022.1.*`, `6000`). If specified, it will override the version read from the project.
+  - `-t`, `--build-target <buildTarget>` The Unity build target to switch the project to (e.g. `StandaloneWindows64`, `StandaloneOSX`, `iOS`, `Android`, etc).
+  - `--verbose` Enable verbose logging.
 - `unity-cli run [options] <args...>`: Run Unity Editor command line arguments (passes args directly to the editor).
+  - `--unity-editor <unityEditor>` The path to the Unity Editor executable. If unspecified, `--unity-project` or the `UNITY_EDITOR_PATH` environment variable must be set.
+  - `--unity-project <unityProject>` The path to a Unity project. If unspecified, the `UNITY_PROJECT_PATH` environment variable will be used, otherwise no project will be specified.
+  - `--log-name <logName>` The name of the log file.
+    - `<args...>` Arguments to pass directly to the Unity Editor executable.
+  - `--verbose` Enable verbose logging.
 
 #### Unity Package Manager
 
-- `unity-cli sign-package [options]`: Sign a Unity package for distribution.
+> [!WARNING]
+> This command feature is in beta and may change in future releases.
 
-Run `unity-cli --help` for a full list of commands and options.
+- `unity-cli sign-package [options]`: Sign a Unity package for distribution.
+  - `--package <package>` Required. The fully qualified path to the folder that contains the package.json file for the package you want to sign. Note: Don’t include package.json in this parameter value.
+  - `--output <output>` Optional. The output directory where you want to save the signed tarball file (.tgz). If unspecified, the package contents will be updated in place with the signed .attestation.p7m file.
+  - `--email <email>` Email associated with the Unity account. If unspecified, the `UNITY_USERNAME` environment variable will be used.
+  - `--password <password>` The password of the Unity account. If unspecified, the `UNITY_PASSWORD` environment variable will be used.
+  - `--organization <organization>` The Organization ID you copied from the Unity Cloud Dashboard. If unspecified, the `UNITY_ORGANIZATION_ID` environment variable will be used.
+  - `--verbose` Enable verbose logging.
 
 #### Install Unity Hub and Editor
 
