@@ -284,10 +284,6 @@ export class UnityHub {
             throw new Error('Cannot use autoUpdate with version.');
         }
 
-        if (version) {
-            this.logger.info(`Installing Unity Hub version: ${version}`);
-        }
-
         let isInstalled = false;
         try {
             await fs.promises.access(this.executable, fs.constants.X_OK);
@@ -325,7 +321,7 @@ export class UnityHub {
 
                 if (process.platform === 'darwin') {
                     await Exec('sudo', ['rm', '-rf', this.rootDirectory], { silent: true, showCommand: true });
-                    await this.installHub(version);
+                    await this.installHub(versionToInstall);
                 } else if (process.platform === 'win32') {
                     const uninstaller = path.join(path.dirname(this.executable), 'Uninstall Unity Hub.exe');
                     await Exec('powershell', [
@@ -333,9 +329,9 @@ export class UnityHub {
                         '-Command',
                         `Start-Process -FilePath '${uninstaller}' -ArgumentList '/S' -Verb RunAs -Wait`
                     ], { silent: true, showCommand: true });
-                    await this.installHub(version);
+                    await this.installHub(versionToInstall);
                 } else if (process.platform === 'linux') {
-                    await this.installHub(version);
+                    await this.installHub(versionToInstall);
                 } else {
                     throw new Error(`Unsupported platform: ${process.platform}`);
                 }
@@ -348,8 +344,8 @@ export class UnityHub {
         return this.executable;
     }
 
-    private async installHub(version: string | undefined): Promise<void> {
-        this.logger.ci(`Installing Unity Hub ${version}...`);
+    private async installHub(version: SemVer | string | undefined): Promise<void> {
+        this.logger.ci(`Installing Unity Hub${version ? ' ' + version : ''}...`);
 
         if (!version) {
             switch (process.platform) {
