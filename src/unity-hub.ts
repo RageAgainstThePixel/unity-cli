@@ -320,15 +320,17 @@ export class UnityHub {
                 this.logger.info(`Updating Unity Hub from ${installedVersion.version} to ${versionToInstall.version}...`);
 
                 if (process.platform === 'darwin') {
-                    await Exec('sudo', ['rm', '-rf', this.rootDirectory], { silent: true, showCommand: true });
+                    await DeleteDirectory(this.rootDirectory);
                     await this.installHub(version);
                 } else if (process.platform === 'win32') {
-                    const uninstaller = path.join(path.dirname(this.executable), 'Uninstall Unity Hub.exe');
+                    const installDir = path.dirname(this.executable);
+                    const uninstaller = path.join(installDir, 'Uninstall Unity Hub.exe');
                     await Exec('powershell', [
                         '-NoProfile',
                         '-Command',
                         `Start-Process -FilePath '${uninstaller}' -ArgumentList '/S' -Verb RunAs -Wait`
                     ], { silent: true, showCommand: true });
+                    await DeleteDirectory(installDir);
                     await this.installHub(version);
                 } else if (process.platform === 'linux') {
                     await this.installHub(version);
@@ -478,8 +480,16 @@ chmod -R 777 "$hubPath"`]);
             throw new Error('Unity Hub is not installed.');
         }
 
-        const fileBuffer = asar.extractFile(asarPath, 'package.json');
-        const packageJson = JSON.parse(fileBuffer.toString());
+        const fileBuffer = asar.extractFile(asarPath, 'package.json').toString('utf-8');
+        let packageJson: any;
+
+        try {
+            packageJson = JSON.parse(fileBuffer);
+        } catch (error) {
+
+            throw new Error(`Failed to parse Unity Hub package.json: ${error}\n${fileBuffer}`);
+        }
+
         const version = coerce(packageJson.version);
 
         if (!version || !valid(version)) {
