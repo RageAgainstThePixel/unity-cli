@@ -484,8 +484,6 @@ chmod -R 777 "$hubPath"`]);
             throw new Error('Unity Hub is not installed.');
         }
 
-        await Exec('ls', ['-Ral', asarPath], { silent: true, showCommand: false });
-
         asar.uncacheAll();
         const fileBuffer = asar.extractFile(asarPath, 'package.json').toString('utf-8');
         let packageJson: any;
