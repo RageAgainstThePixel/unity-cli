@@ -320,17 +320,16 @@ export class UnityHub {
                 this.logger.info(`Updating Unity Hub from ${installedVersion.version} to ${versionToInstall.version}...`);
 
                 if (process.platform === 'darwin') {
-                    await DeleteDirectory(this.rootDirectory);
+                    await Exec('sudo', ['rm', '-rf', this.rootDirectory], { silent: true, showCommand: true });
                     await this.installHub(version);
                 } else if (process.platform === 'win32') {
-                    const installDir = path.dirname(this.executable);
-                    const uninstaller = path.join(installDir, 'Uninstall Unity Hub.exe');
+                    const uninstaller = path.join(this.rootDirectory, 'Uninstall Unity Hub.exe');
                     await Exec('powershell', [
                         '-NoProfile',
                         '-Command',
                         `Start-Process -FilePath '${uninstaller}' -ArgumentList '/S' -Verb RunAs -Wait`
                     ], { silent: true, showCommand: true });
-                    await DeleteDirectory(installDir);
+                    await DeleteDirectory(this.rootDirectory);
                     await this.installHub(version);
                 } else if (process.platform === 'linux') {
                     await this.installHub(version);
