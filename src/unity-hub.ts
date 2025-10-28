@@ -321,7 +321,7 @@ export class UnityHub {
 
                 if (process.platform === 'darwin') {
                     await Exec('sudo', ['rm', '-rf', this.rootDirectory], { silent: true, showCommand: true });
-                    await this.installHub(versionToInstall);
+                    await this.installHub(version);
                 } else if (process.platform === 'win32') {
                     const uninstaller = path.join(path.dirname(this.executable), 'Uninstall Unity Hub.exe');
                     await Exec('powershell', [
@@ -329,9 +329,9 @@ export class UnityHub {
                         '-Command',
                         `Start-Process -FilePath '${uninstaller}' -ArgumentList '/S' -Verb RunAs -Wait`
                     ], { silent: true, showCommand: true });
-                    await this.installHub(versionToInstall);
+                    await this.installHub(version);
                 } else if (process.platform === 'linux') {
-                    await this.installHub(versionToInstall);
+                    await this.installHub(version);
                 } else {
                     throw new Error(`Unsupported platform: ${process.platform}`);
                 }
