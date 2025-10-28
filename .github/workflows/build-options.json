@@ -20,6 +20,10 @@
   "include": [
     {
       "os": "ubuntu-latest",
+      "unity-version": "none"
+    },
+    {
+      "os": "ubuntu-latest",
       "build-target": "StandaloneLinux64"
     },
     {
@@ -33,7 +37,15 @@
     },
     {
       "os": "windows-latest",
+      "unity-version": "none"
+    },
+    {
+      "os": "windows-latest",
       "build-target": "StandaloneWindows64"
+    },
+    {
+      "os": "macos-latest",
+      "unity-version": "none"
     },
     {
       "os": "windows-latest",

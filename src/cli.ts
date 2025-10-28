@@ -136,32 +136,6 @@ program.command('hub-version')
         }
     });
 
-program.command('hub-install')
-    .description('Install the Unity Hub.')
-    .option('--verbose', 'Enable verbose logging.')
-    .option('--auto-update', 'Automatically updates the Unity Hub if it is already installed.')
-    .option('--json', 'Prints the last line of output as JSON string.')
-    .action(async (options) => {
-        if (options.verbose) {
-            Logger.instance.logLevel = LogLevel.DEBUG;
-        }
-
-        Logger.instance.debug(JSON.stringify(options));
-
-        const unityHub = new UnityHub();
-        const hubPath = await unityHub.Install(options.autoUpdate === true);
-
-        Logger.instance.CI_setEnvironmentVariable('UNITY_HUB_PATH', hubPath);
-
-        if (options.json) {
-            process.stdout.write(`\n${JSON.stringify({ UNITY_HUB_PATH: hubPath })}\n`);
-        } else {
-            process.stdout.write(`${hubPath}\n`);
-        }
-
-        process.exit(0);
-    });
-
 program.command('hub-path')
     .description('Print the path to the Unity Hub executable.')
     .option('--json', 'Prints the last line of output as JSON string.')
@@ -174,6 +148,38 @@ program.command('hub-path')
             process.stdout.write(`\n${JSON.stringify({ UNITY_HUB_PATH: hub.executable })}\n`);
         } else {
             process.stdout.write(`${hub.executable}\n`);
+        }
+
+        process.exit(0);
+    });
+
+program.command('hub-install')
+    .description('Install the Unity Hub.')
+    .option('--verbose', 'Enable verbose logging.')
+    .option('--auto-update', 'Automatically updates the Unity Hub if it is already installed. Cannot be used with --hub-version.')
+    .option('--hub-version <version>', 'Specify to install a specific version of Unity Hub. Cannot be used with --auto-update.')
+    .option('--json', 'Prints the last line of output as JSON string.')
+    .action(async (options) => {
+        if (options.verbose) {
+            Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        Logger.instance.debug(JSON.stringify(options));
+
+        if (options.autoUpdate === true && options.hubVersion) {
+            Logger.instance.error('Cannot use --auto-update with --hub-version.');
+            process.exit(1);
+        }
+
+        const unityHub = new UnityHub();
+        const hubPath = await unityHub.Install(options.autoUpdate === true, options.hubVersion);
+
+        Logger.instance.CI_setEnvironmentVariable('UNITY_HUB_PATH', hubPath);
+
+        if (options.json) {
+            process.stdout.write(`\n${JSON.stringify({ UNITY_HUB_PATH: hubPath })}\n`);
+        } else {
+            process.stdout.write(`${hubPath}\n`);
         }
 
         process.exit(0);

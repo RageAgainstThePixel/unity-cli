@@ -45,7 +45,7 @@ export class LicensingClient {
             await fs.promises.access(this.unityHub.executable, fs.constants.R_OK);
             await fs.promises.access(this.unityHub.rootDirectory, fs.constants.R_OK);
         } catch (error) {
-            await this.unityHub.Install();
+            throw new Error('Unity Hub is not installed or not accessible. Please install Unity Hub before using the Licensing Client.');
         }
 
         const licensingClientExecutable = process.platform === 'win32' ? 'Unity.Licensing.Client.exe' : 'Unity.Licensing.Client';

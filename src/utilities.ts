@@ -174,7 +174,7 @@ export async function Exec(command: string, args: string[], options: ExecOptions
         }
 
         if (exitCode !== 0) {
-            throw new Error(`${command} failed with exit code ${exitCode}`);
+            throw new Error(`${command} failed with exit code ${exitCode}\n${output}`);
         }
     }
 
