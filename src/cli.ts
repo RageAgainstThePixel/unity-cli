@@ -139,7 +139,8 @@ program.command('hub-version')
 program.command('hub-install')
     .description('Install the Unity Hub.')
     .option('--verbose', 'Enable verbose logging.')
-    .option('--auto-update', 'Automatically updates the Unity Hub if it is already installed.')
+    .option('--auto-update', 'Automatically updates the Unity Hub if it is already installed. Cannot be used with --hub-version.')
+    .option('--hub-version <version>', 'Specify to install a specific version of Unity Hub. Cannot be used with --auto-update.')
     .option('--json', 'Prints the last line of output as JSON string.')
     .action(async (options) => {
         if (options.verbose) {
@@ -148,8 +149,13 @@ program.command('hub-install')
 
         Logger.instance.debug(JSON.stringify(options));
 
+        if (options.autoUpdate === true && options.hubVersion) {
+            Logger.instance.error('Cannot use --auto-update with --hub-version.');
+            process.exit(1);
+        }
+
         const unityHub = new UnityHub();
-        const hubPath = await unityHub.Install(options.autoUpdate === true);
+        const hubPath = await unityHub.Install(options.autoUpdate === true, options.hubVersion);
 
         Logger.instance.CI_setEnvironmentVariable('UNITY_HUB_PATH', hubPath);
 
