@@ -69,38 +69,40 @@ export class UnityEditor {
 
         this.autoAddNoGraphics = this.version.isGreaterThan('2018.0.0');
 
-        // check if we have permissions to write to this file
-        try {
-            fs.accessSync(this.editorRootPath, fs.constants.W_OK);
-        } catch (error) {
-            return;
-        }
 
         // ensure metadata.hub.json exists and has a productName entry
         const hubMetaDataPath = path.join(this.editorRootPath, 'metadata.hub.json');
-        if (!fs.existsSync(hubMetaDataPath)) {
-            const metadata = {
-                productName: `Unity ${this.version.version.toString()}`,
-                entitlements: [],
-                releaseStream: '',
-                isLTS: null
-            };
-            fs.writeFileSync(hubMetaDataPath, JSON.stringify(metadata), { encoding: 'utf-8' });
-        } else {
-            const metadataContent = fs.readFileSync(hubMetaDataPath, { encoding: 'utf-8' });
-            const metadata = JSON.parse(metadataContent);
+        try {
+            // check if we have permissions to write to this file
+            fs.accessSync(hubMetaDataPath, fs.constants.W_OK);
 
-            if (!metadata.productName) {
-                // projectName must be the first property
-                const newMetadata: any = {
-                    productName: `Unity ${this.version.version.toString()}`
+            if (!fs.existsSync(hubMetaDataPath)) {
+                const metadata = {
+                    productName: `Unity ${this.version.version.toString()}`,
+                    entitlements: [],
+                    releaseStream: '',
+                    isLTS: null
                 };
-                Object.keys(metadata).forEach(key => {
-                    if (key === 'productName') { return; }
-                    newMetadata[key] = metadata[key];
-                });
-                fs.writeFileSync(hubMetaDataPath, JSON.stringify(newMetadata), { encoding: 'utf-8' });
+                fs.writeFileSync(hubMetaDataPath, JSON.stringify(metadata), { encoding: 'utf-8' });
+            } else {
+                const metadataContent = fs.readFileSync(hubMetaDataPath, { encoding: 'utf-8' });
+                const metadata = JSON.parse(metadataContent);
+
+                if (!metadata.productName) {
+                    // projectName must be the first property
+                    const newMetadata: any = {
+                        productName: `Unity ${this.version.version.toString()}`
+                    };
+                    Object.keys(metadata).forEach(key => {
+                        if (key === 'productName') { return; }
+                        newMetadata[key] = metadata[key];
+                    });
+                    fs.writeFileSync(hubMetaDataPath, JSON.stringify(newMetadata), { encoding: 'utf-8' });
+                }
             }
+        } catch (error) {
+            // ignore - we just won't be able to update the metadata file
+            this.logger.debug(`No write access to Unity editor root path: ${this.editorRootPath}`);
         }
     }
 

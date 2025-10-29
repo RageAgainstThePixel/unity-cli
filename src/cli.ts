@@ -187,9 +187,9 @@ program.command('hub-install')
 
 program.command('hub')
     .description('Run commands directly to the Unity Hub. (You need not to pass --headless or -- to this command).')
+    .option('--verbose', 'Enable verbose logging.')
     .allowUnknownOption(true)
     .argument('<args...>', 'Arguments to pass to the Unity Hub executable.')
-    .option('--verbose', 'Enable verbose logging.')
     .action(async (args: string[], options) => {
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
@@ -208,8 +208,8 @@ program.command('setup-unity')
     .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000). If specified, it will override the version read from the project.')
     .option('-c, --changeset <changeset>', 'The Unity changeset to get (e.g. 1234567890ab).')
     .option('-a, --arch <arch>', 'The Unity architecture to get (e.g. x86_64, arm64). Defaults to the architecture of the current process.')
-    .option('-b, --build-targets <buildTargets>', 'The Unity build target to get (e.g. iOS, Android).')
-    .option('-m, --modules <modules>', 'The Unity module to get (e.g. ios, android).')
+    .option('-b, --build-targets <buildTargets>', 'The Unity build target to get/install as comma-separated values (e.g. iOS,Android).')
+    .option('-m, --modules <modules>', 'The Unity module to get/install as comma-separated values (e.g. ios,android).')
     .option('-i, --install-path <installPath>', 'The path to install the Unity Editor to. By default, it will be installed to the default Unity Hub location.')
     .option('--verbose', 'Enable verbose logging.')
     .option('--json', 'Prints the last line of output as JSON string.')
