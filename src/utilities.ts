@@ -334,6 +334,8 @@ export interface LogTailResult {
     tailPromise: Promise<void>;
     /** Function to signal that log tailing should end */
     stopLogTail: () => void;
+    /** Collected telemetry objects parsed from lines beginning with '##utp:' */
+    telemetry: any[];
 }
 
 /**
@@ -345,18 +347,13 @@ export function TailLogFile(logPath: string): LogTailResult {
     let logEnded = false;
     let lastSize = 0;
     const logPollingInterval = 250;
+    const telemetry: any[] = [];
 
     async function readNewLogContent(): Promise<void> {
         try {
-            if (!fs.existsSync(logPath)) {
-                return;
-            }
-
+            if (!fs.existsSync(logPath)) { return; }
             const stats = await fs.promises.stat(logPath);
-
-            if (stats.size < lastSize) {
-                lastSize = 0;
-            }
+            if (stats.size < lastSize) { lastSize = 0; }
 
             if (stats.size > lastSize) {
                 const bytesToRead = stats.size - lastSize;
@@ -375,12 +372,40 @@ export function TailLogFile(logPath: string): LogTailResult {
                 if (bytesToRead > 0) {
                     const chunk = buffer.toString('utf8');
 
+                    // Parse telemetry lines in this chunk (lines starting with '##utp:')
                     try {
-                        process.stdout.write(chunk);
+                        const lines = chunk.split(/\r?\n/);
+                        for (const rawLine of lines) {
+                            const line = rawLine.trim();
+                            if (!line) { continue; }
+                            if (line.startsWith('##utp:')) {
+                                const jsonPart = line.substring('##utp:'.length).trim();
+                                try {
+                                    const utp = JSON.parse(jsonPart);
+                                    telemetry.push(utp);
+
+                                    // annotate the log with the telemetry event
+                                    // ##utp:{"type":"Compiler","version":2,"phase":"Immediate","time":1762378495689,"processId":2256,"severity":"Error","message":"Assets\\_BurnerSphere\\Content\\Common Assets\\Lighting\\older\\ReflectionProbeBaker1.cs(75,13): error CS0103: The name 'AssetDatabase' does not exist in the current context","stacktrace":"","line":75,"file":"Assets\\_BurnerSphere\\Content\\Common Assets\\Lighting\\older\\ReflectionProbeBaker1.cs"}
+                                    if (utp.severity && utp.severity.toLowerCase() === 'error') {
+                                        const file = utp.file ? utp.file.replace(/\\/g, '/') : undefined;
+                                        const lineNum = utp.line ? utp.line : undefined;
+                                        const message = utp.message;
+                                        if (!message.startsWith(`\n::error::\u001B[31m`)) { // indicates a duplicate annotation
+                                            Logger.instance.annotate(LogLevel.ERROR, message, file, lineNum);
+                                        }
+                                    }
+                                } catch (error) {
+                                    logger.warn(`Failed to parse telemetry JSON: ${error} -- raw: ${jsonPart}`);
+                                }
+                            } else {
+                                process.stdout.write(`${line}\n`);
+                            }
+                        }
                     } catch (error: any) {
                         if (error.code !== 'EPIPE') {
                             throw error;
                         }
+                        logger.warn(`Error while parsing telemetry from log chunk: ${error}`);
                     }
                 }
             }
@@ -402,6 +427,7 @@ export function TailLogFile(logPath: string): LogTailResult {
                 await readNewLogContent();
 
                 try {
+                    // write a final newline to separate log output
                     process.stdout.write('\n');
                 } catch (error: any) {
                     if (error.code !== 'EPIPE') {
@@ -420,7 +446,7 @@ export function TailLogFile(logPath: string): LogTailResult {
         logEnded = true;
     }
 
-    return { tailPromise, stopLogTail };
+    return { tailPromise, stopLogTail, telemetry };
 }
 
 /**
