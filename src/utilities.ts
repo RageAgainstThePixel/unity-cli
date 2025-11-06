@@ -390,8 +390,9 @@ export function TailLogFile(logPath: string): LogTailResult {
                                         const file = utp.file ? utp.file.replace(/\\/g, '/') : undefined;
                                         const lineNum = utp.line ? utp.line : undefined;
                                         const message = utp.message;
+                                        const stacktrace = utp.stacktrace ? `${utp.stacktrace}` : undefined;
                                         if (!message.startsWith(`\n::error::\u001B[31m`)) { // indicates a duplicate annotation
-                                            Logger.instance.annotate(LogLevel.ERROR, message, file, lineNum);
+                                            Logger.instance.annotate(LogLevel.ERROR, stacktrace == undefined ? message : `${message}\n${stacktrace}`, file, lineNum);
                                         }
                                     }
                                 } catch (error) {
