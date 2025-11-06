@@ -33,7 +33,7 @@ jobs:
           remove_dotnet: false
           remove_tool_cache: false
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24.x
       - name: Setup unity-cli
@@ -140,9 +140,10 @@ jobs:
           unity-cli return-license --license personal
       - name: Upload Logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ github.run_id }}.${{ github.run_attempt }} ${{ matrix.os }} ${{ matrix.unity-version }} ${{ matrix.build-target }} logs
           retention-days: 1
+          if-no-files-found: ignore
           path: |
             ${{ github.workspace }}/**/*.log
