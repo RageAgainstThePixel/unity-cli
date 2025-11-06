@@ -255,4 +255,22 @@ export class Logger {
             }
         }
     }
+
+
+    public CI_appendWorkflowSummary(telemetry: any[]) {
+        switch (this._ci) {
+            case 'GITHUB_ACTIONS': {
+                const githubSummary = process.env.GITHUB_STEP_SUMMARY;
+
+                if (githubSummary) {
+                    let table = `| Key | Value |\n| --- | ----- |\n`;
+                    telemetry.forEach(item => {
+                        table += `| ${item.key} | ${item.value} |\n`;
+                    });
+
+                    fs.writeFileSync(githubSummary, table, { encoding: 'utf8' });
+                }
+            }
+        }
+    }
 }

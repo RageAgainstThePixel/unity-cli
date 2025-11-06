@@ -269,9 +269,7 @@ export class UnityEditor {
                 throw new Error(`Cannot execute Unity ${this.version.toString()} on Apple Silicon Macs.`);
             }
 
-            if (process.platform === 'linux' &&
-                !command.args.includes('-nographics')
-            ) {
+            if (process.platform === 'linux') {
                 // On Linux, force Unity to run under Xvfb and provide a dummy audio driver
                 // to prevent FMOD from failing to initialize the output device when no
                 // actual audio device is present (common in CI/container environments).
@@ -287,9 +285,20 @@ export class UnityEditor {
                     PULSE_SERVER: process.env.PULSE_SERVER || '/tmp/invalid-pulse-socket'
                 };
 
+                var linuxCommand = '';
+                var linuxArgs = [];
+
+                if (!command.args.includes('-nographics')) {
+                    linuxCommand = 'xvfb-run';
+                    linuxArgs = [this.editorPath, ...command.args];
+                } else {
+                    linuxCommand = this.editorPath;
+                    linuxArgs = command.args;
+                }
+
                 unityProcess = spawn(
-                    'xvfb-run',
-                    [this.editorPath, ...command.args], {
+                    linuxCommand,
+                    linuxArgs, {
                     stdio: ['ignore', 'ignore', 'ignore'],
                     env: linuxEnv
                 });
