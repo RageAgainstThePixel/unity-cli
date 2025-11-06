@@ -50,7 +50,7 @@ npm install -g @rage-against-the-pixel/unity-cli
 In general, the command structure is:
 
 ```bash
-unity-cli [command] [options] <args...>
+unity-cli [command] {options} <args...>
 ```
 
 With options always using double dashes (`--option`) and arguments passed directly to Unity or Unity Hub commands as they normally would with single dashes (`-arg`). Each option typically has a short alias using a single dash (`-o`), except for commands where we pass through arguments, as those get confused by the command parser.

@@ -256,7 +256,6 @@ export class Logger {
         }
     }
 
-
     public CI_appendWorkflowSummary(telemetry: any[]) {
         switch (this._ci) {
             case 'GITHUB_ACTIONS': {
@@ -268,7 +267,7 @@ export class Logger {
                         table += `| ${item.key} | ${item.value} |\n`;
                     });
 
-                    fs.writeFileSync(githubSummary, table, { encoding: 'utf8' });
+                    fs.appendFileSync(githubSummary, table, { encoding: 'utf8' });
                 }
             }
         }
