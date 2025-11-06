@@ -272,15 +272,26 @@ export class UnityEditor {
             if (process.platform === 'linux' &&
                 !command.args.includes('-nographics')
             ) {
+                // On Linux, force Unity to run under Xvfb and provide a dummy audio driver
+                // to prevent FMOD from failing to initialize the output device when no
+                // actual audio device is present (common in CI/container environments).
+                const linuxEnv = {
+                    ...process.env,
+                    DISPLAY: ':99',
+                    UNITY_THISISABUILDMACHINE: '1',
+                    // Tell various audio systems to use a dummy/out-of-process driver
+                    SDL_AUDIODRIVER: process.env.SDL_AUDIODRIVER || 'dummy',
+                    AUDIODRIVER: process.env.AUDIODRIVER || 'dummy',
+                    AUDIODEV: process.env.AUDIODEV || 'null',
+                    // For PulseAudio: point to an invalid socket to avoid connecting
+                    PULSE_SERVER: process.env.PULSE_SERVER || '/tmp/invalid-pulse-socket'
+                };
+
                 unityProcess = spawn(
                     'xvfb-run',
                     [this.editorPath, ...command.args], {
                     stdio: ['ignore', 'ignore', 'ignore'],
-                    env: {
-                        ...process.env,
-                        DISPLAY: ':99',
-                        UNITY_THISISABUILDMACHINE: '1'
-                    }
+                    env: linuxEnv
                 });
             } else if (process.arch === 'arm64' &&
                 process.platform === 'darwin' &&
