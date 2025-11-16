@@ -269,29 +269,26 @@ export class UnityEditor {
                 throw new Error(`Cannot execute Unity ${this.version.toString()} on Apple Silicon Macs.`);
             }
 
+            const linuxEnvOverrides = process.platform === 'linux'
+                ? await this.prepareLinuxAudioEnvironment()
+                : undefined;
+            const baseEditorEnv: NodeJS.ProcessEnv = {
+                ...process.env,
+                UNITY_THISISABUILDMACHINE: '1',
+                ...(linuxEnvOverrides ?? {})
+            };
+
             if (process.platform === 'linux' &&
                 !command.args.includes('-nographics')
             ) {
-                // On Linux, force Unity to run under Xvfb and provide a dummy audio driver
-                // to prevent FMOD from failing to initialize the output device when no
-                // actual audio device is present (common in CI/container environments).
-                const linuxEnv = {
-                    ...process.env,
-                    DISPLAY: ':99',
-                    UNITY_THISISABUILDMACHINE: '1',
-                    // Tell various audio systems to use a dummy/out-of-process driver
-                    SDL_AUDIODRIVER: process.env.SDL_AUDIODRIVER || 'dummy',
-                    AUDIODRIVER: process.env.AUDIODRIVER || 'dummy',
-                    AUDIODEV: process.env.AUDIODEV || 'null',
-                    // For PulseAudio: point to an invalid socket to avoid connecting
-                    PULSE_SERVER: process.env.PULSE_SERVER || '/tmp/invalid-pulse-socket'
-                };
-
                 unityProcess = spawn(
                     'xvfb-run',
                     [this.editorPath, ...command.args], {
                     stdio: ['ignore', 'ignore', 'ignore'],
-                    env: linuxEnv
+                    env: {
+                        ...baseEditorEnv,
+                        DISPLAY: baseEditorEnv.DISPLAY || ':99'
+                    }
                 });
             } else if (process.arch === 'arm64' &&
                 process.platform === 'darwin' &&
@@ -311,10 +308,7 @@ export class UnityEditor {
                     this.editorPath,
                     command.args, {
                     stdio: ['ignore', 'ignore', 'ignore'],
-                    env: {
-                        ...process.env,
-                        UNITY_THISISABUILDMACHINE: '1'
-                    }
+                    env: baseEditorEnv
                 });
             }
 
@@ -392,6 +386,43 @@ export class UnityEditor {
         const logsDir = this.GetLogsDirectory(projectPath);
         const timestamp = new Date().toISOString().replace(/[-:]/g, ``).replace(/\..+/, ``);
         return path.join(logsDir, `${prefix ? prefix + '-' : ''}Unity-${timestamp}.log`);
+    }
+
+    private async prepareLinuxAudioEnvironment(): Promise<NodeJS.ProcessEnv> {
+        if (process.platform !== 'linux') {
+            return {};
+        }
+
+        const envOverrides: NodeJS.ProcessEnv = {
+            SDL_AUDIODRIVER: process.env.SDL_AUDIODRIVER || 'dummy',
+            AUDIODRIVER: process.env.AUDIODRIVER || 'dummy',
+            AUDIODEV: process.env.AUDIODEV || 'null',
+            ALSA_CARD: process.env.ALSA_CARD || 'Loopback',
+            PULSE_SINK: process.env.PULSE_SINK || 'unity_dummy'
+        };
+
+        const defaultRuntimeDir = `/run/user/${typeof process.getuid === 'function' ? process.getuid() : 1000}`;
+        const runtimeDir = process.env.XDG_RUNTIME_DIR || defaultRuntimeDir;
+        envOverrides.XDG_RUNTIME_DIR = runtimeDir;
+
+        try {
+            await fs.promises.mkdir(runtimeDir, { recursive: true, mode: 0o700 });
+        } catch (error) {
+            this.logger.debug(`Failed to ensure XDG_RUNTIME_DIR (${runtimeDir}): ${error}`);
+        }
+
+        await this.tryExec('bash', ['-c', 'pulseaudio --check 2>/dev/null || pulseaudio --start --exit-idle-time=-1 || true']);
+        await this.tryExec('bash', ['-c', 'command -v pactl >/dev/null 2>&1 && { pactl list short sinks 2>/dev/null | grep -q unity_dummy || pactl load-module module-null-sink sink_name=unity_dummy sink_properties=device.description=UnityCI >/tmp/unity-null-sink.id; } || true']);
+
+        return envOverrides;
+    }
+
+    private async tryExec(command: string, args: string[]): Promise<void> {
+        try {
+            await Exec(command, args, { silent: true, showCommand: false });
+        } catch (error) {
+            this.logger.debug(`Skipped helper command "${command} ${args.join(' ')}": ${error}`);
+        }
     }
 
     /**
