@@ -27,6 +27,24 @@ export async function ResolveGlobToPath(globs: string[]): Promise<string> {
 }
 
 /**
+ * Resolves a list of glob patterns to the first matching file path.
+ * @param globsList A list of arrays of path segments that may include glob patterns.
+ * @returns The first matching file path, or undefined if none found.
+ */
+export async function ResolvePathCandidates(globsList: string[][]): Promise<string | undefined> {
+    for (const globPath of globsList) {
+        try {
+            return await ResolveGlobToPath(globPath);
+        } catch (error) {
+            const joinedPath = path.join(...globPath);
+            logger.debug(`Failed to resolve sdkmanager using glob: ${joinedPath}`);
+        }
+    }
+
+    return undefined;
+}
+
+/**
  * Prompts the user for input, masking the input with asterisks.
  * @param prompt The prompt message to display.
  * @returns The user input as a string.

@@ -7,9 +7,9 @@ import { UnityEditor } from './unity-editor';
 import {
     isProcessElevated,
     ReadFileContents,
-    ResolveGlobToPath
+    ResolveGlobToPath,
+    ResolvePathCandidates,
 } from './utilities';
-import { satisfies } from 'semver';
 
 const logger = Logger.instance;
 
@@ -86,16 +86,16 @@ async function getJDKPath(editor: UnityEditor): Promise<string> {
 }
 
 async function getSdkManager(editor: UnityEditor): Promise<string> {
-    let globPath: string[] = [];
+    let globCandidates: string[][] = [];
     if (editor.version.range('>=2019.0.0 <2021.0.0')) {
         logger.debug('Using sdkmanager bundled with Unity 2019 and 2020');
         switch (process.platform) {
             case 'darwin':
             case 'linux':
-                globPath = [editor.editorRootPath, '**', 'AndroidPlayer', '**', 'sdkmanager'];
+                globCandidates = [[editor.editorRootPath, '**', 'AndroidPlayer', '**', 'sdkmanager']];
                 break;
             case 'win32':
-                globPath = [editor.editorRootPath, '**', 'AndroidPlayer', '**', 'sdkmanager.bat'];
+                globCandidates = [[editor.editorRootPath, '**', 'AndroidPlayer', '**', 'sdkmanager.bat']];
                 break;
             default:
                 throw new Error(`Unsupported platform: ${process.platform}`);
@@ -105,10 +105,10 @@ async function getSdkManager(editor: UnityEditor): Promise<string> {
         switch (process.platform) {
             case 'darwin':
             case 'linux':
-                globPath = [editor.editorRootPath, '**', 'AndroidPlayer', '**', 'cmdline-tools', '**', 'sdkmanager'];
+                globCandidates = [[editor.editorRootPath, '**', 'AndroidPlayer', '**', 'cmdline-tools', '**', 'sdkmanager']];
                 break;
             case 'win32':
-                globPath = [editor.editorRootPath, '**', 'AndroidPlayer', '**', 'cmdline-tools', '**', 'sdkmanager.bat'];
+                globCandidates = [[editor.editorRootPath, '**', 'AndroidPlayer', '**', 'cmdline-tools', '**', 'sdkmanager.bat']];
                 break;
             default:
                 throw new Error(`Unsupported platform: ${process.platform}`);
@@ -121,23 +121,32 @@ async function getSdkManager(editor: UnityEditor): Promise<string> {
             throw new Error('Android installation not found: No system ANDROID_SDK_ROOT or ANDROID_HOME defined');
         }
 
+        const sdkManagerBinary = process.platform === 'win32' ? 'sdkmanager.bat' : 'sdkmanager';
         switch (process.platform) {
             case 'darwin':
             case 'linux':
-                globPath = [systemSdkPath, 'cmdline-tools', 'latest', 'bin', 'sdkmanager'];
-                break;
             case 'win32':
-                globPath = [systemSdkPath, 'cmdline-tools', 'latest', 'bin', 'sdkmanager.bat'];
+                globCandidates = [
+                    [systemSdkPath, 'cmdline-tools', 'latest', 'bin', sdkManagerBinary],
+                    [systemSdkPath, 'cmdline-tools', '**', 'bin', sdkManagerBinary],
+                    [systemSdkPath, 'tools', 'bin', sdkManagerBinary]
+                ];
                 break;
             default:
                 throw new Error(`Unsupported platform: ${process.platform}`);
         }
     }
 
-    const sdkmanagerPath = await ResolveGlobToPath(globPath);
+    const sdkmanagerPath = await ResolvePathCandidates(globCandidates);
 
     if (!sdkmanagerPath) {
-        throw new Error(`Failed to resolve sdkmanager in ${globPath}`);
+        const normalizedCandidates = globCandidates.map(candidate => path.join(...candidate).split(path.sep).join('/'));
+        if (normalizedCandidates.length > 0) {
+            logger.ci(`sdkmanager glob candidates:\n${normalizedCandidates.map(candidate => `  > ${candidate}`).join('\n')}`);
+        } else {
+            logger.ci('sdkmanager glob candidates:\n  > <none>');
+        }
+        throw new Error('Failed to resolve sdkmanager in expected locations');
     }
 
     await fs.promises.access(sdkmanagerPath, fs.constants.R_OK);
