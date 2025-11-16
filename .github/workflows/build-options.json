@@ -1,12 +1,8 @@
 {
   "os": [
-    "ubuntu-latest",
-    "windows-latest",
-    "macos-latest"
+    "ubuntu-latest"
   ],
   "unity-version": [
-    "4.7.2",
-    "5.6.7f1 (e80cc3114ac1)",
     "2017.4.40f1",
     "2018",
     "2019.x",
@@ -34,59 +30,6 @@
     {
       "os": "ubuntu-latest",
       "build-target": "Android"
-    },
-    {
-      "os": "windows-latest",
-      "unity-version": "none"
-    },
-    {
-      "os": "windows-latest",
-      "build-target": "StandaloneWindows64"
-    },
-    {
-      "os": "macos-latest",
-      "unity-version": "none"
-    },
-    {
-      "os": "windows-latest",
-      "build-target": "Android"
-    },
-    {
-      "os": "macos-latest",
-      "build-target": "StandaloneOSX"
-    },
-    {
-      "os": "macos-latest",
-      "build-target": "iOS"
-    }
-  ],
-  "exclude": [
-    {
-      "os": "ubuntu-latest",
-      "unity-version": "4.7.2"
-    },
-    {
-      "os": "macos-latest",
-      "unity-version": "4.7.2"
-    },
-    {
-      "os": "windows-latest",
-      "build-target": "Android",
-      "unity-version": "4.7.2"
-    },
-    {
-      "os": "ubuntu-latest",
-      "unity-version": "5.6.7f1 (e80cc3114ac1)"
-    },
-    {
-      "os": "macos-latest",
-      "build-target": "iOS",
-      "unity-version": "5.6.7f1 (e80cc3114ac1)"
-    },
-    {
-      "os": "windows-latest",
-      "build-target": "Android",
-      "unity-version": "5.6.7f1 (e80cc3114ac1)"
     }
   ]
 }
