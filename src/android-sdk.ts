@@ -5,6 +5,8 @@ import { spawn } from 'child_process';
 import { Logger } from './logging';
 import { UnityEditor } from './unity-editor';
 import {
+    Exec,
+    GetTempDir,
     isProcessElevated,
     ReadFileContents,
     ResolveGlobToPath,
@@ -197,11 +199,16 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
         fs.accessSync(sdkManagerPath, fs.constants.R_OK | fs.constants.X_OK);
     }
 
-    if (process.platform === 'win32' && !await isProcessElevated()) {
-        throw new Error('Android SDK installation requires elevated (administrator) privileges. Please rerun as Administrator.');
-    }
-
     try {
+        if (!await isProcessElevated()) {
+            if (process.platform === 'win32') {
+                await runSdkManagerElevatedWindows(sdkManagerPath, javaPath, args);
+            } else {
+                await runSdkManagerElevatedPosix(sdkManagerPath, javaPath, args);
+            }
+            return;
+        }
+
         exitCode = await new Promise<number>(async (resolve, reject) => {
             let cmdEnv = { ...process.env };
             cmdEnv.JAVA_HOME = javaPath;
@@ -255,6 +262,152 @@ async function execSdkManager(sdkManagerPath: string, javaPath: string, args: st
 
         if (exitCode !== 0) {
             throw new Error(`${sdkManagerPath} ${args.join(' ')} failed with exit code ${exitCode}`);
+        }
+    }
+}
+
+async function runSdkManagerElevatedWindows(sdkManagerPath: string, javaPath: string, args: string[]): Promise<void> {
+    const tempDir = GetTempDir();
+    await fs.promises.mkdir(tempDir, { recursive: true });
+    const uniqueId = `sdkmanager-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const scriptPath = path.join(tempDir, `unity-cli-${uniqueId}.ps1`);
+    const logPath = path.join(tempDir, `unity-cli-${uniqueId}.log`);
+    const escapeSingleQuotes = (value: string): string => value.replace(/'/g, "''");
+    const quotedArgs = args.map(arg => `'${escapeSingleQuotes(arg)}'`).join(' ');
+    const formattedArgs = quotedArgs.length > 0 ? ` ${quotedArgs}` : '';
+    const acceptanceBuffer = new Array(40).fill("'y'").join(', ');
+    const scriptContents = `
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$env:JAVA_HOME = '${escapeSingleQuotes(javaPath)}'
+$env:JDK_HOME = '${escapeSingleQuotes(javaPath)}'
+$env:SKIP_JDK_VERSION_CHECK = 'true'
+$logPath = '${escapeSingleQuotes(logPath)}'
+$acceptBuffer = @(${acceptanceBuffer})
+$null = New-Item -ItemType File -Path $logPath -Force
+$acceptBuffer | & '${escapeSingleQuotes(sdkManagerPath)}'${formattedArgs} 2>&1 | Tee-Object -FilePath $logPath -Append
+exit $LASTEXITCODE
+`.trim();
+
+    await fs.promises.writeFile(scriptPath, scriptContents, { encoding: 'utf8' });
+
+    const launcher = `$process = Start-Process -FilePath 'powershell' -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','${escapeSingleQuotes(scriptPath)}' -Verb RunAs -WindowStyle Hidden -Wait -PassThru; exit $process.ExitCode`;
+
+    let logPrinted = false;
+    const emitLog = async (): Promise<void> => {
+        if (logPrinted) { return; }
+        try {
+            const logContent = await fs.promises.readFile(logPath, 'utf8');
+            if (logContent && logContent.length > 0) {
+                process.stdout.write(logContent.endsWith('\n') ? logContent : `${logContent}\n`);
+            }
+            logPrinted = true;
+        } catch {
+            // ignore missing log file
+        }
+    };
+
+    try {
+        await Exec('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', launcher], { silent: true, showCommand: true });
+    } catch (error) {
+        await emitLog();
+        throw error;
+    } finally {
+        await emitLog();
+
+        try {
+            await fs.promises.unlink(scriptPath);
+        } catch {
+            // ignore cleanup errors
+        }
+
+        try {
+            await fs.promises.unlink(logPath);
+        } catch {
+            // ignore cleanup errors
+        }
+    }
+}
+
+async function runSdkManagerElevatedPosix(sdkManagerPath: string, javaPath: string, args: string[]): Promise<void> {
+    const tempDir = GetTempDir();
+    await fs.promises.mkdir(tempDir, { recursive: true });
+    const uniqueId = `sdkmanager-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const scriptPath = path.join(tempDir, `unity-cli-${uniqueId}.sh`);
+    const escapeForBash = (value: string): string => value.replace(/'/g, `'"'"'`);
+    const argsArray = args.map(arg => `'${escapeForBash(arg)}'`).join(' ');
+    const scriptContents = `#!/usr/bin/env bash
+set -eu
+
+export JAVA_HOME='${escapeForBash(javaPath)}'
+export JDK_HOME='${escapeForBash(javaPath)}'
+export SKIP_JDK_VERSION_CHECK='true'
+SDKMANAGER='${escapeForBash(sdkManagerPath)}'
+ARGS=(${argsArray})
+
+send_accept_buffer() {
+  for i in $(seq 1 50); do
+    printf 'y\n'
+  done
+}
+
+run_sdkmanager() {
+  if [ ${args.length} -eq 0 ]; then
+    send_accept_buffer | "$SDKMANAGER"
+  else
+    send_accept_buffer | "$SDKMANAGER" "${ARGS[@]}"
+  fi
+}
+
+run_sdkmanager
+`;
+
+    await fs.promises.writeFile(scriptPath, scriptContents, { encoding: 'utf8', mode: 0o700 });
+    await fs.promises.chmod(scriptPath, 0o700);
+
+    try {
+        await new Promise<void>((resolve, reject) => {
+            const child = spawn('sudo', ['-E', '/bin/bash', scriptPath], {
+                stdio: ['inherit', 'pipe', 'pipe']
+            });
+            const sigintHandler = () => child.kill('SIGINT');
+            const sigtermHandler = () => child.kill('SIGTERM');
+            process.once('SIGINT', sigintHandler);
+            process.once('SIGTERM', sigtermHandler);
+
+            let hasCleanedUpListeners = false;
+            function removeListeners(): void {
+                if (hasCleanedUpListeners) { return; }
+                hasCleanedUpListeners = true;
+                process.removeListener('SIGINT', sigintHandler);
+                process.removeListener('SIGTERM', sigtermHandler);
+            }
+
+            const handleDataStream = (data: Buffer): void => {
+                const chunk = data.toString();
+                process.stdout.write(chunk);
+            };
+
+            child.stdout.on('data', handleDataStream);
+            child.stderr.on('data', handleDataStream);
+            child.on('error', (error) => {
+                removeListeners();
+                reject(error);
+            });
+            child.on('close', (code) => {
+                removeListeners();
+                if (code === 0) {
+                    resolve();
+                } else {
+                    reject(new Error(`sudo bash ${scriptPath} failed with exit code ${code ?? -1}`));
+                }
+            });
+        });
+    } finally {
+        try {
+            await fs.promises.unlink(scriptPath);
+        } catch {
+            // ignore cleanup errors
         }
     }
 }
