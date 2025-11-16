@@ -43,9 +43,9 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "tests": "jest --roots tests",
     "link": "npm link",
-    "unlink": "npm unlink @rage-against-the-pixel/unity-cli",
-    "tests": "jest --roots tests"
+    "unlink": "npm unlink @rage-against-the-pixel/unity-cli"
   },
   "dependencies": {
     "@electron/asar": "^4.0.1",
