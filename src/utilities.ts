@@ -359,9 +359,10 @@ export interface LogTailResult {
 /**
  * Tails a log file using fs.watch and ReadStream for efficient reading.
  * @param logPath The path to the log file to tail.
+ * @param projectPath The path to the project (used for log annotation).
  * @returns An object containing the tail promise and signalEnd function.
  */
-export function TailLogFile(logPath: string): LogTailResult {
+export function TailLogFile(logPath: string, projectPath: string | undefined): LogTailResult {
     let logEnded = false;
     let lastSize = 0;
     const logPollingInterval = 250;
@@ -410,7 +411,12 @@ export function TailLogFile(logPath: string): LogTailResult {
                                         const message = utp.message;
                                         const stacktrace = utp.stacktrace ? `${utp.stacktrace}` : undefined;
                                         if (!message.startsWith(`\n::error::\u001B[31m`)) { // indicates a duplicate annotation
-                                            Logger.instance.annotate(LogLevel.ERROR, stacktrace == undefined ? message : `${message}\n${stacktrace}`, file, lineNum);
+                                            // only annotate if the file is within the current project
+                                            if (projectPath && file && file.startsWith(projectPath)) {
+                                                Logger.instance.annotate(LogLevel.ERROR, stacktrace == undefined ? message : `${message}\n${stacktrace}`, file, lineNum);
+                                            } else {
+                                                Logger.instance.error(stacktrace == undefined ? message : `${message}\n${stacktrace}`);
+                                            }
                                         }
                                     }
                                 } catch (error) {

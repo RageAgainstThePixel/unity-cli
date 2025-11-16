@@ -261,7 +261,7 @@ export class UnityEditor {
             }
 
             const logPath: string = GetArgumentValueAsString('-logFile', command.args);
-            logTail = TailLogFile(logPath);
+            logTail = TailLogFile(logPath, command.projectPath);
             const commandStr = `\x1b[34m${this.editorPath} ${command.args.join(' ')}\x1b[0m`;
             this.logger.startGroup(commandStr);
 
