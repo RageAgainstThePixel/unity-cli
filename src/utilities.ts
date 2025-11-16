@@ -623,10 +623,17 @@ export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
  * @returns True if the process is elevated, false otherwise.
  */
 export async function isProcessElevated(): Promise<boolean> {
-    if (process.platform !== 'win32') { return true; } // We can sudo easily on non-windows platforms
-    const output = await Exec('powershell', [
-        '-NoLogo', '-NoProfile', '-Command',
-        "(New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
-    ], { silent: true, showCommand: false });
-    return output.trim().toLowerCase() === 'true';
+    if (process.platform === 'win32') {
+        const output = await Exec('powershell', [
+            '-NoLogo', '-NoProfile', '-Command',
+            "(New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
+        ], { silent: true, showCommand: false });
+        return output.trim().toLowerCase() === 'true';
+    }
+
+    if (typeof process.getuid === 'function') {
+        return process.getuid() === 0;
+    }
+
+    return true;
 }
