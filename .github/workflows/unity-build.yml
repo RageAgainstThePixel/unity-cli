@@ -26,7 +26,7 @@ jobs:
       RUN_BUILD: '' # Set to true if the build pipeline package can be installed and used
     steps:
       - name: Free Disk Space
-        if: ${{ matrix.os == 'ubuntu-latest' }}
+        if: ${{ matrix.os == 'ubuntu-latest' && (matrix.unity-version != '2018' && matrix.unity-version != '2017') }}
         uses: endersonmenezes/free-disk-space@713d134e243b926eba4a5cce0cf608bfd1efb89a # v2.1.1
         with:
           remove_android: true
