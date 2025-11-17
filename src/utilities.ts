@@ -358,6 +358,7 @@ export interface LogTailResult {
 
 const remappedEditorLog: Record<string, LogLevel> = {
     'OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
+    'Failed to find a suitable OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
 };
 
 /**
