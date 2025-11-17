@@ -356,12 +356,18 @@ export interface LogTailResult {
     telemetry: any[];
 }
 
+const remappedEditorLog: Record<string, LogLevel> = {
+    'OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
+    'Failed to find a suitable OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
+};
+
 /**
  * Tails a log file using fs.watch and ReadStream for efficient reading.
  * @param logPath The path to the log file to tail.
+ * @param projectPath The path to the project (used for log annotation).
  * @returns An object containing the tail promise and signalEnd function.
  */
-export function TailLogFile(logPath: string): LogTailResult {
+export function TailLogFile(logPath: string, projectPath: string | undefined): LogTailResult {
     let logEnded = false;
     let lastSize = 0;
     const logPollingInterval = 250;
@@ -402,15 +408,25 @@ export function TailLogFile(logPath: string): LogTailResult {
                                     const utp = JSON.parse(jsonPart);
                                     telemetry.push(utp);
 
-                                    // annotate the log with the telemetry event
-                                    // ##utp:{"type":"Compiler","version":2,"phase":"Immediate","time":1762378495689,"processId":2256,"severity":"Error","message":"Assets\\_BurnerSphere\\Content\\Common Assets\\Lighting\\older\\ReflectionProbeBaker1.cs(75,13): error CS0103: The name 'AssetDatabase' does not exist in the current context","stacktrace":"","line":75,"file":"Assets\\_BurnerSphere\\Content\\Common Assets\\Lighting\\older\\ReflectionProbeBaker1.cs"}
+                                    if (utp.message && remappedEditorLog[utp.message] !== undefined) {
+                                        const remappedLevel: LogLevel = remappedEditorLog[utp.message] as LogLevel;
+                                        Logger.instance.log(remappedLevel, utp.message);
+                                        continue;
+                                    }
+
+
                                     if (utp.severity && utp.severity.toLowerCase() === 'error') {
                                         const file = utp.file ? utp.file.replace(/\\/g, '/') : undefined;
                                         const lineNum = utp.line ? utp.line : undefined;
                                         const message = utp.message;
                                         const stacktrace = utp.stacktrace ? `${utp.stacktrace}` : undefined;
                                         if (!message.startsWith(`\n::error::\u001B[31m`)) { // indicates a duplicate annotation
-                                            Logger.instance.annotate(LogLevel.ERROR, stacktrace == undefined ? message : `${message}\n${stacktrace}`, file, lineNum);
+                                            // only annotate if the file is within the current project
+                                            if (projectPath && file && file.startsWith(projectPath)) {
+                                                Logger.instance.annotate(LogLevel.ERROR, stacktrace == undefined ? message : `${message}\n${stacktrace}`, file, lineNum);
+                                            } else {
+                                                Logger.instance.error(stacktrace == undefined ? message : `${message}\n${stacktrace}`);
+                                            }
                                         }
                                     }
                                 } catch (error) {
@@ -623,17 +639,10 @@ export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
  * @returns True if the process is elevated, false otherwise.
  */
 export async function isProcessElevated(): Promise<boolean> {
-    if (process.platform === 'win32') {
-        const output = await Exec('powershell', [
-            '-NoLogo', '-NoProfile', '-Command',
-            "(New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
-        ], { silent: true, showCommand: false });
-        return output.trim().toLowerCase() === 'true';
-    }
-
-    if (typeof process.getuid === 'function') {
-        return process.getuid() === 0;
-    }
-
-    return true;
+    if (process.platform !== 'win32') { return true; } // We can sudo easily on non-windows platforms
+    const output = await Exec('powershell', [
+        '-NoLogo', '-NoProfile', '-Command',
+        "(New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
+    ], { silent: true, showCommand: false });
+    return output.trim().toLowerCase() === 'true';
 }
