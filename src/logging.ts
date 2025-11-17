@@ -136,6 +136,74 @@ export class Logger {
         this.log(LogLevel.ERROR, message, optionalParams);
     }
 
+    /**
+     * Annotates a file and line number in CI environments that support it.
+     * @param logLevel The level of the log.
+     * @param message The message to annotate.
+     * @param file The file to annotate.
+     * @param line The line number to annotate.
+     * @param endLine The end line number to annotate.
+     * @param column The column number to annotate.
+     * @param endColumn The end column number to annotate.
+     * @param title The title of the annotation.
+     */
+    public annotate(logLevel: LogLevel, message: string, file?: string, line?: number, endLine?: number, column?: number, endColumn?: number, title?: string): void {
+        let annotation = '';
+
+        switch (this._ci) {
+            case 'GITHUB_ACTIONS': {
+                var level: string;
+                switch (logLevel) {
+                    case LogLevel.CI:
+                    case LogLevel.INFO:
+                    case LogLevel.DEBUG: {
+                        level = 'notice';
+                        break;
+                    }
+                    case LogLevel.WARN: {
+                        level = 'warning';
+                        break;
+                    }
+                    case LogLevel.ERROR: {
+                        level = 'error';
+                        break;
+                    }
+                }
+
+                let parts: string[] = [];
+
+                if (file !== undefined && file.length > 0) {
+                    parts.push(`file=${file}`);
+                }
+
+                if (line !== undefined && line > 0) {
+                    parts.push(`line=${line}`);
+                }
+
+                if (endLine !== undefined && endLine > 0) {
+                    parts.push(`endLine=${endLine}`);
+                }
+
+                if (column !== undefined && column > 0) {
+                    parts.push(`col=${column}`);
+                }
+
+                if (endColumn !== undefined && endColumn > 0) {
+                    parts.push(`endColumn=${endColumn}`);
+                }
+
+                if (title !== undefined && title.length > 0) {
+                    parts.push(`title=${title}`);
+                }
+
+                annotation = `::${level} ${parts.join(',')}::${message}`;
+                break;
+            }
+        }
+
+        process.stdout.write(`${annotation}\n`);
+    }
+
     private shouldLog(level: LogLevel): boolean {
         if (level === LogLevel.CI) { return true; }
         const levelOrder = [LogLevel.DEBUG, LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR];
@@ -184,6 +252,23 @@ export class Logger {
                     fs.appendFileSync(githubOutput, `${name}=${value}\n`, { encoding: 'utf8' });
                 }
                 break;
+            }
+        }
+    }
+
+    public CI_appendWorkflowSummary(telemetry: any[]) {
+        switch (this._ci) {
+            case 'GITHUB_ACTIONS': {
+                const githubSummary = process.env.GITHUB_STEP_SUMMARY;
+
+                if (githubSummary) {
+                    let table = `| Key | Value |\n| --- | ----- |\n`;
+                    telemetry.forEach(item => {
+                        table += `| ${item.key} | ${item.value} |\n`;
+                    });
+
+                    fs.appendFileSync(githubSummary, table, { encoding: 'utf8' });
+                }
             }
         }
     }

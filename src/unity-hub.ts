@@ -108,9 +108,13 @@ export class UnityHub {
         try {
             exitCode = await new Promise<number>((resolve, reject) => {
                 let isSettled: boolean = false; // Has the promise been settled (resolved or rejected)?
-                let isHubTaskComplete: boolean = false; // Has the Unity Hub tasks completed successfully?
+                let isHubTaskCompleteSuccess: boolean = false; // Has the Unity Hub tasks completed successfully?
+                let isHubTaskCompleteFailed: boolean = false; // Has the Unity Hub tasks completed with failure?
                 let lineBuffer = ''; // Buffer for incomplete lines
-                const tasksCompleteMessage = 'All Tasks Completed Successfully.';
+                const tasksCompleteMessages: string[] = [
+                    'All Tasks Completed Successfully.',
+                    'Completed with errors.'
+                ];
                 const child = spawn(executable, execArgs, {
                     stdio: ['ignore', 'pipe', 'pipe']
                 });
@@ -140,8 +144,9 @@ export class UnityHub {
                             lineBuffer = '';
                         }
 
-                        if (lines.includes(tasksCompleteMessage)) {
-                            isHubTaskComplete = true;
+                        if (lines.some(line => tasksCompleteMessages.includes(line))) {
+                            isHubTaskCompleteSuccess = lines.includes('All Tasks Completed Successfully.');
+                            isHubTaskCompleteFailed = lines.includes('Completed with errors.');
 
                             if (child?.pid) {
                                 try {
@@ -159,7 +164,13 @@ export class UnityHub {
                                 } catch {
                                     // Ignore, process may have already exited
                                 } finally {
-                                    settle(0);
+                                    if (isHubTaskCompleteSuccess) {
+                                        settle(0);
+                                    } else if (isHubTaskCompleteFailed) {
+                                        settle(1);
+                                    } else {
+                                        settle(null);
+                                    }
                                 }
                             }
                         }
@@ -186,8 +197,9 @@ export class UnityHub {
                             lineBuffer = '';
                             const outputLines = lines.filter(line => !ignoredLines.some(ignored => line.includes(ignored)));
 
-                            if (outputLines.includes(tasksCompleteMessage)) {
-                                isHubTaskComplete = true;
+                            if (outputLines.some(line => tasksCompleteMessages.includes(line))) {
+                                isHubTaskCompleteSuccess = outputLines.includes('All Tasks Completed Successfully.');
+                                isHubTaskCompleteFailed = outputLines.includes('Completed with errors.');
                             }
 
                             for (const line of outputLines) {
@@ -210,12 +222,7 @@ export class UnityHub {
                     isSettled = true;
                     removeListeners();
                     flushOutput();
-
-                    if (isHubTaskComplete) {
-                        resolve(0);
-                    } else {
-                        resolve(code === null ? 0 : code);
-                    }
+                    resolve(code === null ? 0 : code);
                 }
 
                 child.stdout.on('data', processOutput);
@@ -439,7 +446,7 @@ wget -qO - https://hub.unity3d.com/linux/keys/public | gpg --dearmor | tee /usr/
 echo "deb [signed-by=/usr/share/keyrings/Unity_Technologies_ApS.gpg] https://hub.unity3d.com/linux/repos/deb stable main" > /etc/apt/sources.list.d/unityhub.list
 echo "deb https://archive.ubuntu.com/ubuntu jammy main universe" | tee /etc/apt/sources.list.d/jammy.list
 apt-get update
-apt-get install -y --no-install-recommends unityhub${version ? '=' + version : ''} ffmpeg libgtk2.0-0 libglu1-mesa libgconf-2-4 libncurses5
+apt-get install -y --no-install-recommends unityhub${version ? '=' + version : ''} ffmpeg libgtk2.0-0 libglu1-mesa libgconf-2-4 libncurses5 pulseaudio
 apt-get clean
 sed -i 's/^\\(.*DISPLAY=:.*XAUTHORITY=.*\\)\\( "\\$@" \\)2>&1$/\\1\\2/' /usr/bin/xvfb-run
 printf '#!/bin/bash\nxvfb-run --auto-servernum /opt/unityhub/unityhub "$@" 2>/dev/null' | tee /usr/bin/unity-hub >/dev/null

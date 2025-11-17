@@ -26,14 +26,14 @@ jobs:
       RUN_BUILD: '' # Set to true if the build pipeline package can be installed and used
     steps:
       - name: Free Disk Space
-        if: ${{ matrix.os == 'ubuntu-latest' && matrix.unity-version == '6000.2' }}
+        if: ${{ matrix.os == 'ubuntu-latest' && (matrix.unity-version != '2018' && matrix.unity-version != '2017.4.40f1') }}
         uses: endersonmenezes/free-disk-space@713d134e243b926eba4a5cce0cf608bfd1efb89a # v2.1.1
         with:
           remove_android: true
           remove_dotnet: false
           remove_tool_cache: false
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24.x
       - name: Setup unity-cli
@@ -138,11 +138,3 @@ jobs:
         shell: bash
         run: |
           unity-cli return-license --license personal
-      - name: Upload Logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ github.run_id }}.${{ github.run_attempt }} ${{ matrix.os }} ${{ matrix.unity-version }} ${{ matrix.build-target }} logs
-          retention-days: 1
-          path: |
-            ${{ github.workspace }}/**/*.log

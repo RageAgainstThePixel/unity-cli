@@ -27,6 +27,24 @@ export async function ResolveGlobToPath(globs: string[]): Promise<string> {
 }
 
 /**
+ * Resolves a list of glob patterns to the first matching file path.
+ * @param globsList A list of arrays of path segments that may include glob patterns.
+ * @returns The first matching file path, or undefined if none found.
+ */
+export async function ResolvePathCandidates(globsList: string[][]): Promise<string | undefined> {
+    for (const globPath of globsList) {
+        try {
+            return await ResolveGlobToPath(globPath);
+        } catch (error) {
+            const joinedPath = path.join(...globPath);
+            logger.debug(`Failed to resolve sdkmanager using glob: ${joinedPath}`);
+        }
+    }
+
+    return undefined;
+}
+
+/**
  * Prompts the user for input, masking the input with asterisks.
  * @param prompt The prompt message to display.
  * @returns The user input as a string.
@@ -334,29 +352,32 @@ export interface LogTailResult {
     tailPromise: Promise<void>;
     /** Function to signal that log tailing should end */
     stopLogTail: () => void;
+    /** Collected telemetry objects parsed from lines beginning with '##utp:' */
+    telemetry: any[];
 }
+
+const remappedEditorLog: Record<string, LogLevel> = {
+    'OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
+    'Failed to find a suitable OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
+};
 
 /**
  * Tails a log file using fs.watch and ReadStream for efficient reading.
  * @param logPath The path to the log file to tail.
+ * @param projectPath The path to the project (used for log annotation).
  * @returns An object containing the tail promise and signalEnd function.
  */
-export function TailLogFile(logPath: string): LogTailResult {
+export function TailLogFile(logPath: string, projectPath: string | undefined): LogTailResult {
     let logEnded = false;
     let lastSize = 0;
     const logPollingInterval = 250;
+    const telemetry: any[] = [];
 
     async function readNewLogContent(): Promise<void> {
         try {
-            if (!fs.existsSync(logPath)) {
-                return;
-            }
-
+            if (!fs.existsSync(logPath)) { return; }
             const stats = await fs.promises.stat(logPath);
-
-            if (stats.size < lastSize) {
-                lastSize = 0;
-            }
+            if (stats.size < lastSize) { lastSize = 0; }
 
             if (stats.size > lastSize) {
                 const bytesToRead = stats.size - lastSize;
@@ -375,12 +396,51 @@ export function TailLogFile(logPath: string): LogTailResult {
                 if (bytesToRead > 0) {
                     const chunk = buffer.toString('utf8');
 
+                    // Parse telemetry lines in this chunk (lines starting with '##utp:')
                     try {
-                        process.stdout.write(chunk);
+                        const lines = chunk.split(/\r?\n/);
+                        for (const rawLine of lines) {
+                            const line = rawLine.trim();
+                            if (!line) { continue; }
+                            if (line.startsWith('##utp:')) {
+                                const jsonPart = line.substring('##utp:'.length).trim();
+                                try {
+                                    const utp = JSON.parse(jsonPart);
+                                    telemetry.push(utp);
+
+                                    if (utp.message && remappedEditorLog[utp.message] !== undefined) {
+                                        const remappedLevel: LogLevel = remappedEditorLog[utp.message] as LogLevel;
+                                        Logger.instance.log(remappedLevel, utp.message);
+                                        continue;
+                                    }
+
+
+                                    if (utp.severity && utp.severity.toLowerCase() === 'error') {
+                                        const file = utp.file ? utp.file.replace(/\\/g, '/') : undefined;
+                                        const lineNum = utp.line ? utp.line : undefined;
+                                        const message = utp.message;
+                                        const stacktrace = utp.stacktrace ? `${utp.stacktrace}` : undefined;
+                                        if (!message.startsWith(`\n::error::\u001B[31m`)) { // indicates a duplicate annotation
+                                            // only annotate if the file is within the current project
+                                            if (projectPath && file && file.startsWith(projectPath)) {
+                                                Logger.instance.annotate(LogLevel.ERROR, stacktrace == undefined ? message : `${message}\n${stacktrace}`, file, lineNum);
+                                            } else {
+                                                Logger.instance.error(stacktrace == undefined ? message : `${message}\n${stacktrace}`);
+                                            }
+                                        }
+                                    }
+                                } catch (error) {
+                                    logger.warn(`Failed to parse telemetry JSON: ${error} -- raw: ${jsonPart}`);
+                                }
+                            } else {
+                                process.stdout.write(`${line}\n`);
+                            }
+                        }
                     } catch (error: any) {
                         if (error.code !== 'EPIPE') {
                             throw error;
                         }
+                        logger.warn(`Error while parsing telemetry from log chunk: ${error}`);
                     }
                 }
             }
@@ -402,6 +462,7 @@ export function TailLogFile(logPath: string): LogTailResult {
                 await readNewLogContent();
 
                 try {
+                    // write a final newline to separate log output
                     process.stdout.write('\n');
                 } catch (error: any) {
                     if (error.code !== 'EPIPE') {
@@ -420,7 +481,7 @@ export function TailLogFile(logPath: string): LogTailResult {
         logEnded = true;
     }
 
-    return { tailPromise, stopLogTail };
+    return { tailPromise, stopLogTail, telemetry };
 }
 
 /**
