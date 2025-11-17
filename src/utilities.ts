@@ -403,8 +403,6 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                                     const utp = JSON.parse(jsonPart);
                                     telemetry.push(utp);
 
-                                    // annotate the log with the telemetry event
-                                    // ##utp:{"type":"Compiler","version":2,"phase":"Immediate","time":1762378495689,"processId":2256,"severity":"Error","message":"Assets\\_BurnerSphere\\Content\\Common Assets\\Lighting\\older\\ReflectionProbeBaker1.cs(75,13): error CS0103: The name 'AssetDatabase' does not exist in the current context","stacktrace":"","line":75,"file":"Assets\\_BurnerSphere\\Content\\Common Assets\\Lighting\\older\\ReflectionProbeBaker1.cs"}
                                     if (utp.severity && utp.severity.toLowerCase() === 'error') {
                                         const file = utp.file ? utp.file.replace(/\\/g, '/') : undefined;
                                         const lineNum = utp.line ? utp.line : undefined;
