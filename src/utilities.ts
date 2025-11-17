@@ -356,6 +356,10 @@ export interface LogTailResult {
     telemetry: any[];
 }
 
+const remappedEditorLog: Record<string, LogLevel> = {
+    'OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
+};
+
 /**
  * Tails a log file using fs.watch and ReadStream for efficient reading.
  * @param logPath The path to the log file to tail.
@@ -402,6 +406,13 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                                 try {
                                     const utp = JSON.parse(jsonPart);
                                     telemetry.push(utp);
+
+                                    if (utp.message && remappedEditorLog[utp.message] !== undefined) {
+                                        const remappedLevel: LogLevel = remappedEditorLog[utp.message] as LogLevel;
+                                        Logger.instance.log(remappedLevel, utp.message);
+                                        continue;
+                                    }
+
 
                                     if (utp.severity && utp.severity.toLowerCase() === 'error') {
                                         const file = utp.file ? utp.file.replace(/\\/g, '/') : undefined;
