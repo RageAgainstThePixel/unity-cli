@@ -359,12 +359,55 @@ program.command('run')
     .option('--unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, --unity-project or the UNITY_EDITOR_PATH environment variable must be set.')
     .option('--unity-project <unityProject>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable will be used, otherwise no project will be specified.')
     .option('--log-name <logName>', 'The name of the log file.')
-    .option('--verbose', 'Enable verbose logging.')
+    .option('--log-level <logLevel>', 'Set the logging level (debug, info, minimal, warning, error).')
+    .option('--verbose', 'Enable verbose logging. Deprecated, use --log-level instead.')
     .allowUnknownOption(true)
     .argument('<args...>', 'Arguments to pass to the Unity Editor executable.')
     .action(async (args: string[], options) => {
         if (options.verbose) {
+            Logger.instance.warn('The --verbose option is deprecated. Please use "--log-level <value>" instead.');
             Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        let requestedLogLevel: LogLevel | undefined;
+
+        if (options.logLevel) {
+            const levelStr: string = options.logLevel?.toString()?.trim().toLowerCase();
+
+            switch (levelStr) {
+                case 'debug':
+                    requestedLogLevel = LogLevel.DEBUG;
+                    break;
+                case 'ci':
+                    requestedLogLevel = LogLevel.CI;
+                    break;
+                case 'minimal':
+                    requestedLogLevel = LogLevel.UTP;
+                    break;
+                case 'info':
+                    requestedLogLevel = LogLevel.INFO;
+                    break;
+                case 'warning':
+                    requestedLogLevel = LogLevel.WARN;
+                    break;
+                case 'error':
+                    requestedLogLevel = LogLevel.ERROR;
+                    break;
+                default:
+                    Logger.instance.warn(`Unknown log level: ${levelStr}. Using default log level.`);
+                    break;
+            }
+        }
+
+        if (requestedLogLevel === LogLevel.UTP) {
+            if (process.env.GITHUB_ACTIONS === 'true') {
+                Logger.instance.warn('The "minimal" log level is not supported in CI environments. Falling back to CI log output.');
+                Logger.instance.logLevel = LogLevel.CI;
+            } else {
+                Logger.instance.logLevel = LogLevel.UTP;
+            }
+        } else if (requestedLogLevel) {
+            Logger.instance.logLevel = requestedLogLevel;
         }
 
         Logger.instance.debug(JSON.stringify({ options, args }));

@@ -11,11 +11,13 @@ import {
     ProcInfo,
     KillProcess,
     KillChildProcesses,
-    TailLogFile,
-    LogTailResult,
     Exec,
     DeleteDirectory,
 } from './utilities';
+import {
+    TailLogFile,
+    LogTailResult,
+} from './unity-logging';
 
 export interface EditorCommand {
     args: string[];
