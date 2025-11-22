@@ -28,6 +28,9 @@ A powerful command line utility for the Unity Game Engine. Automate Unity projec
       - [Run Unity Editor Commands](#run-unity-editor-commands)
     - [Unity Package Manager](#unity-package-manager)
       - [Sign a Unity Package](#sign-a-unity-package)
+- [Logging](#logging)
+  - [Local cli](#local-cli)
+  - [Github Actions](#github-actions)
 
 ## Features
 
@@ -288,3 +291,37 @@ unity-cli run --unity-project <path-to-project> -quit -batchmode -executeMethod 
 ```bash
 unity-cli sign-package --package <path-to-package-folder> --email <your-email> --password <your-password> --organization <your-organization-id>
 ```
+
+## Logging
+
+### Local cli
+
+`unity-cli` keeps regular terminal runs simple:
+
+- Writes everything to `stdout` with ANSI colors (yellow warnings, red errors) so you can scan logs quickly.
+- `startGroup`/`endGroup` just print headers and content, and don't include any foldouts or collapsing behavior and is meant for CI environments only.
+
+### Github Actions
+
+When `GITHUB_ACTIONS=true`, the logger emits GitHub workflow commands automatically:
+
+- Defaults to `info` level; add `--verbose` (or temporarily set `ACTIONS_STEP_DEBUG=true`) to surface `debug` lines.
+- `Logger.annotate(...)` escapes `%`, `\r`, and `\n`, then includes `file`, `line`, `endLine`, `col`, `endColumn`, and `title` metadata so annotations are clickable in the Checks UI.
+- `startGroup`/`endGroup` become `::group::` / `::endgroup::` blocks.
+- Helper methods (`CI_mask`, `CI_setEnvironmentVariable`, `CI_setOutput`, `CI_appendWorkflowSummary`) write to the corresponding GitHub-provided files, so secrets stay masked and workflow outputs update automatically.
+
+The same command line you run locally therefore produces colorized console output on your machine and rich annotations once it runs inside Actions.
+
+### Additional CI Environments
+
+At the moment, only GitHub Actions is supported for enhanced logging. If you would like to see support for additional CI environments, please open a pull request or feature request on the GitHub repository.
+
+#### Roadmap
+
+- [ ] Support Azure DevOps logging commands
+- [ ] Support GitLab CI logging commands
+- [ ] Support Bitbucket Pipelines logging commands
+- [ ] Support Jenkins logging commands
+- [ ] Support CircleCI logging commands
+- [ ] Support Travis CI logging commands
+- [ ] Support TeamCity logging commands

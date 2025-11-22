@@ -152,56 +152,55 @@ export class Logger {
 
         switch (this._ci) {
             case 'GITHUB_ACTIONS': {
-                var level: string;
-                switch (logLevel) {
-                    case LogLevel.CI:
-                    case LogLevel.INFO:
-                    case LogLevel.DEBUG: {
-                        level = 'notice';
-                        break;
-                    }
-                    case LogLevel.WARN: {
-                        level = 'warning';
-                        break;
-                    }
-                    case LogLevel.ERROR: {
-                        level = 'error';
-                        break;
-                    }
-                }
+                const level = {
+                    [LogLevel.CI]: 'notice',
+                    [LogLevel.INFO]: 'notice',
+                    [LogLevel.DEBUG]: 'notice',
+                    [LogLevel.WARN]: 'warning',
+                    [LogLevel.ERROR]: 'error',
+                }[logLevel] ?? 'notice';
 
-                let parts: string[] = [];
+                const parts: string[] = [];
+                const appendPart = (key: string, value?: string | number): void => {
+                    if (value === undefined || value === null) { return; }
+                    const stringValue = value.toString();
+                    if (stringValue.length === 0) { return; }
+                    parts.push(`${key}=${this.escapeGitHubCommandValue(stringValue)}`);
+                };
 
-                if (file !== undefined && file.length > 0) {
-                    parts.push(`file=${file}`);
-                }
-
+                appendPart('file', file);
                 if (line !== undefined && line > 0) {
-                    parts.push(`line=${line}`);
+                    appendPart('line', line);
                 }
-
                 if (endLine !== undefined && endLine > 0) {
-                    parts.push(`endLine=${endLine}`);
+                    appendPart('endLine', endLine);
                 }
-
                 if (column !== undefined && column > 0) {
-                    parts.push(`col=${column}`);
+                    appendPart('col', column);
                 }
-
                 if (endColumn !== undefined && endColumn > 0) {
-                    parts.push(`endColumn=${endColumn}`);
+                    appendPart('endColumn', endColumn);
                 }
+                appendPart('title', title);
 
-                if (title !== undefined && title.length > 0) {
-                    parts.push(`title=${title}`);
-                }
-
-                annotation = `::${level} ${parts.join(',')}::${message}`;
+                const metadata = parts.length > 0 ? ` ${parts.join(',')}` : '';
+                annotation = `::${level}${metadata}::${this.escapeGitHubCommandValue(message)}`;
                 break;
             }
         }
 
-        process.stdout.write(`${annotation}\n`);
+        if (annotation.length > 0) {
+            process.stdout.write(`${annotation}\n`);
+        } else {
+            this.log(logLevel, message);
+        }
+    }
+
+    private escapeGitHubCommandValue(value: string): string {
+        return value
+            .replace(/%/g, '%25')
+            .replace(/\r/g, '%0D')
+            .replace(/\n/g, '%0A');
     }
 
     private shouldLog(level: LogLevel): boolean {
