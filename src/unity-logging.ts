@@ -54,8 +54,8 @@ interface FormattedTableOutput {
     lineCount: number;
 }
 
-const MAX_NAME_COLUMN_WIDTH = 32;
 const MAX_DESCRIPTION_COLUMN_WIDTH = 64;
+const extendedPictographicRegex = /\p{Extended_Pictographic}/u;
 
 class ActionTelemetryAccumulator {
     private pendingActions = new Map<string, UTPBase>();
@@ -227,15 +227,120 @@ function truncate(value: string, maxLength: number): string {
     return `${value.slice(0, maxLength - 3)}...`;
 }
 
-function centerText(value: string, width: number): string {
-    if (value.length >= width) {
+export function stringDisplayWidth(value: string): number {
+    let width = 0;
+    for (const symbol of [...value]) {
+        const codePoint = symbol.codePointAt(0);
+        if (codePoint === undefined) {
+            continue;
+        }
+
+        width += charDisplayWidth(codePoint);
+    }
+    return width;
+}
+
+function charDisplayWidth(codePoint: number): number {
+    if (isZeroWidthCodePoint(codePoint)) {
+        return 0;
+    }
+
+    if (isEmojiPresentation(codePoint) || isFullWidthCodePoint(codePoint)) {
+        return 2;
+    }
+
+    return 1;
+}
+
+function isZeroWidthCodePoint(codePoint: number): boolean {
+    if (codePoint === 0) {
+        return true;
+    }
+
+    if (codePoint === 0x200d) {
+        return true; // zero width joiner used in emoji sequences
+    }
+
+    if (codePoint < 32 || (codePoint >= 0x7f && codePoint < 0xa0)) {
+        return true;
+    }
+
+    if (isCombiningMark(codePoint)) {
+        return true;
+    }
+
+    if ((codePoint >= 0xfe00 && codePoint <= 0xfe0f) || (codePoint >= 0xe0100 && codePoint <= 0xe01ef)) {
+        return true; // variation selectors
+    }
+
+    return false;
+}
+
+function isEmojiPresentation(codePoint: number): boolean {
+    // Use Unicode Extended_Pictographic to detect emoji that are rendered double-width
+    return extendedPictographicRegex.test(String.fromCodePoint(codePoint));
+}
+
+function isCombiningMark(codePoint: number): boolean {
+    const ranges: Array<[number, number]> = [
+        [0x0300, 0x036f],
+        [0x0483, 0x0489],
+        [0x07eb, 0x07f3],
+        [0x135d, 0x135f],
+        [0x1ab0, 0x1aff],
+        [0x1dc0, 0x1dff],
+        [0x20d0, 0x20ff],
+        [0xfe20, 0xfe2f],
+    ];
+
+    return ranges.some(([start, end]) => codePoint >= start && codePoint <= end);
+}
+
+function isFullWidthCodePoint(codePoint: number): boolean {
+    return codePoint >= 0x1100 && (
+        codePoint <= 0x115f ||
+        codePoint === 0x2329 ||
+        codePoint === 0x232a ||
+        (codePoint >= 0x2e80 && codePoint <= 0xa4cf && codePoint !== 0x303f) ||
+        (codePoint >= 0xac00 && codePoint <= 0xd7a3) ||
+        (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+        (codePoint >= 0xfe10 && codePoint <= 0xfe19) ||
+        (codePoint >= 0xfe30 && codePoint <= 0xfe6b) ||
+        (codePoint >= 0xff01 && codePoint <= 0xff60) ||
+        (codePoint >= 0xffe0 && codePoint <= 0xffe6) ||
+        (codePoint >= 0x1f300 && codePoint <= 0x1f64f) ||
+        (codePoint >= 0x1f900 && codePoint <= 0x1f9ff) ||
+        (codePoint >= 0x20000 && codePoint <= 0x3fffd)
+    );
+}
+
+function padDisplay(value: string, width: number, alignment: 'left' | 'right' | 'center' = 'left'): string {
+    const valueWidth = stringDisplayWidth(value);
+    if (valueWidth >= width) {
         return value;
     }
 
-    const totalPadding = width - value.length;
-    const left = Math.floor(totalPadding / 2);
-    const right = totalPadding - left;
-    return `${' '.repeat(left)}${value}${' '.repeat(right)}`;
+    const padding = width - valueWidth;
+    if (alignment === 'right') {
+        return `${' '.repeat(padding)}${value}`;
+    }
+
+    if (alignment === 'center') {
+        const left = Math.floor(padding / 2);
+        return `${' '.repeat(left)}${value}${' '.repeat(padding - left)}`;
+    }
+
+    return `${value}${' '.repeat(padding)}`;
+}
+
+function buildBorderLine(columnWidths: number[], left: string, middle: string, right: string): string {
+    let result = left;
+    columnWidths.forEach((width, index) => {
+        const segmentWidth = Math.max(0, width + 2);
+        result += '─'.repeat(segmentWidth);
+        result += index === columnWidths.length - 1 ? right : middle;
+    });
+    return result;
 }
 
 function formatActionTimelineTable(snapshot: ActionTableSnapshot): FormattedTableOutput | undefined {
@@ -248,7 +353,7 @@ function formatActionTimelineTable(snapshot: ActionTableSnapshot): FormattedTabl
         errorsText?: string;
     }
 
-    const tableRows: TableRow[] = [];
+    const rows: TableRow[] = [];
 
     snapshot.pending.forEach(action => {
         const row: TableRow = {
@@ -259,7 +364,7 @@ function formatActionTimelineTable(snapshot: ActionTableSnapshot): FormattedTabl
         if (showErrorsColumn) {
             row.errorsText = '';
         }
-        tableRows.push(row);
+        rows.push(row);
     });
 
     snapshot.completed.forEach(action => {
@@ -271,16 +376,16 @@ function formatActionTimelineTable(snapshot: ActionTableSnapshot): FormattedTabl
         if (showErrorsColumn) {
             row.errorsText = action.errors.length.toString();
         }
-        tableRows.push(row);
+        rows.push(row);
     });
 
-    if (tableRows.length === 0) {
+    if (rows.length === 0) {
         return undefined;
     }
 
     const totalsRow: TableRow = {
         status: 'Σ',
-        description: 'Total Build Duration',
+        description: ' Total Build Duration',
         durationText: formatDuration(snapshot.totalDurationMs),
     };
     if (showErrorsColumn) {
@@ -292,43 +397,45 @@ function formatActionTimelineTable(snapshot: ActionTableSnapshot): FormattedTabl
     const durationHeader = 'Duration';
     const errorsHeader = '# of Errors';
 
-    const measurementRows = [...tableRows, totalsRow];
+    const statusWidth = Math.max(stringDisplayWidth(statusHeader), ...rows.map(row => stringDisplayWidth(row.status)), stringDisplayWidth(totalsRow.status));
+    const descriptionWidth = Math.max(stringDisplayWidth(descriptionHeader), ...rows.map(row => stringDisplayWidth(row.description)), stringDisplayWidth(totalsRow.description));
+    const durationWidth = Math.max(stringDisplayWidth(durationHeader), ...rows.map(row => stringDisplayWidth(row.durationText)), stringDisplayWidth(totalsRow.durationText));
+    const errorsWidth = showErrorsColumn ? Math.max(stringDisplayWidth(errorsHeader), ...rows.map(row => stringDisplayWidth(row.errorsText ?? '')), stringDisplayWidth(totalsRow.errorsText ?? '')) : 0;
 
-    const statusWidth = Math.max(statusHeader.length, ...measurementRows.map(row => row.status.length));
-    const descriptionWidth = Math.max(descriptionHeader.length, ...measurementRows.map(row => row.description.length));
-    const durationWidth = Math.max(durationHeader.length, ...measurementRows.map(row => row.durationText.length));
-    const errorsWidth = showErrorsColumn ? Math.max(errorsHeader.length, ...measurementRows.map(row => (row.errorsText ?? '').length)) : 0;
+    const padStatus = (value: string): string => padDisplay(value, statusWidth, 'center');
 
-    const padStatus = (value: string): string => centerText(value, statusWidth);
+    const columns = showErrorsColumn
+        ? [statusWidth, descriptionWidth, durationWidth, errorsWidth]
+        : [statusWidth, descriptionWidth, durationWidth];
 
-    const headerRow = showErrorsColumn
-        ? `| ${padStatus(statusHeader)} | ${descriptionHeader.padEnd(descriptionWidth)} | ${durationHeader.padStart(durationWidth)} | ${errorsHeader.padStart(errorsWidth)} |`
-        : `| ${padStatus(statusHeader)} | ${descriptionHeader.padEnd(descriptionWidth)} | ${durationHeader.padStart(durationWidth)} |`;
-    const horizontalRule = '-'.repeat(headerRow.length);
-
-    const formatRow = (row: typeof tableRows[number]): string => {
-        let line = `| ${padStatus(row.status)} | ${row.description.padEnd(descriptionWidth)} | ${row.durationText.padStart(durationWidth)} |`;
+    const formatRow = (row: TableRow): string => {
+        let line = `│ ${padStatus(row.status)} │ ${padDisplay(row.description, descriptionWidth)} │ ${padDisplay(row.durationText, durationWidth, 'right')} │`;
         if (showErrorsColumn) {
-            const errorsText = row.errorsText ?? '';
-            line += ` ${errorsText.padStart(errorsWidth)} |`;
+            line += ` ${padDisplay(row.errorsText ?? '', errorsWidth, 'right')} │`;
         }
         return line;
     };
 
-    const titleLine = centerText('Unity Build Timeline', headerRow.length);
+    const topBorder = buildBorderLine(columns, '┌', '┬', '┐');
+    const headerRow = showErrorsColumn
+        ? `│ ${padStatus(statusHeader)} │ ${padDisplay(descriptionHeader, descriptionWidth)} │ ${padDisplay(durationHeader, durationWidth, 'right')} │ ${padDisplay(errorsHeader, errorsWidth, 'right')} │`
+        : `│ ${padStatus(statusHeader)} │ ${padDisplay(descriptionHeader, descriptionWidth)} │ ${padDisplay(durationHeader, durationWidth, 'right')} │`;
+    const headerDivider = buildBorderLine(columns, '├', '┼', '┤');
+    const totalsDivider = buildBorderLine(columns, '├', '┼', '┤');
+    const bottomBorder = buildBorderLine(columns, '└', '┴', '┘');
 
-    let output = `${titleLine}\n`;
-    output += `${horizontalRule}\n`;
+    let output = 'Unity Build Timeline\n';
+    output += `${topBorder}\n`;
     output += `${headerRow}\n`;
-    output += `${horizontalRule}\n`;
+    output += `${headerDivider}\n`;
 
-    for (const row of tableRows) {
+    rows.forEach(row => {
         output += `${formatRow(row)}\n`;
-    }
+    });
 
-    output += `${horizontalRule}\n`;
+    output += `${totalsDivider}\n`;
     output += `${formatRow(totalsRow)}\n`;
-    output += `${horizontalRule}\n`;
+    output += `${bottomBorder}\n`;
 
     if (showErrorsColumn && snapshot.totalErrorCount > 0) {
         const errorRows: Array<{ description: string; detail: string }> = [];
@@ -344,21 +451,24 @@ function formatActionTimelineTable(snapshot: ActionTableSnapshot): FormattedTabl
         });
 
         if (errorRows.length > 0) {
-            const errorDescriptionWidth = Math.max(descriptionHeader.length, ...errorRows.map(errRow => errRow.description.length));
+            const errorDescriptionWidth = Math.max(stringDisplayWidth(descriptionHeader), ...errorRows.map(errRow => stringDisplayWidth(errRow.description)));
             const detailHeader = 'Error';
-            const detailWidth = Math.max(detailHeader.length, ...errorRows.map(errRow => errRow.detail.length));
+            const detailWidth = Math.max(stringDisplayWidth(detailHeader), ...errorRows.map(errRow => stringDisplayWidth(errRow.detail)));
 
-            const errorHeaderRow = `| ${descriptionHeader.padEnd(errorDescriptionWidth)} | ${detailHeader.padEnd(detailWidth)} |`;
-            const errorRule = '-'.repeat(errorHeaderRow.length);
+            const errorColumns = [errorDescriptionWidth, detailWidth];
+            const errorHeaderRow = `│ ${padDisplay(descriptionHeader, errorDescriptionWidth)} │ ${padDisplay(detailHeader, detailWidth)} │`;
+            const errorTop = buildBorderLine(errorColumns, '┌', '┬', '┐');
+            const errorDivider = buildBorderLine(errorColumns, '├', '┼', '┤');
+            const errorBottom = buildBorderLine(errorColumns, '└', '┴', '┘');
 
             output += '\nError Details\n';
-            output += `${errorRule}\n`;
+            output += `${errorTop}\n`;
             output += `${errorHeaderRow}\n`;
-            output += `${errorRule}\n`;
-            for (const detailRow of errorRows) {
-                output += `| ${detailRow.description.padEnd(errorDescriptionWidth)} | ${detailRow.detail.padEnd(detailWidth)} |\n`;
-            }
-            output += `${errorRule}\n`;
+            output += `${errorDivider}\n`;
+            errorRows.forEach(detailRow => {
+                output += `│ ${padDisplay(detailRow.description, errorDescriptionWidth)} │ ${padDisplay(detailRow.detail, detailWidth)} │\n`;
+            });
+            output += `${errorBottom}\n`;
         }
     }
 
@@ -477,21 +587,27 @@ function formatMemoryLeakTable(memLeaks: UTPMemoryLeak): string {
     const labelWidth = Math.max(labelHeader.length, totalLabel.length, rowLabelWidth);
     const sizeWidth = Math.max(sizeHeader.length, totalValueStr.length, rowSizeWidth);
 
+    const columns = [labelWidth, sizeWidth];
+    const topBorder = buildBorderLine(columns, '┌', '┬', '┐');
+    const headerDivider = buildBorderLine(columns, '├', '┼', '┤');
+    const bottomBorder = buildBorderLine(columns, '└', '┴', '┘');
+
     let output = 'Memory Leaks Detected:\n';
-    output += `${'-'.repeat(labelWidth + sizeWidth + 7)}\n`;
-    output += `| ${labelHeader.padEnd(labelWidth)} | ${sizeHeader.padStart(sizeWidth)} |\n`;
-    output += `|${'-'.repeat(labelWidth + 2)}|${'-'.repeat(sizeWidth + 2)}|\n`;
+    output += `${topBorder}\n`;
+    output += `│ ${labelHeader.padEnd(labelWidth)} │ ${sizeHeader.padStart(sizeWidth)} │\n`;
+    output += `${headerDivider}\n`;
 
     if (rows.length === 0) {
-        output += `| ${nonePlaceholder.padEnd(labelWidth)} | ${''.padStart(sizeWidth)} |\n`;
+        output += `│ ${nonePlaceholder.padEnd(labelWidth)} │ ${''.padStart(sizeWidth)} │\n`;
     } else {
         for (const [label, size] of rows) {
-            output += `| ${label.padEnd(labelWidth)} | ${size.toString().padStart(sizeWidth)} |\n`;
+            output += `│ ${label.padEnd(labelWidth)} │ ${size.toString().padStart(sizeWidth)} │\n`;
         }
     }
 
-    output += `| ${totalLabel.padEnd(labelWidth)} | ${totalValueStr.padStart(sizeWidth)} |\n`;
-    output += `${'-'.repeat(labelWidth + sizeWidth + 7)}\n`;
+    output += `${headerDivider}\n`;
+    output += `│ ${totalLabel.padEnd(labelWidth)} │ ${totalValueStr.padStart(sizeWidth)} │\n`;
+    output += `${bottomBorder}\n`;
 
     return output;
 }
