@@ -42,7 +42,7 @@ interface PendingActionSummary {
     description: string;
 }
 
-interface ActionTableSnapshot {
+export interface ActionTableSnapshot {
     completed: CompletedActionSummary[];
     pending: PendingActionSummary[];
     totalDurationMs: number;
@@ -54,7 +54,9 @@ interface FormattedTableOutput {
     lineCount: number;
 }
 
-const MAX_DESCRIPTION_COLUMN_WIDTH = 64;
+const MAX_ERROR_DETAIL_COLUMN_WIDTH = 64;
+const MIN_DESCRIPTION_COLUMN_WIDTH = 16;
+const DEFAULT_TERMINAL_WIDTH = 120;
 const extendedPictographicRegex = /\p{Extended_Pictographic}/u;
 
 class ActionTelemetryAccumulator {
@@ -212,19 +214,64 @@ function formatDuration(ms: number): string {
 }
 
 function truncate(value: string, maxLength: number): string {
-    if (value.length <= maxLength) {
+    return truncateDisplay(value, maxLength);
+}
+
+function truncateDisplay(value: string, maxWidth: number): string {
+    if (maxWidth <= 0) {
+        return '';
+    }
+
+    if (stringDisplayWidth(value) <= maxWidth) {
         return value;
     }
 
-    if (maxLength <= 1) {
-        return value.slice(0, maxLength);
+    if (maxWidth <= 3) {
+        let width = 0;
+        let result = '';
+        for (const symbol of [...value]) {
+            const codePoint = symbol.codePointAt(0);
+            if (codePoint === undefined) {
+                continue;
+            }
+
+            const charWidth = charDisplayWidth(codePoint);
+            if (width + charWidth > maxWidth) {
+                break;
+            }
+            width += charWidth;
+            result += symbol;
+            if (width >= maxWidth) {
+                break;
+            }
+        }
+        return result;
     }
 
-    if (maxLength <= 3) {
-        return value.slice(0, maxLength);
+    const ellipsis = '...';
+    const ellipsisWidth = stringDisplayWidth(ellipsis);
+    const targetWidth = Math.max(1, maxWidth - ellipsisWidth);
+    let width = 0;
+    let result = '';
+    for (const symbol of [...value]) {
+        const codePoint = symbol.codePointAt(0);
+        if (codePoint === undefined) {
+            continue;
+        }
+
+        const charWidth = charDisplayWidth(codePoint);
+        if (width + charWidth > targetWidth) {
+            break;
+        }
+        width += charWidth;
+        result += symbol;
     }
 
-    return `${value.slice(0, maxLength - 3)}...`;
+    if (!result) {
+        return ellipsis;
+    }
+
+    return `${result}${ellipsis}`;
 }
 
 export function stringDisplayWidth(value: string): number {
@@ -315,22 +362,78 @@ function isFullWidthCodePoint(codePoint: number): boolean {
 }
 
 function padDisplay(value: string, width: number, alignment: 'left' | 'right' | 'center' = 'left'): string {
-    const valueWidth = stringDisplayWidth(value);
-    if (valueWidth >= width) {
-        return value;
+    if (width <= 0) {
+        return '';
+    }
+
+    let text = value;
+    let valueWidth = stringDisplayWidth(text);
+    if (valueWidth > width) {
+        text = truncateDisplay(text, width);
+        valueWidth = stringDisplayWidth(text);
+    }
+
+    if (valueWidth === width) {
+        return text;
     }
 
     const padding = width - valueWidth;
     if (alignment === 'right') {
-        return `${' '.repeat(padding)}${value}`;
+        return `${' '.repeat(padding)}${text}`;
     }
 
     if (alignment === 'center') {
         const left = Math.floor(padding / 2);
-        return `${' '.repeat(left)}${value}${' '.repeat(padding - left)}`;
+        return `${' '.repeat(left)}${text}${' '.repeat(padding - left)}`;
     }
 
-    return `${value}${' '.repeat(padding)}`;
+    return `${text}${' '.repeat(padding)}`;
+}
+
+function computeTablePadding(columnCount: number): number {
+    return columnCount * 3 + 1;
+}
+
+function computeTableWidth(columnWidths: Array<number | undefined>): number {
+    let sum = 0;
+    for (const width of columnWidths) {
+        sum += width ?? 0;
+    }
+    return sum + computeTablePadding(columnWidths.length);
+}
+
+function adjustDescriptionColumnWidth(columnWidths: Array<number | undefined>, descriptionColumnIndex: number, descriptionHeaderWidth: number, maxWidth?: number): Array<number | undefined> {
+    if (maxWidth === undefined || !Number.isFinite(maxWidth) || maxWidth <= 0) {
+        return columnWidths;
+    }
+
+    const targetWidth = Math.floor(maxWidth);
+    const totalWidth = computeTableWidth(columnWidths);
+    const paddingWidth = computeTablePadding(columnWidths.length);
+
+    let sumWithoutDescription = 0;
+    columnWidths.forEach((width, index) => {
+        if (index === descriptionColumnIndex) {
+            return;
+        }
+        sumWithoutDescription += width ?? 0;
+    });
+    const minDescriptionWidth = Math.max(descriptionHeaderWidth, MIN_DESCRIPTION_COLUMN_WIDTH);
+    const currentDescriptionWidth = columnWidths[descriptionColumnIndex] ?? minDescriptionWidth;
+    const availableWidthForDescription = targetWidth - paddingWidth - sumWithoutDescription;
+
+    if (totalWidth <= targetWidth) {
+        columnWidths[descriptionColumnIndex] = Math.max(currentDescriptionWidth, availableWidthForDescription);
+        return columnWidths;
+    }
+
+    if (availableWidthForDescription >= minDescriptionWidth) {
+        columnWidths[descriptionColumnIndex] = Math.max(minDescriptionWidth, Math.min(currentDescriptionWidth, availableWidthForDescription));
+        return columnWidths;
+    }
+
+    columnWidths[descriptionColumnIndex] = minDescriptionWidth;
+    return columnWidths;
 }
 
 function buildBorderLine(columnWidths: number[], left: string, middle: string, right: string): string {
@@ -343,7 +446,7 @@ function buildBorderLine(columnWidths: number[], left: string, middle: string, r
     return result;
 }
 
-function formatActionTimelineTable(snapshot: ActionTableSnapshot): FormattedTableOutput | undefined {
+export function formatActionTimelineTable(snapshot: ActionTableSnapshot, options?: { maxWidth?: number }): FormattedTableOutput | undefined {
     const showErrorsColumn = snapshot.totalErrorCount > 0;
 
     interface TableRow {
@@ -358,7 +461,7 @@ function formatActionTimelineTable(snapshot: ActionTableSnapshot): FormattedTabl
     snapshot.pending.forEach(action => {
         const row: TableRow = {
             status: '⏳',
-            description: truncate(action.description || '', MAX_DESCRIPTION_COLUMN_WIDTH),
+            description: action.description ?? '',
             durationText: '...',
         };
         if (showErrorsColumn) {
@@ -370,7 +473,7 @@ function formatActionTimelineTable(snapshot: ActionTableSnapshot): FormattedTabl
     snapshot.completed.forEach(action => {
         const row: TableRow = {
             status: action.errors.length > 0 ? '❌' : '✅',
-            description: truncate(action.description || '', MAX_DESCRIPTION_COLUMN_WIDTH),
+            description: action.description ?? '',
             durationText: formatDuration(action.durationMs),
         };
         if (showErrorsColumn) {
@@ -397,16 +500,28 @@ function formatActionTimelineTable(snapshot: ActionTableSnapshot): FormattedTabl
     const durationHeader = 'Duration';
     const errorsHeader = '# of Errors';
 
-    const statusWidth = Math.max(stringDisplayWidth(statusHeader), ...rows.map(row => stringDisplayWidth(row.status)), stringDisplayWidth(totalsRow.status));
-    const descriptionWidth = Math.max(stringDisplayWidth(descriptionHeader), ...rows.map(row => stringDisplayWidth(row.description)), stringDisplayWidth(totalsRow.description));
-    const durationWidth = Math.max(stringDisplayWidth(durationHeader), ...rows.map(row => stringDisplayWidth(row.durationText)), stringDisplayWidth(totalsRow.durationText));
-    const errorsWidth = showErrorsColumn ? Math.max(stringDisplayWidth(errorsHeader), ...rows.map(row => stringDisplayWidth(row.errorsText ?? '')), stringDisplayWidth(totalsRow.errorsText ?? '')) : 0;
+    let statusWidth = Math.max(stringDisplayWidth(statusHeader), ...rows.map(row => stringDisplayWidth(row.status)), stringDisplayWidth(totalsRow.status));
+    let descriptionWidth = Math.max(stringDisplayWidth(descriptionHeader), ...rows.map(row => stringDisplayWidth(row.description)), stringDisplayWidth(totalsRow.description));
+    let durationWidth = Math.max(stringDisplayWidth(durationHeader), ...rows.map(row => stringDisplayWidth(row.durationText)), stringDisplayWidth(totalsRow.durationText));
+    let errorsWidth = showErrorsColumn ? Math.max(stringDisplayWidth(errorsHeader), ...rows.map(row => stringDisplayWidth(row.errorsText ?? '')), stringDisplayWidth(totalsRow.errorsText ?? '')) : 0;
 
-    const padStatus = (value: string): string => padDisplay(value, statusWidth, 'center');
-
-    const columns = showErrorsColumn
+    let columns: Array<number | undefined> = showErrorsColumn
         ? [statusWidth, descriptionWidth, durationWidth, errorsWidth]
         : [statusWidth, descriptionWidth, durationWidth];
+
+    columns = adjustDescriptionColumnWidth(columns, 1, stringDisplayWidth(descriptionHeader), options?.maxWidth);
+    statusWidth = columns[0] ?? statusWidth;
+    descriptionWidth = columns[1] ?? descriptionWidth;
+    durationWidth = columns[2] ?? durationWidth;
+    if (showErrorsColumn) {
+        errorsWidth = columns[3] ?? errorsWidth;
+    }
+
+    const resolvedColumns = showErrorsColumn
+        ? [statusWidth, descriptionWidth, durationWidth, errorsWidth]
+        : [statusWidth, descriptionWidth, durationWidth];
+
+    const padStatus = (value: string): string => padDisplay(value, statusWidth, 'center');
 
     const formatRow = (row: TableRow): string => {
         let line = `│ ${padStatus(row.status)} │ ${padDisplay(row.description, descriptionWidth)} │ ${padDisplay(row.durationText, durationWidth, 'right')} │`;
@@ -416,13 +531,13 @@ function formatActionTimelineTable(snapshot: ActionTableSnapshot): FormattedTabl
         return line;
     };
 
-    const topBorder = buildBorderLine(columns, '┌', '┬', '┐');
+    const topBorder = buildBorderLine(resolvedColumns, '┌', '┬', '┐');
     const headerRow = showErrorsColumn
         ? `│ ${padStatus(statusHeader)} │ ${padDisplay(descriptionHeader, descriptionWidth)} │ ${padDisplay(durationHeader, durationWidth, 'right')} │ ${padDisplay(errorsHeader, errorsWidth, 'right')} │`
         : `│ ${padStatus(statusHeader)} │ ${padDisplay(descriptionHeader, descriptionWidth)} │ ${padDisplay(durationHeader, durationWidth, 'right')} │`;
-    const headerDivider = buildBorderLine(columns, '├', '┼', '┤');
-    const totalsDivider = buildBorderLine(columns, '├', '┼', '┤');
-    const bottomBorder = buildBorderLine(columns, '└', '┴', '┘');
+    const headerDivider = buildBorderLine(resolvedColumns, '├', '┼', '┤');
+    const totalsDivider = buildBorderLine(resolvedColumns, '├', '┼', '┤');
+    const bottomBorder = buildBorderLine(resolvedColumns, '└', '┴', '┘');
 
     let output = 'Unity Build Timeline\n';
     output += `${topBorder}\n`;
@@ -441,11 +556,11 @@ function formatActionTimelineTable(snapshot: ActionTableSnapshot): FormattedTabl
         const errorRows: Array<{ description: string; detail: string }> = [];
         snapshot.completed.forEach(action => {
             if (action.errors.length === 0) { return; }
-            const description = truncate(action.description || '', MAX_DESCRIPTION_COLUMN_WIDTH);
+            const description = truncate(action.description || '', MAX_ERROR_DETAIL_COLUMN_WIDTH);
             action.errors.forEach(err => {
                 errorRows.push({
                     description,
-                    detail: truncate(err, MAX_DESCRIPTION_COLUMN_WIDTH),
+                    detail: truncate(err, MAX_ERROR_DETAIL_COLUMN_WIDTH),
                 });
             });
         });
@@ -512,7 +627,7 @@ class ActionTableRenderer {
             return;
         }
 
-        const formatted = formatActionTimelineTable(snapshot);
+        const formatted = formatActionTimelineTable(snapshot, { maxWidth: this.getMaxWidth() });
         if (!formatted) {
             return;
         }
@@ -536,6 +651,20 @@ class ActionTableRenderer {
         process.stdout.write(`\u001b[${this.lastRenderLineCount}A\r`);
         process.stdout.write('\u001b[J');
         this.lastRenderLineCount = 0;
+    }
+
+    private getMaxWidth(): number {
+        const stdoutColumns = typeof process.stdout.columns === 'number' ? process.stdout.columns : undefined;
+        if (stdoutColumns && stdoutColumns > 0) {
+            return stdoutColumns;
+        }
+
+        const envColumns = Number(process.env.COLUMNS);
+        if (Number.isFinite(envColumns) && envColumns > 0) {
+            return envColumns;
+        }
+
+        return DEFAULT_TERMINAL_WIDTH;
     }
 }
 
