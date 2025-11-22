@@ -56,15 +56,10 @@ interface FormattedTableOutput {
 
 const MAX_ERROR_DETAIL_COLUMN_WIDTH = 64;
 const TIMELINE_HEADING = '🔨 Unity Build Timeline';
-const MIN_TIMELINE_LINES = 8;
-const ERROR_DETAILS_OVERHEAD = 6;
 const MIN_DESCRIPTION_COLUMN_WIDTH = 16;
 const DEFAULT_TERMINAL_WIDTH = 120;
-const DEFAULT_TERMINAL_HEIGHT = 40;
 const TERMINAL_WIDTH_SAFETY_MARGIN = 2;
-const TERMINAL_HEIGHT_SAFETY_MARGIN = 1;
 const MIN_TERMINAL_WIDTH = 40;
-const MIN_TERMINAL_HEIGHT = 10;
 const extendedPictographicRegex = /\p{Extended_Pictographic}/u;
 
 class ActionTelemetryAccumulator {
@@ -454,16 +449,8 @@ function buildBorderLine(columnWidths: number[], left: string, middle: string, r
     return result;
 }
 
-export function formatActionTimelineTable(snapshot: ActionTableSnapshot, options?: { maxWidth?: number; maxHeight?: number }): FormattedTableOutput | undefined {
+export function formatActionTimelineTable(snapshot: ActionTableSnapshot, options?: { maxWidth?: number }): FormattedTableOutput | undefined {
     const showErrorsColumn = snapshot.totalErrorCount > 0;
-    const sanitizedMaxHeight = options?.maxHeight && Number.isFinite(options.maxHeight) && options.maxHeight > 0
-        ? Math.floor(options.maxHeight)
-        : undefined;
-
-    if (sanitizedMaxHeight !== undefined && sanitizedMaxHeight < MIN_TIMELINE_LINES) {
-        const text = `${TIMELINE_HEADING}\nTerminal height is too small to display the Unity Build Timeline.\n\n`;
-        return { text, lineCount: countLines(text) };
-    }
 
     interface TableRow {
         status: string;
@@ -472,7 +459,7 @@ export function formatActionTimelineTable(snapshot: ActionTableSnapshot, options
         errorsText?: string;
     }
 
-    const rows: TableRow[] = [];
+    const tableRows: TableRow[] = [];
 
     snapshot.pending.forEach(action => {
         const row: TableRow = {
@@ -483,7 +470,7 @@ export function formatActionTimelineTable(snapshot: ActionTableSnapshot, options
         if (showErrorsColumn) {
             row.errorsText = '';
         }
-        rows.push(row);
+        tableRows.push(row);
     });
 
     snapshot.completed.forEach(action => {
@@ -495,60 +482,11 @@ export function formatActionTimelineTable(snapshot: ActionTableSnapshot, options
         if (showErrorsColumn) {
             row.errorsText = action.errors.length.toString();
         }
-        rows.push(row);
+        tableRows.push(row);
     });
 
-    if (rows.length === 0) {
-        return undefined;
-    }
-
-    const pendingCount = snapshot.pending.length;
-    let tableRows: TableRow[] = rows;
-
-    if (sanitizedMaxHeight !== undefined) {
-        const maxBodyRows = Math.max(0, sanitizedMaxHeight - MIN_TIMELINE_LINES);
-
-        if (rows.length > maxBodyRows) {
-            if (maxBodyRows === 0) {
-                const text = `${TIMELINE_HEADING}\nTerminal height is too small to display Unity Build Timeline rows.\n\n`;
-                return { text, lineCount: countLines(text) };
-            }
-
-            const includeIndicator = maxBodyRows >= 2;
-            const dataSlots = includeIndicator ? maxBodyRows - 1 : maxBodyRows;
-            const pendingRows = rows.slice(0, pendingCount);
-            const completedRows = rows.slice(pendingCount);
-
-            const visiblePending = pendingRows.slice(0, Math.min(pendingRows.length, dataSlots));
-            let remainingSlots = dataSlots - visiblePending.length;
-            const visibleCompleted = remainingSlots > 0
-                ? completedRows.slice(Math.max(0, completedRows.length - remainingSlots))
-                : [];
-
-            const hiddenPending = Math.max(0, pendingRows.length - visiblePending.length);
-            const hiddenCompleted = Math.max(0, completedRows.length - visibleCompleted.length);
-
-            tableRows = [...visiblePending];
-            if (includeIndicator && (hiddenPending > 0 || hiddenCompleted > 0)) {
-                const parts: string[] = [];
-                if (hiddenPending > 0) { parts.push(`${hiddenPending} pending`); }
-                if (hiddenCompleted > 0) { parts.push(`${hiddenCompleted} completed`); }
-                const indicatorRow: TableRow = {
-                    status: '⋯',
-                    description: `… ${parts.join(' + ')} hidden …`,
-                    durationText: '',
-                };
-                if (showErrorsColumn) {
-                    indicatorRow.errorsText = '';
-                }
-                tableRows.push(indicatorRow);
-            }
-            tableRows = [...tableRows, ...visibleCompleted];
-        }
-    }
-
     if (tableRows.length === 0) {
-        tableRows = rows.slice(-1);
+        return undefined;
     }
 
     const totalsRow: TableRow = {
@@ -618,40 +556,17 @@ export function formatActionTimelineTable(snapshot: ActionTableSnapshot, options
     output += `${bottomBorder}\n`;
 
     if (showErrorsColumn && snapshot.totalErrorCount > 0) {
-        const allErrorRows: Array<{ description: string; detail: string }> = [];
+        const errorRows: Array<{ description: string; detail: string }> = [];
         snapshot.completed.forEach(action => {
             if (action.errors.length === 0) { return; }
             const description = truncate(action.description || '', MAX_ERROR_DETAIL_COLUMN_WIDTH);
             action.errors.forEach(err => {
-                allErrorRows.push({
+                errorRows.push({
                     description,
                     detail: truncate(err, MAX_ERROR_DETAIL_COLUMN_WIDTH),
                 });
             });
         });
-
-        let errorRows = allErrorRows;
-        if (sanitizedMaxHeight !== undefined && errorRows.length > 0) {
-            const remainingLines = sanitizedMaxHeight - (tableRows.length + MIN_TIMELINE_LINES);
-            if (remainingLines <= ERROR_DETAILS_OVERHEAD) {
-                errorRows = [];
-            } else {
-                const maxRows = Math.min(errorRows.length, remainingLines - ERROR_DETAILS_OVERHEAD);
-                if (maxRows <= 0) {
-                    errorRows = [];
-                } else if (errorRows.length > maxRows) {
-                    if (maxRows === 1) {
-                        errorRows = errorRows.slice(-1);
-                    } else {
-                        const dataRows = errorRows.slice(-(maxRows - 1));
-                        const hiddenCount = errorRows.length - dataRows.length;
-                        errorRows = [{ description: '', detail: `… ${hiddenCount} more hidden …` }, ...dataRows];
-                    }
-                } else {
-                    errorRows = errorRows.slice(-maxRows);
-                }
-            }
-        }
 
         if (errorRows.length > 0) {
             const errorDescriptionWidth = Math.max(stringDisplayWidth(descriptionHeader), ...errorRows.map(errRow => stringDisplayWidth(errRow.description)));
@@ -711,13 +626,7 @@ export class ActionTableRenderer {
             return;
         }
 
-        const formatOptions: { maxWidth: number; maxHeight?: number } = { maxWidth: this.getMaxWidth() };
-        const maxHeight = this.getMaxHeight();
-        if (maxHeight !== undefined) {
-            formatOptions.maxHeight = maxHeight;
-        }
-
-        const formatted = formatActionTimelineTable(snapshot, formatOptions);
+        const formatted = formatActionTimelineTable(snapshot, { maxWidth: this.getMaxWidth() });
 
         if (!formatted) {
             this.clearTimelineRegion();
@@ -747,7 +656,7 @@ export class ActionTableRenderer {
 
     private rewindToAnchor(): void {
         // The TIMELINE_HEADING line is our anchor; rewind to it before clearing so updates stay in place.
-        const linesToMove = Math.min(this.lastRenderLineCount, this.getMaxHeight() ?? this.lastRenderLineCount);
+        const linesToMove = this.lastRenderLineCount;
         if (linesToMove <= 0) {
             return;
         }
@@ -758,15 +667,6 @@ export class ActionTableRenderer {
         const detectedWidth = this.detectTerminalWidth();
         const adjustedWidth = detectedWidth - TERMINAL_WIDTH_SAFETY_MARGIN;
         return Math.max(MIN_TERMINAL_WIDTH, adjustedWidth);
-    }
-
-    private getMaxHeight(): number | undefined {
-        if (!this.canUpdateTerminal) {
-            return undefined;
-        }
-        const detectedHeight = this.detectTerminalHeight();
-        const adjustedHeight = detectedHeight - TERMINAL_HEIGHT_SAFETY_MARGIN;
-        return Math.max(MIN_TIMELINE_LINES, adjustedHeight);
     }
 
     private detectTerminalWidth(): number {
@@ -781,20 +681,6 @@ export class ActionTableRenderer {
         }
 
         return DEFAULT_TERMINAL_WIDTH;
-    }
-
-    private detectTerminalHeight(): number {
-        const stdoutRows = typeof process.stdout.rows === 'number' ? process.stdout.rows : undefined;
-        if (stdoutRows && stdoutRows > 0) {
-            return stdoutRows;
-        }
-
-        const envLines = Number(process.env.LINES);
-        if (Number.isFinite(envLines) && envLines > 0) {
-            return envLines;
-        }
-
-        return DEFAULT_TERMINAL_HEIGHT;
     }
 
 }
