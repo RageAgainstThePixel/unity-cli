@@ -1,7 +1,8 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import { LogLevel, Logger } from './logging';
 import { Delay, WaitForFileToBeUnlocked } from './utilities';
-import { Phase, UTP, UTPBase, UTPMemoryLeak } from './utp';
+import { Phase, UTP, UTPBase, UTPMemoryLeak, UTPPlayerBuildInfo } from './utp';
 
 /**
  * Result of the tailLogFile function containing cleanup resources.
@@ -42,11 +43,24 @@ interface PendingActionSummary {
     description: string;
 }
 
+interface PlayerBuildInfoStepSummary {
+    description: string;
+    durationMs: number;
+    errorCount: number;
+}
+
+interface PlayerBuildInfoSnapshot {
+    steps: PlayerBuildInfoStepSummary[];
+    totalDurationMs: number;
+    totalErrorCount: number;
+}
+
 export interface ActionTableSnapshot {
     completed: CompletedActionSummary[];
     pending: PendingActionSummary[];
     totalDurationMs: number;
     totalErrorCount: number;
+    playerBuildInfo?: PlayerBuildInfoSnapshot | undefined;
 }
 
 interface FormattedTableOutput {
@@ -54,8 +68,20 @@ interface FormattedTableOutput {
     lineCount: number;
 }
 
-const MAX_ERROR_DETAIL_COLUMN_WIDTH = 64;
 const TIMELINE_HEADING = '🔨 Unity Build Timeline';
+const PLAYER_BUILD_INFO_HEADING = '📋 Player Build Info';
+
+export function sanitizeTelemetryJson(raw: string): string {
+    if (!raw) {
+        return '';
+    }
+
+    return raw
+        .replace(/\uFEFF/gu, '')
+        .replace(/\u0000/gu, '')
+        .trim();
+}
+
 const MIN_DESCRIPTION_COLUMN_WIDTH = 16;
 const DEFAULT_TERMINAL_WIDTH = 120;
 const TERMINAL_WIDTH_SAFETY_MARGIN = 2;
@@ -67,6 +93,7 @@ class ActionTelemetryAccumulator {
     private completedActions: CompletedActionSummary[] = [];
     private totalDurationMs = 0;
     private totalErrorCount = 0;
+    private playerBuildInfoSteps: PlayerBuildInfoStepSummary[] = [];
 
     record(action: UTPBase): boolean {
         if (action.phase === Phase.Begin) {
@@ -106,8 +133,37 @@ class ActionTelemetryAccumulator {
         return false;
     }
 
+    recordPlayerBuildInfo(info: UTPPlayerBuildInfo): boolean {
+        if (!Array.isArray(info.steps) || info.steps.length === 0) {
+            return false;
+        }
+
+        const normalizedSteps: PlayerBuildInfoStepSummary[] = info.steps
+            .map(step => {
+                const description = step.description?.trim();
+                if (!description) {
+                    return undefined;
+                }
+                const durationMs = Math.max(0, step.duration ?? 0);
+                const errorCount = Math.max(0, step.errors ?? 0);
+                return {
+                    description,
+                    durationMs,
+                    errorCount,
+                };
+            })
+            .filter((step): step is PlayerBuildInfoStepSummary => step !== undefined);
+
+        if (normalizedSteps.length === 0) {
+            return false;
+        }
+
+        this.playerBuildInfoSteps = normalizedSteps;
+        return true;
+    }
+
     snapshot(): ActionTableSnapshot | undefined {
-        if (this.completedActions.length === 0 && this.pendingActions.size === 0) {
+        if (this.completedActions.length === 0 && this.pendingActions.size === 0 && this.playerBuildInfoSteps.length === 0) {
             return undefined;
         }
 
@@ -119,6 +175,13 @@ class ActionTelemetryAccumulator {
             })),
             totalDurationMs: this.totalDurationMs,
             totalErrorCount: this.totalErrorCount,
+            playerBuildInfo: this.playerBuildInfoSteps.length > 0
+                ? {
+                    steps: [...this.playerBuildInfoSteps],
+                    totalDurationMs: this.playerBuildInfoSteps.reduce((sum, step) => sum + step.durationMs, 0),
+                    totalErrorCount: this.playerBuildInfoSteps.reduce((sum, step) => sum + step.errorCount, 0),
+                }
+                : undefined,
         };
     }
 
@@ -168,28 +231,30 @@ class ActionTelemetryAccumulator {
             return [];
         }
 
-        return action.errors.map(formatErrorValue);
+        return action.errors.map(formatErrorDetailValue);
     }
 }
 
-function formatErrorValue(value: unknown): string {
+function formatErrorDetailValue(value: unknown): string {
+    let raw = '';
+
     if (value instanceof Error) {
-        return sanitizeWhitespace(value.message || value.toString());
+        raw = value.stack && value.stack.length > 0 ? value.stack : (value.message || value.toString());
+    } else if (typeof value === 'string') {
+        raw = value;
+    } else if (value === undefined || value === null) {
+        raw = '';
+    } else if (typeof value === 'object') {
+        try {
+            raw = JSON.stringify(value, null, 2);
+        } catch {
+            raw = String(value);
+        }
+    } else {
+        raw = String(value);
     }
 
-    if (typeof value === 'string') {
-        return sanitizeWhitespace(value);
-    }
-
-    try {
-        return sanitizeWhitespace(JSON.stringify(value));
-    } catch {
-        return sanitizeWhitespace(String(value));
-    }
-}
-
-function sanitizeWhitespace(value: string): string {
-    return value.replace(/\s+/g, ' ').trim();
+    return raw.replace(/\r\n/g, '\n').trimEnd();
 }
 
 function formatDuration(ms: number): string {
@@ -214,10 +279,6 @@ function formatDuration(ms: number): string {
     }
 
     return `${ms} ms`;
-}
-
-function truncate(value: string, maxLength: number): string {
-    return truncateDisplay(value, maxLength);
 }
 
 function truncateDisplay(value: string, maxWidth: number): string {
@@ -485,7 +546,7 @@ export function formatActionTimelineTable(snapshot: ActionTableSnapshot, options
         tableRows.push(row);
     });
 
-    if (tableRows.length === 0) {
+    if (tableRows.length === 0 && snapshot.playerBuildInfo === undefined) {
         return undefined;
     }
 
@@ -555,42 +616,25 @@ export function formatActionTimelineTable(snapshot: ActionTableSnapshot, options
     output += `${formatRow(totalsRow)}\n`;
     output += `${bottomBorder}\n`;
 
-    if (showErrorsColumn && snapshot.totalErrorCount > 0) {
-        const errorRows: Array<{ description: string; detail: string }> = [];
-        snapshot.completed.forEach(action => {
-            if (action.errors.length === 0) { return; }
-            const description = truncate(action.description || '', MAX_ERROR_DETAIL_COLUMN_WIDTH);
-            action.errors.forEach(err => {
-                errorRows.push({
-                    description,
-                    detail: truncate(err, MAX_ERROR_DETAIL_COLUMN_WIDTH),
-                });
-            });
-        });
+    const playerBuildInfoOptions = options?.maxWidth === undefined ? undefined : { maxWidth: options.maxWidth };
 
-        if (errorRows.length > 0) {
-            const errorDescriptionWidth = Math.max(stringDisplayWidth(descriptionHeader), ...errorRows.map(errRow => stringDisplayWidth(errRow.description)));
-            const detailHeader = 'Error';
-            const detailWidth = Math.max(stringDisplayWidth(detailHeader), ...errorRows.map(errRow => stringDisplayWidth(errRow.detail)));
-
-            const errorColumns = [errorDescriptionWidth, detailWidth];
-            const errorHeaderRow = `│ ${padDisplay(descriptionHeader, errorDescriptionWidth)} │ ${padDisplay(detailHeader, detailWidth)} │`;
-            const errorTop = buildBorderLine(errorColumns, '┌', '┬', '┐');
-            const errorDivider = buildBorderLine(errorColumns, '├', '┼', '┤');
-            const errorBottom = buildBorderLine(errorColumns, '└', '┴', '┘');
-
-            output += '\nError Details\n';
-            output += `${errorTop}\n`;
-            output += `${errorHeaderRow}\n`;
-            output += `${errorDivider}\n`;
-            errorRows.forEach(detailRow => {
-                output += `│ ${padDisplay(detailRow.description, errorDescriptionWidth)} │ ${padDisplay(detailRow.detail, detailWidth)} │\n`;
-            });
-            output += `${errorBottom}\n`;
+    if (snapshot.playerBuildInfo) {
+        const playerBuildInfoSection = formatPlayerBuildInfoTable(snapshot.playerBuildInfo, playerBuildInfoOptions);
+        if (playerBuildInfoSection) {
+            output += `\n${playerBuildInfoSection}`;
         }
     }
 
-    output += '\n';
+    if (showErrorsColumn && snapshot.totalErrorCount > 0) {
+        const errorSection = formatErrorDetailsSection(snapshot.completed);
+        if (errorSection) {
+            output += `\n${errorSection}\n`;
+        } else {
+            output += '\n';
+        }
+    } else {
+        output += '\n';
+    }
 
     return {
         text: output,
@@ -605,6 +649,104 @@ function countLines(block: string): number {
 
     const normalized = block.endsWith('\n') ? block : `${block}\n`;
     return normalized.split('\n').length - 1;
+}
+
+function formatPlayerBuildInfoTable(playerInfo: PlayerBuildInfoSnapshot, options?: { maxWidth?: number }): string | undefined {
+    if (!playerInfo.steps || playerInfo.steps.length === 0) {
+        return undefined;
+    }
+
+    interface BuildInfoRow {
+        description: string;
+        durationText: string;
+        errorsText: string;
+    }
+
+    const rows: BuildInfoRow[] = playerInfo.steps.map(step => ({
+        description: step.description,
+        durationText: formatDuration(step.durationMs),
+        errorsText: step.errorCount.toString(),
+    }));
+
+    const totalsRow: BuildInfoRow = {
+        description: ' Total Player Build Duration',
+        durationText: formatDuration(playerInfo.totalDurationMs),
+        errorsText: playerInfo.totalErrorCount.toString(),
+    };
+
+    const descriptionHeader = 'Description';
+    const durationHeader = 'Duration';
+    const errorsHeader = '# of Errors';
+
+    let descriptionWidth = Math.max(stringDisplayWidth(descriptionHeader), ...rows.map(row => stringDisplayWidth(row.description)), stringDisplayWidth(totalsRow.description));
+    let durationWidth = Math.max(stringDisplayWidth(durationHeader), ...rows.map(row => stringDisplayWidth(row.durationText)), stringDisplayWidth(totalsRow.durationText));
+    let errorWidth = Math.max(stringDisplayWidth(errorsHeader), ...rows.map(row => stringDisplayWidth(row.errorsText)), stringDisplayWidth(totalsRow.errorsText));
+
+    let columns: Array<number | undefined> = [descriptionWidth, durationWidth, errorWidth];
+    columns = adjustDescriptionColumnWidth(columns, 0, stringDisplayWidth(descriptionHeader), options?.maxWidth);
+    descriptionWidth = columns[0] ?? descriptionWidth;
+    durationWidth = columns[1] ?? durationWidth;
+    errorWidth = columns[2] ?? errorWidth;
+
+    const padDescription = (value: string): string => padDisplay(value, descriptionWidth);
+
+    const topBorder = buildBorderLine([descriptionWidth, durationWidth, errorWidth], '┌', '┬', '┐');
+    const headerDivider = buildBorderLine([descriptionWidth, durationWidth, errorWidth], '├', '┼', '┤');
+    const totalsDivider = buildBorderLine([descriptionWidth, durationWidth, errorWidth], '├', '┼', '┤');
+    const bottomBorder = buildBorderLine([descriptionWidth, durationWidth, errorWidth], '└', '┴', '┘');
+
+    let output = `${PLAYER_BUILD_INFO_HEADING}\n`;
+    output += `${topBorder}\n`;
+    output += `│ ${padDescription(descriptionHeader)} │ ${padDisplay(durationHeader, durationWidth, 'right')} │ ${padDisplay(errorsHeader, errorWidth, 'right')} │\n`;
+    output += `${headerDivider}\n`;
+
+    rows.forEach(row => {
+        output += `│ ${padDescription(row.description)} │ ${padDisplay(row.durationText, durationWidth, 'right')} │ ${padDisplay(row.errorsText, errorWidth, 'right')} │\n`;
+    });
+
+    output += `${totalsDivider}\n`;
+    output += `│ ${padDescription(totalsRow.description)} │ ${padDisplay(totalsRow.durationText, durationWidth, 'right')} │ ${padDisplay(totalsRow.errorsText, errorWidth, 'right')} │\n`;
+    output += `${bottomBorder}\n`;
+
+    if (!output.endsWith('\n')) {
+        output += '\n';
+    }
+
+    return output;
+}
+
+function formatErrorDetailsSection(actions: CompletedActionSummary[]): string | undefined {
+    const actionsWithErrors = actions.filter(action => action.errors.length > 0);
+    if (actionsWithErrors.length === 0) {
+        return undefined;
+    }
+
+    const lines: string[] = ['Error Details'];
+
+    actionsWithErrors.forEach(action => {
+        const headerText = (action.description && action.description.trim().length > 0)
+            ? action.description
+            : (action.name && action.name.trim().length > 0 ? action.name : 'Unnamed Action');
+
+        lines.push('');
+        lines.push(headerText);
+
+        action.errors.forEach(errorText => {
+            const normalized = errorText.length > 0 ? errorText : '(no details provided)';
+            const segments = normalized.split('\n');
+            const [firstLine, ...rest] = segments;
+            lines.push(`  - ${firstLine}`);
+            rest.forEach(segment => {
+                if (segment.length === 0) {
+                    lines.push('');
+                } else {
+                    lines.push(`    ${segment}`);
+                }
+            });
+        });
+    });
+
+    return lines.join('\n').trimEnd();
 }
 
 export class ActionTableRenderer {
@@ -758,6 +900,21 @@ function formatMemoryLeakTable(memLeaks: UTPMemoryLeak): string {
     return output;
 }
 
+function buildUtpLogPath(logPath: string): string {
+    const parsed = path.parse(logPath);
+    const utpFileName = `utp-${parsed.name}.json`;
+    return parsed.dir ? path.join(parsed.dir, utpFileName) : utpFileName;
+}
+
+async function writeUtpTelemetryLog(filePath: string, entries: UTP[], logger: Logger): Promise<void> {
+    try {
+        const content = `${JSON.stringify(entries, null, 2)}\n`;
+        await fs.promises.writeFile(filePath, content, 'utf8');
+    } catch (error) {
+        logger.warn(`Failed to write UTP telemetry log (${filePath}): ${error} `);
+    }
+}
+
 /**
  * Tails a log file using fs.watch and ReadStream for efficient reading.
  * @param logPath The path to the log file to tail.
@@ -772,12 +929,22 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
     const logger = Logger.instance;
     const actionAccumulator = new ActionTelemetryAccumulator();
     const actionTableRenderer = new ActionTableRenderer(process.stdout.isTTY === true && process.env.CI !== 'true');
+    const utpLogPath = buildUtpLogPath(logPath);
+    let telemetryFlushed = false;
 
     const renderActionTable = (): void => {
         const snapshot = actionAccumulator.snapshot();
         if (snapshot) {
             actionTableRenderer.render(snapshot);
         }
+    };
+
+    const flushTelemetryLog = async (): Promise<void> => {
+        if (telemetryFlushed) {
+            return;
+        }
+        telemetryFlushed = true;
+        await writeUtpTelemetryLog(utpLogPath, telemetry, logger);
     };
 
     const writeStdout = (content: string, restoreTable: boolean = true): void => {
@@ -822,7 +989,13 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                             if (line.startsWith('##utp:')) {
                                 const jsonPart = line.substring('##utp:'.length).trim();
                                 try {
-                                    const utpJson = JSON.parse(jsonPart);
+                                    const sanitizedJson = sanitizeTelemetryJson(jsonPart);
+
+                                    if (!sanitizedJson) {
+                                        continue;
+                                    }
+
+                                    const utpJson = JSON.parse(sanitizedJson);
                                     const utp = utpJson as UTP;
                                     telemetry.push(utp);
 
@@ -863,14 +1036,26 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                                             case 'Action': {
                                                 const actionEntry = utp as UTPBase;
                                                 const tableChanged = actionAccumulator.record(actionEntry);
+
                                                 if (tableChanged) {
                                                     renderActionTable();
                                                 }
+
                                                 break;
                                             }
                                             case 'MemoryLeaks':
                                                 logger.debug(formatMemoryLeakTable(utp as UTPMemoryLeak));
                                                 break;
+                                            case 'PlayerBuildInfo': {
+                                                const infoEntry = utp as UTPPlayerBuildInfo;
+                                                const changed = actionAccumulator.recordPlayerBuildInfo(infoEntry);
+
+                                                if (changed) {
+                                                    renderActionTable();
+                                                }
+
+                                                break;
+                                            }
                                             default:
                                                 // Print raw JSON for unhandled UTP types
                                                 writeStdout(`${jsonPart}\n`);
@@ -920,8 +1105,10 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                     }
                 }
 
+                await flushTelemetryLog();
                 resolve();
             } catch (error) {
+                await flushTelemetryLog();
                 reject(error);
             }
         })();
