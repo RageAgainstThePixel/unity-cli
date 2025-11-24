@@ -300,10 +300,7 @@ export class UnityEditor {
                     'arch',
                     ['-x86_64', this.editorPath, ...command.args], {
                     stdio: ['ignore', 'ignore', 'ignore'],
-                    env: {
-                        ...process.env,
-                        UNITY_THISISABUILDMACHINE: '1'
-                    }
+                    env: baseEditorEnv
                 });
             } else {
                 unityProcess = spawn(
