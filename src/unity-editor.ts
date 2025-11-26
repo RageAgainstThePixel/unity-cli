@@ -11,11 +11,13 @@ import {
     ProcInfo,
     KillProcess,
     KillChildProcesses,
-    TailLogFile,
-    LogTailResult,
     Exec,
     DeleteDirectory,
 } from './utilities';
+import {
+    TailLogFile,
+    LogTailResult,
+} from './unity-logging';
 
 export interface EditorCommand {
     args: string[];
@@ -298,10 +300,7 @@ export class UnityEditor {
                     'arch',
                     ['-x86_64', this.editorPath, ...command.args], {
                     stdio: ['ignore', 'ignore', 'ignore'],
-                    env: {
-                        ...process.env,
-                        UNITY_THISISABUILDMACHINE: '1'
-                    }
+                    env: baseEditorEnv
                 });
             } else {
                 unityProcess = spawn(

@@ -44,6 +44,7 @@ program.command('activate-license')
     .option('-s, --serial <serial>', 'License serial number. Required when activating a professional license.')
     .option('-c, --config <config>', 'Path to the configuration file, or base64 encoded JSON string. Required when activating a floating license.')
     .option('--verbose', 'Enable verbose logging.')
+    .option('--json', 'Prints the last line of output as JSON string.')
     .action(async (options) => {
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
@@ -80,19 +81,25 @@ program.command('activate-license')
             }
         }
 
-        await client.Activate({
+        const token = await client.Activate({
             licenseType,
             servicesConfig: options.config,
             serial: options.serial,
             username: options.email,
             password: options.password
         });
+
+        if (licenseType === LicenseType.floating && token && options.json) {
+            process.stdout.write(`\n${JSON.stringify({ token: token })}\n`);
+        }
+
         process.exit(0);
     });
 
 program.command('return-license')
     .description('Return a Unity license.')
     .option('-l, --license <license>', 'License type (personal, professional, floating)')
+    .option('-t, --token <token>', 'Token received when acquiring a floating license lease. Required when returning a floating license.')
     .option('--verbose', 'Enable verbose logging.')
     .action(async (options) => {
         if (options.verbose) {
@@ -116,7 +123,36 @@ program.command('return-license')
             process.exit(1);
         }
 
-        await client.Deactivate(licenseType);
+        let token: string | undefined = options.token;
+
+        if (licenseType === LicenseType.floating) {
+            if (!token || token.length === 0) {
+                token = await PromptForSecretInput('Token: ');
+            }
+
+            if (!token || token.length === 0) {
+                Logger.instance.error('Token is required when returning a floating license. Use -t or --token to specify it.');
+                process.exit(1);
+            }
+        }
+
+        await client.Deactivate(licenseType, token);
+        process.exit(0);
+    });
+
+program.command('license-context')
+    .description('Display the context information of the Unity Licensing Client.')
+    .action(async () => {
+        const client = new LicensingClient();
+        await client.Context();
+        process.exit(0);
+    });
+
+program.command('licensing-logs')
+    .description('Print the path to the Unity Licensing Client log files.')
+    .action(async () => {
+        const client = new LicensingClient();
+        process.stdout.write(`${client.logPath()}\n`);
         process.exit(0);
     });
 
@@ -359,12 +395,55 @@ program.command('run')
     .option('--unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, --unity-project or the UNITY_EDITOR_PATH environment variable must be set.')
     .option('--unity-project <unityProject>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable will be used, otherwise no project will be specified.')
     .option('--log-name <logName>', 'The name of the log file.')
-    .option('--verbose', 'Enable verbose logging.')
+    .option('--log-level <logLevel>', 'Set the logging level (debug, info, minimal, warning, error).')
+    .option('--verbose', 'Enable verbose logging. Deprecated, use --log-level instead.')
     .allowUnknownOption(true)
     .argument('<args...>', 'Arguments to pass to the Unity Editor executable.')
     .action(async (args: string[], options) => {
         if (options.verbose) {
+            Logger.instance.warn('The --verbose option is deprecated. Please use "--log-level <value>" instead.');
             Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        let requestedLogLevel: LogLevel | undefined;
+
+        if (options.logLevel) {
+            const levelStr: string = options.logLevel?.toString()?.trim().toLowerCase();
+
+            switch (levelStr) {
+                case 'debug':
+                    requestedLogLevel = LogLevel.DEBUG;
+                    break;
+                case 'ci':
+                    requestedLogLevel = LogLevel.CI;
+                    break;
+                case 'minimal':
+                    requestedLogLevel = LogLevel.UTP;
+                    break;
+                case 'info':
+                    requestedLogLevel = LogLevel.INFO;
+                    break;
+                case 'warning':
+                    requestedLogLevel = LogLevel.WARN;
+                    break;
+                case 'error':
+                    requestedLogLevel = LogLevel.ERROR;
+                    break;
+                default:
+                    Logger.instance.warn(`Unknown log level: ${levelStr}. Using default log level.`);
+                    break;
+            }
+        }
+
+        if (requestedLogLevel === LogLevel.UTP) {
+            if (process.env.GITHUB_ACTIONS === 'true') {
+                Logger.instance.warn('The "minimal" log level is not supported in CI environments. Falling back to CI log output.');
+                Logger.instance.logLevel = LogLevel.CI;
+            } else {
+                Logger.instance.logLevel = LogLevel.UTP;
+            }
+        } else if (requestedLogLevel) {
+            Logger.instance.logLevel = requestedLogLevel;
         }
 
         Logger.instance.debug(JSON.stringify({ options, args }));

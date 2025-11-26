@@ -28,6 +28,9 @@ A powerful command line utility for the Unity Game Engine. Automate Unity projec
       - [Run Unity Editor Commands](#run-unity-editor-commands)
     - [Unity Package Manager](#unity-package-manager)
       - [Sign a Unity Package](#sign-a-unity-package)
+- [Logging](#logging)
+  - [Local cli](#local-cli)
+  - [Github Actions](#github-actions)
 
 ## Features
 
@@ -88,6 +91,7 @@ unity-cli license-version
 - `-p`, `--password`: Password for the Unity account. Required when activating a personal or professional license.
 - `-s`, `--serial`: License serial number. Required when activating a professional license.
 - `-c`, `--config`: Path to the configuration file, or base64 encoded JSON string. Required when activating a floating license.
+- `--json`: Prints the last line of output as JSON string.
 - `--verbose`: Enable verbose output.
 
 ```bash
@@ -99,10 +103,27 @@ unity-cli activate-license --license personal --email <your-email> --password <y
 `return-license [options]`: Return a Unity license.
 
 - `-l`, `--license`: License type (personal, professional, floating)
+- `-t`, `--token`: Floating license token. Required when returning a floating license.
 - `--verbose`: Enable verbose output.
 
 ```bash
 unity-cli return-license --license personal
+```
+
+#### License Context
+
+`license-context`: Prints the current license context information.
+
+```bash
+unity-cli license-context
+```
+
+#### Licensing Logs
+
+`licensing-logs`: Prints the Unity licensing logs.
+
+```bash
+unity-cli licensing-logs
 ```
 
 #### Unity Hub
@@ -259,8 +280,14 @@ unity-cli open-project
 - `--unity-editor <unityEditor>` The path to the Unity Editor executable. If unspecified, `--unity-project` or the `UNITY_EDITOR_PATH` environment variable must be set.
 - `--unity-project <unityProject>` The path to a Unity project. If unspecified, the `UNITY_PROJECT_PATH` environment variable will be used, otherwise no project will be specified.
 - `--log-name <logName>` The name of the log file.
-- `--verbose` Enable verbose logging.
+- `--log-level <logLevel>` Override the logger verbosity (`debug`, `info`, `minimal`, `warning`, `error`). Defaults to `info`.
+- `--verbose` Enable verbose logging. (Deprecated, use `--log-level <value>` instead)
 - `<args...>` Arguments to pass directly to the Unity Editor executable.
+
+> [!NOTE]
+> When setting the `--log-level` option to `minimal`, only the unity telemetry logs will be shown in the console output. All other logs will be written to the log file. This option is only supported when running the command locally in the terminal. ***This options is still experimental and may change in future releases.***
+>
+> When running in CI environments the logger will automatically print the full logs to the console no matter the log level.
 
 ```bash
 unity-cli run --unity-project <path-to-project> -quit -batchmode -executeMethod StartCommandLineBuild
@@ -288,3 +315,37 @@ unity-cli run --unity-project <path-to-project> -quit -batchmode -executeMethod 
 ```bash
 unity-cli sign-package --package <path-to-package-folder> --email <your-email> --password <your-password> --organization <your-organization-id>
 ```
+
+## Logging
+
+### Local cli
+
+`unity-cli` keeps regular terminal runs simple:
+
+- Writes everything to `stdout` with ANSI colors (yellow warnings, red errors) so you can scan logs quickly.
+- `startGroup`/`endGroup` just print headers and content, and don't include any foldouts or collapsing behavior and is meant for CI environments only.
+
+### Github Actions
+
+When `GITHUB_ACTIONS=true`, the logger emits GitHub workflow commands automatically:
+
+- Defaults to `info` level; add `--verbose` (or temporarily set `ACTIONS_STEP_DEBUG=true`) to surface `debug` lines.
+- `Logger.annotate(...)` escapes `%`, `\r`, and `\n`, then includes `file`, `line`, `endLine`, `col`, `endColumn`, and `title` metadata so annotations are clickable in the Checks UI.
+- `startGroup`/`endGroup` become `::group::` / `::endgroup::` blocks.
+- Helper methods (`CI_mask`, `CI_setEnvironmentVariable`, `CI_setOutput`, `CI_appendWorkflowSummary`) write to the corresponding GitHub-provided files, so secrets stay masked and workflow outputs update automatically.
+
+The same command line you run locally therefore produces colorized console output on your machine and rich annotations once it runs inside Actions.
+
+### Additional CI Environments
+
+At the moment, only GitHub Actions is supported for enhanced logging. If you would like to see support for additional CI environments, please open a pull request or feature request on the GitHub repository.
+
+#### Roadmap
+
+- [ ] Support Azure DevOps logging commands
+- [ ] Support GitLab CI logging commands
+- [ ] Support Bitbucket Pipelines logging commands
+- [ ] Support Jenkins logging commands
+- [ ] Support CircleCI logging commands
+- [ ] Support Travis CI logging commands
+- [ ] Support TeamCity logging commands

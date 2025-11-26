@@ -81,6 +81,64 @@ export class LicensingClient {
         }
     }
 
+    /**
+     * Gets the path to the Unity Licensing Client services configuration file.
+     * @see https://docs.unity.com/en-us/licensing-server/client-config#copying-the-configuration-file
+     * @returns The path to the services configuration file.
+     */
+    private servicesConfigPath(): string {
+        let servicesConfigDirectory: string;
+
+        switch (process.platform) {
+            case 'win32':
+                // %PROGRAMDATA%\Unity\Config
+                servicesConfigDirectory = path.join(process.env.PROGRAMDATA || '', 'Unity', 'Config');
+                break;
+            case 'darwin':
+                // /Library/Application Support/Unity/config
+                servicesConfigDirectory = path.join('/Library', 'Application Support', 'Unity', 'config');
+                break;
+            case 'linux':
+                // /usr/share/unity3d/config
+                servicesConfigDirectory = path.join('/usr', 'share', 'unity3d', 'config');
+                break;
+            default:
+                throw new Error(`Unsupported platform: ${process.platform}`);
+        }
+
+        // Ensure the services directory exists
+        if (!fs.existsSync(servicesConfigDirectory)) {
+            fs.mkdirSync(servicesConfigDirectory, { recursive: true });
+        }
+
+        return path.join(servicesConfigDirectory, 'services-config.json');
+    }
+
+    /**
+     * Gets the path to the Unity Licensing Client log file.
+     * @see https://docs.unity.com/en-us/licensing-server/troubleshooting-client#logs
+     * @returns The path to the log file.
+     */
+    public logPath(): string {
+        switch (process.platform) {
+            case 'win32':
+                // $env:LOCALAPPDATA\Unity\Unity.Licensing.Client.log
+                return path.join(process.env.LOCALAPPDATA || '', 'Unity', 'Unity.Licensing.Client.log');
+            case 'darwin':
+                // ~/Library/Logs/Unity/Unity.Licensing.Client.log
+                return path.join(os.homedir(), 'Library', 'Logs', 'Unity', 'Unity.Licensing.Client.log');
+            case 'linux':
+                // ~/.config/unity3d/Unity/Unity.Licensing.Client.log
+                return path.join(os.homedir(), '.config', 'unity3d', 'Unity', 'Unity.Licensing.Client.log');
+            default:
+                throw new Error(`Unsupported platform: ${process.platform}`);
+        }
+    }
+
+    /**
+     * Displays the context information of the licensing client to the console.
+     * @see https://docs.unity.com/en-us/licensing-server/troubleshooting-client#exit-codes
+     */
     private getExitCodeMessage(exitCode: number): string {
         switch (exitCode) {
             case 0:
@@ -235,7 +293,7 @@ export class LicensingClient {
         process.env['UNITY_COMMON_DIR'] = patchedDirectory;
     }
 
-    private async exec(args: string[]): Promise<string> {
+    private async exec(args: string[], silent: boolean = false): Promise<string> {
         await this.patchLicenseVersion();
 
         if (!this.licenseClientPath) {
@@ -285,12 +343,14 @@ export class LicensingClient {
                 });
             });
         } finally {
-            const maskedOutput = this.maskSerialInOutput(output);
-            const splitLines = maskedOutput.split(/\r?\n/);
+            if (!silent || exitCode !== 0) {
+                const maskedOutput = this.maskSerialInOutput(output);
+                const splitLines = maskedOutput.split(/\r?\n/);
 
-            for (const line of splitLines) {
-                if (line === undefined || line.length === 0) { continue; }
-                this.logger.info(line);
+                for (const line of splitLines) {
+                    if (line === undefined || line.length === 0) { continue; }
+                    this.logger.info(line);
+                }
             }
 
             this.logger.endGroup();
@@ -320,13 +380,20 @@ export class LicensingClient {
     }
 
     /**
+     * Displays the context information of the licensing client to the console.
+     */
+    public async Context(): Promise<void> {
+        await this.exec(['--showContext']);
+    }
+
+    /**
      * Activates a Unity license.
      * @param options The activation options including license type, services config, serial, username, and password.
      * @param skipEntitlementCheck Whether to skip the entitlement check.
-     * @returns A promise that resolves when the license is activated.
+     * @returns A promise that resolves to the floating license token if applicable, otherwise undefined.
      * @throws Error if activation fails or required parameters are missing.
      */
-    public async Activate(options: ActivateOptions, skipEntitlementCheck: boolean = false): Promise<void> {
+    public async Activate(options: ActivateOptions, skipEntitlementCheck: boolean = false): Promise<string | undefined> {
         if (!skipEntitlementCheck) {
             let activeLicenses = await this.GetActiveEntitlements();
 
@@ -342,35 +409,28 @@ export class LicensingClient {
                     throw new Error('Services config path is required for floating license activation');
                 }
 
-                let servicesPath: string;
-                switch (process.platform) {
-                    case 'win32':
-                        servicesPath = path.join(process.env.PROGRAMDATA || '', 'Unity', 'config');
-                        break;
-                    case 'darwin':
-                        servicesPath = path.join('/Library', 'Application Support', 'Unity', 'config');
-                        break;
-                    case 'linux':
-                        servicesPath = path.join('/usr', 'share', 'unity3d', 'config');
-                        break;
-                    default:
-                        throw new Error(`Unsupported platform: ${process.platform}`);
-                }
-
-                // Ensure the services directory exists
-                if (!fs.existsSync(servicesPath)) {
-                    await fs.promises.mkdir(servicesPath, { recursive: true });
-                }
-
-                const servicesConfigPath = path.join(servicesPath, 'services-config.json');
+                const servicesConfigPath = this.servicesConfigPath();
 
                 if (fs.existsSync(options.servicesConfig)) {
-                    await fs.promises.copyFile(options.servicesConfig, servicesConfigPath);
+                    fs.copyFileSync(options.servicesConfig, servicesConfigPath);
                 }
                 else {
-                    await fs.promises.writeFile(servicesConfigPath, Buffer.from(options.servicesConfig, 'base64'));
+                    fs.writeFileSync(servicesConfigPath, Buffer.from(options.servicesConfig, 'base64'));
                 }
-                break;
+
+                this.logger.debug(`Using services config at: ${servicesConfigPath}`);
+
+                const output = await this.exec([`--acquire-floating`], true);
+                const tokenMatch = output.match(/with token:\s*"(?<token>[\w-]+)"/);
+
+                if (!tokenMatch || !tokenMatch.groups || !tokenMatch.groups['token']) {
+                    throw new Error(`Failed to acquire floating license lease: No token found in output.\n  ${output}`);
+                }
+
+                const token = tokenMatch.groups['token'];
+                this.logger.CI_mask(token);
+                this.logger.info(output);
+                return token;
             }
             default: { // personal and professional license activation
                 if (!options.username) {
@@ -407,7 +467,7 @@ export class LicensingClient {
                 }
 
                 await this.activateLicense(options.licenseType, options.username, options.password, options.serial);
-                break;
+                return undefined;
             }
         }
     }
@@ -415,18 +475,15 @@ export class LicensingClient {
     /**
      * Deactivates a Unity license.
      * @param licenseType The type of license to deactivate.
+     * @param token The token received when acquiring a floating license lease. Required when deactivating a floating license.
      * @returns A promise that resolves when the license is deactivated.
      * @throws Error if deactivation fails.
      */
-    public async Deactivate(licenseType: LicenseType): Promise<void> {
-        if (licenseType === LicenseType.floating) {
-            return;
-        }
-
+    public async Deactivate(licenseType: LicenseType, token?: string): Promise<void> {
         const activeLicenses = await this.GetActiveEntitlements();
 
         if (activeLicenses.includes(licenseType)) {
-            await this.returnLicense(licenseType);
+            await this.returnLicense(licenseType, token);
         }
     }
 
@@ -488,8 +545,17 @@ export class LicensingClient {
         this.logger.info(`Successfully activated license of type '${licenseType}'`);
     }
 
-    private async returnLicense(licenseType: LicenseType): Promise<void> {
-        await this.exec([`--return-ulf`]);
+    private async returnLicense(licenseType: LicenseType, token?: string): Promise<void> {
+        if (licenseType === LicenseType.floating) {
+            if (!token || token.length === 0) {
+                throw new Error('A token is required to return a floating license');
+            }
+
+            await this.exec([`--return-floating`, token]);
+        }
+        else {
+            await this.exec([`--return-ulf`]);
+        }
 
         const activeLicenses = await this.GetActiveEntitlements();
 
