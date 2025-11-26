@@ -89,13 +89,10 @@ program.command('activate-license')
             password: options.password
         });
 
-        if (licenseType === LicenseType.floating && token) {
-            if (options.json) {
-                process.stdout.write(`\n${JSON.stringify({ token: token })}\n`);
-            } else {
-                process.stdout.write(`License activated successfully. Token: ${token}\n`);
-            }
+        if (licenseType === LicenseType.floating && token && options.json) {
+            process.stdout.write(`\n${JSON.stringify({ token: token })}\n`);
         }
+
         process.exit(0);
     });
 
