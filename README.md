@@ -280,12 +280,12 @@ unity-cli open-project
 - `--unity-editor <unityEditor>` The path to the Unity Editor executable. If unspecified, `--unity-project` or the `UNITY_EDITOR_PATH` environment variable must be set.
 - `--unity-project <unityProject>` The path to a Unity project. If unspecified, the `UNITY_PROJECT_PATH` environment variable will be used, otherwise no project will be specified.
 - `--log-name <logName>` The name of the log file.
-- `--log-level <logLevel>` Override the logger verbosity (`debug`, `info`, `minimal`, `warning`, `error`).
+- `--log-level <logLevel>` Override the logger verbosity (`debug`, `info`, `minimal`, `warning`, `error`). Defaults to `info`.
 - `--verbose` Enable verbose logging. (Deprecated, use `--log-level <value>` instead)
 - `<args...>` Arguments to pass directly to the Unity Editor executable.
 
 > [!NOTE]
-> When setting the `--log-level` option to `minimal`, only the unity telemetry logs will be shown in the console output. All other logs will be written to the log file. This option is only supported when running the command locally in the terminal.
+> When setting the `--log-level` option to `minimal`, only the unity telemetry logs will be shown in the console output. All other logs will be written to the log file. This option is only supported when running the command locally in the terminal. ***This options is still experimental and may change in future releases.***
 >
 > When running in CI environments the logger will automatically print the full logs to the console no matter the log level.
 
