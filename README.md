@@ -120,10 +120,10 @@ unity-cli license-context
 
 #### Licensing Logs
 
-`license-logs`: Prints the Unity licensing logs.
+`licensing-logs`: Prints the Unity licensing logs.
 
 ```bash
-unity-cli license-logs
+unity-cli licensing-logs
 ```
 
 #### Unity Hub
