@@ -112,7 +112,7 @@ unity-cli return-license --license personal
 
 #### License Context
 
-Prints the current license context information.
+`license-context`: Prints the current license context information.
 
 ```bash
 unity-cli license-context
@@ -120,7 +120,7 @@ unity-cli license-context
 
 #### Licensing Logs
 
-Prints the Unity licensing logs.
+`license-logs`: Prints the Unity licensing logs.
 
 ```bash
 unity-cli license-logs
