@@ -44,6 +44,7 @@ program.command('activate-license')
     .option('-s, --serial <serial>', 'License serial number. Required when activating a professional license.')
     .option('-c, --config <config>', 'Path to the configuration file, or base64 encoded JSON string. Required when activating a floating license.')
     .option('--verbose', 'Enable verbose logging.')
+    .option('--json', 'Prints the last line of output as JSON string.')
     .action(async (options) => {
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
@@ -80,19 +81,28 @@ program.command('activate-license')
             }
         }
 
-        await client.Activate({
+        const token = await client.Activate({
             licenseType,
             servicesConfig: options.config,
             serial: options.serial,
             username: options.email,
             password: options.password
         });
+
+        if (licenseType === LicenseType.floating && token) {
+            if (options.json) {
+                process.stdout.write(`\n${JSON.stringify({ token: token })}\n`);
+            } else {
+                process.stdout.write(`License activated successfully. Token: ${token}\n`);
+            }
+        }
         process.exit(0);
     });
 
 program.command('return-license')
     .description('Return a Unity license.')
     .option('-l, --license <license>', 'License type (personal, professional, floating)')
+    .option('-t, --token <token>', 'Token received when acquiring a floating license lease. Required when returning a floating license.')
     .option('--verbose', 'Enable verbose logging.')
     .action(async (options) => {
         if (options.verbose) {
@@ -116,7 +126,45 @@ program.command('return-license')
             process.exit(1);
         }
 
-        await client.Deactivate(licenseType);
+        let token: string | undefined = options.token;
+
+        if (licenseType === LicenseType.floating) {
+            if (!options.token || options.token.length === 0) {
+                token = await PromptForSecretInput('Token: ');
+            } else {
+                token = options.token;
+            }
+
+            if (!token || token.length === 0) {
+                Logger.instance.error('Token is required when returning a floating license. Use -t or --token to specify it.');
+                process.exit(1);
+            }
+        }
+
+        await client.Deactivate(licenseType, token);
+        process.exit(0);
+    });
+
+program.command('license-context')
+    .description('Display the context information of the Unity Licensing Client.')
+    .option('--verbose', 'Enable verbose logging.')
+    .action(async (options) => {
+        if (options.verbose) {
+            Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        Logger.instance.debug(JSON.stringify(options));
+
+        const client = new LicensingClient();
+        await client.Context();
+        process.exit(0);
+    });
+
+program.command('licensing-logs')
+    .description('Print the path to the Unity Licensing Client log files.')
+    .action(async () => {
+        const client = new LicensingClient();
+        process.stdout.write(`${client.logPath()}\n`);
         process.exit(0);
     });
 
