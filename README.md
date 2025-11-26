@@ -91,6 +91,7 @@ unity-cli license-version
 - `-p`, `--password`: Password for the Unity account. Required when activating a personal or professional license.
 - `-s`, `--serial`: License serial number. Required when activating a professional license.
 - `-c`, `--config`: Path to the configuration file, or base64 encoded JSON string. Required when activating a floating license.
+- `--json`: Prints the last line of output as JSON string.
 - `--verbose`: Enable verbose output.
 
 ```bash
@@ -102,10 +103,27 @@ unity-cli activate-license --license personal --email <your-email> --password <y
 `return-license [options]`: Return a Unity license.
 
 - `-l`, `--license`: License type (personal, professional, floating)
+- `-t`, `--token`: Floating license token. Required when returning a floating license.
 - `--verbose`: Enable verbose output.
 
 ```bash
 unity-cli return-license --license personal
+```
+
+#### License Context
+
+Prints the current license context information.
+
+```bash
+unity-cli license-context
+```
+
+#### Licensing Logs
+
+Prints the Unity licensing logs.
+
+```bash
+unity-cli license-logs
 ```
 
 #### Unity Hub

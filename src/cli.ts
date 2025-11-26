@@ -144,14 +144,7 @@ program.command('return-license')
 
 program.command('license-context')
     .description('Display the context information of the Unity Licensing Client.')
-    .option('--verbose', 'Enable verbose logging.')
-    .action(async (options) => {
-        if (options.verbose) {
-            Logger.instance.logLevel = LogLevel.DEBUG;
-        }
-
-        Logger.instance.debug(JSON.stringify(options));
-
+    .action(async () => {
         const client = new LicensingClient();
         await client.Context();
         process.exit(0);
