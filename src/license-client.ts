@@ -424,7 +424,7 @@ export class LicensingClient {
                 const tokenMatch = output.match(/with token:\s*"(?<token>[\w-]+)"/);
 
                 if (!tokenMatch || !tokenMatch.groups || !tokenMatch.groups['token']) {
-                    throw new Error('Failed to acquire floating license lease: No token found in output');
+                    throw new Error(`Failed to acquire floating license lease: No token found in output.\n  ${output}`);
                 }
 
                 const token = tokenMatch.groups['token'];

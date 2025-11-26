@@ -126,10 +126,8 @@ program.command('return-license')
         let token: string | undefined = options.token;
 
         if (licenseType === LicenseType.floating) {
-            if (!options.token || options.token.length === 0) {
+            if (!token || token.length === 0) {
                 token = await PromptForSecretInput('Token: ');
-            } else {
-                token = options.token;
             }
 
             if (!token || token.length === 0) {

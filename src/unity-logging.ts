@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { LogLevel, Logger } from './logging';
 import { Delay, WaitForFileToBeUnlocked } from './utilities';
-import { Phase, UTP, UTPBase, UTPMemoryLeak, UTPPlayerBuildInfo } from './utp';
+import { Phase, Severity, UTP, UTPBase, UTPMemoryLeak, UTPPlayerBuildInfo } from './utp';
 
 /**
  * Result of the tailLogFile function containing cleanup resources.
@@ -13,7 +13,7 @@ export interface LogTailResult {
     /** Function to signal that log tailing should end */
     stopLogTail: () => void;
     /** Collected telemetry objects parsed from lines beginning with '##utp:' */
-    telemetry: any[];
+    telemetry: UTP[];
 }
 
 /**
@@ -911,7 +911,7 @@ async function writeUtpTelemetryLog(filePath: string, entries: UTP[], logger: Lo
         const content = `${JSON.stringify(entries, null, 2)}\n`;
         await fs.promises.writeFile(filePath, content, 'utf8');
     } catch (error) {
-        logger.warn(`Failed to write UTP telemetry log (${filePath}): ${error} `);
+        logger.warn(`Failed to write UTP telemetry log (${filePath}): ${error}`);
     }
 }
 
@@ -999,7 +999,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                                     const utp = utpJson as UTP;
                                     telemetry.push(utp);
 
-                                    if (utp.message && 'severity' in utp && (utp.severity === 'Error' || utp.severity === 'Exception' || utp.severity === 'Assert')) {
+                                    if (utp.message && 'severity' in utp && (utp.severity === Severity.Error || utp.severity === Severity.Exception || utp.severity === Severity.Assert)) {
                                         let messageLevel: LogLevel = LogLevel.ERROR;
 
                                         if (remappedEditorLogs[utp.message] !== undefined) {
@@ -1075,12 +1075,12 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                         if (error.code !== 'EPIPE') {
                             throw error;
                         }
-                        logger.warn(`Error while parsing telemetry from log chunk: ${error} `);
+                        logger.warn(`Error while parsing telemetry from log chunk: ${error}`);
                     }
                 }
             }
         } catch (error) {
-            logger.warn(`Error while tailing log file: ${error} `);
+            logger.warn(`Error while tailing log file: ${error}`);
         }
     }
 
@@ -1101,7 +1101,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                     writeStdout('\n');
                 } catch (error: any) {
                     if (error.code !== 'EPIPE') {
-                        logger.warn(`Error while writing log tail: ${error} `);
+                        logger.warn(`Error while writing log tail: ${error}`);
                     }
                 }
 
