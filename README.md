@@ -14,18 +14,21 @@ A powerful command line utility for the Unity Game Engine. Automate Unity projec
       - [License Version](#license-version)
       - [Activate License](#activate-license)
       - [Return License](#return-license)
+      - [License Context](#license-context)
+      - [Licensing Logs](#licensing-logs)
     - [Unity Hub](#unity-hub)
       - [Hub Version](#hub-version)
       - [Hub Path](#hub-path)
       - [Unity Hub Install](#unity-hub-install)
       - [Run Unity Hub Commands](#run-unity-hub-commands)
-    - [Unity Editor](#unity-editor)
       - [Setup Unity Editor](#setup-unity-editor)
       - [Uninstall Unity Editor](#uninstall-unity-editor)
+    - [Unity Editor](#unity-editor)
+      - [Run Unity Editor Commands](#run-unity-editor-commands)
       - [List Project Templates](#list-project-templates)
       - [Create Unity Project](#create-unity-project)
       - [Open Unity Project](#open-unity-project)
-      - [Run Unity Editor Commands](#run-unity-editor-commands)
+      - [Unity Editor Logs](#unity-editor-logs)
     - [Unity Package Manager](#unity-package-manager)
       - [Sign a Unity Package](#sign-a-unity-package)
 - [Logging](#logging)
@@ -110,7 +113,7 @@ unity-cli activate-license --license personal --email <your-email> --password <y
 unity-cli return-license --license personal
 ```
 
-#### License Context
+##### License Context
 
 `license-context`: Prints the current license context information.
 
@@ -118,7 +121,7 @@ unity-cli return-license --license personal
 unity-cli license-context
 ```
 
-#### Licensing Logs
+##### Licensing Logs
 
 `licensing-logs`: Prints the path to the Unity Licensing Client log files.
 
@@ -177,8 +180,6 @@ Gets a list of installed editors:
 unity-cli hub editors --installed
 ```
 
-#### Unity Editor
-
 ##### Setup Unity Editor
 
 `setup-unity [options]`: Find or install the Unity Editor for a project or specific version.
@@ -211,6 +212,28 @@ unity-cli setup-unity --unity-version 6000 --modules android,ios
 
 ```bash
 unity-cli uninstall-unity --unity-version 6000
+```
+
+#### Unity Editor
+
+##### Run Unity Editor Commands
+
+`run [options] <args...>`: Run Unity Editor command line arguments (passes args directly to the editor).
+
+- `--unity-editor <unityEditor>` The path to the Unity Editor executable. If unspecified, `--unity-project` or the `UNITY_EDITOR_PATH` environment variable must be set.
+- `--unity-project <unityProject>` The path to a Unity project. If unspecified, the `UNITY_PROJECT_PATH` environment variable will be used, otherwise no project will be specified.
+- `--log-name <logName>` The name of the log file.
+- `--log-level <logLevel>` Override the logger verbosity (`debug`, `info`, `minimal`, `warning`, `error`). Defaults to `info`.
+- `--verbose` Enable verbose logging. (Deprecated, use `--log-level <value>` instead)
+- `<args...>` Arguments to pass directly to the Unity Editor executable.
+
+> [!NOTE]
+> When setting the `--log-level` option to `minimal`, only the unity telemetry logs will be shown in the console output. All other logs will be written to the log file. This option is only supported when running the command locally in the terminal. ***This options is still experimental and may change in future releases.***
+>
+> When running in CI environments the logger will automatically print the full logs to the console no matter the log level.
+
+```bash
+unity-cli run --unity-project <path-to-project> -quit -batchmode -executeMethod StartCommandLineBuild
 ```
 
 ##### List Project Templates
@@ -274,24 +297,12 @@ unity-cli open-project --unity-project <path-to-project> --unity-version 6000 --
 unity-cli open-project
 ```
 
-##### Run Unity Editor Commands
+##### Unity Editor Logs
 
-`run [options] <args...>`: Run Unity Editor command line arguments (passes args directly to the editor).
-
-- `--unity-editor <unityEditor>` The path to the Unity Editor executable. If unspecified, `--unity-project` or the `UNITY_EDITOR_PATH` environment variable must be set.
-- `--unity-project <unityProject>` The path to a Unity project. If unspecified, the `UNITY_PROJECT_PATH` environment variable will be used, otherwise no project will be specified.
-- `--log-name <logName>` The name of the log file.
-- `--log-level <logLevel>` Override the logger verbosity (`debug`, `info`, `minimal`, `warning`, `error`). Defaults to `info`.
-- `--verbose` Enable verbose logging. (Deprecated, use `--log-level <value>` instead)
-- `<args...>` Arguments to pass directly to the Unity Editor executable.
-
-> [!NOTE]
-> When setting the `--log-level` option to `minimal`, only the unity telemetry logs will be shown in the console output. All other logs will be written to the log file. This option is only supported when running the command locally in the terminal. ***This options is still experimental and may change in future releases.***
->
-> When running in CI environments the logger will automatically print the full logs to the console no matter the log level.
+`editor-logs`: Prints the path to the Unity Editor log files.
 
 ```bash
-unity-cli run --unity-project <path-to-project> -quit -batchmode -executeMethod StartCommandLineBuild
+unity-cli editor-logs
 ```
 
 #### Unity Package Manager

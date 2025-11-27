@@ -1,3 +1,4 @@
+import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Logger } from './logging';
@@ -444,6 +445,23 @@ export class UnityEditor {
         }
         fs.accessSync(editorRootPath, fs.constants.R_OK);
         return editorRootPath;
+    }
+
+    /**
+     * Gets the path to the Unity Editor log directory.
+     * @returns The path to the Unity Editor logs directory.
+     */
+    static GetEditorLogsDirectory() {
+        switch (process.platform) {
+            case 'darwin':
+                return path.join(os.homedir(), 'Library', 'Logs', 'Unity');
+            case 'linux':
+                return path.join(os.homedir(), '.config', 'unity3d', 'Editor');
+            case 'win32':
+                return path.join(process.env.LOCALAPPDATA || '', 'Unity', 'Editor');
+            default:
+                throw new Error(`Unsupported platform: ${process.platform}`);
+        }
     }
 
     /**
