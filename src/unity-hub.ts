@@ -1271,10 +1271,10 @@ done
                 return path.join(process.env.APPDATA || '', 'UnityHub', 'logs', 'info-log.json');
             case 'darwin':
                 // ~/Library/Application Support/UnityHub/logs/info-log.json
-                return path.join(os.homedir(), 'Library', 'Application Support', 'UnityHub', 'logs', 'info-log.json');
+                return path.join(process.env.HOME || '', 'Library', 'Application Support', 'UnityHub', 'logs', 'info-log.json');
             case 'linux':
                 // ~/.config/UnityHub/logs/info-log.json
-                return path.join(os.homedir(), '.config', 'UnityHub', 'logs', 'info-log.json');
+                return path.join(process.env.HOME || '', '.config', 'UnityHub', 'logs', 'info-log.json');
             default:
                 throw new Error(`Unsupported platform: ${process.platform}`);
         }
