@@ -1258,4 +1258,46 @@ done
 
         return moduleMap;
     }
+
+    /**
+     * Returns the path to the Unity Hub log file.
+     * @see https://docs.unity.com/en-us/licensing-server/troubleshooting-client#logs
+     * @returns The Unity Hub log file path.
+     */
+    public static LogPath(): string {
+        switch (process.platform) {
+            case 'win32':
+                // %APPDATA%\UnityHub\logs\info-log.json
+                return path.join(process.env.APPDATA || '', 'UnityHub', 'logs', 'info-log.json');
+            case 'darwin':
+                // ~/Library/Application Support/UnityHub/logs/info-log.json
+                return path.join(process.env.HOME || '', 'Library', 'Application Support', 'UnityHub', 'logs', 'info-log.json');
+            case 'linux':
+                // ~/.config/UnityHub/logs/info-log.json
+                return path.join(process.env.HOME || '', '.config', 'UnityHub', 'logs', 'info-log.json');
+            default:
+                throw new Error(`Unsupported platform: ${process.platform}`);
+        }
+    }
+
+    /**
+     * Returns the path to the Unity Package Manager log file.
+     * @see https://docs.unity3d.com/Manual/LogFiles.html
+     * @returns The Unity Package Manager log file path.
+     */
+    public static PackageManagerLogsPath(): string {
+        switch (process.platform) {
+            case 'win32':
+                // C:\Users\username\AppData\Local\Unity\Editor\upm.log
+                return path.join(process.env.LOCALAPPDATA || '', 'Unity', 'Editor', 'upm.log');
+            case 'darwin':
+                // ~/Library/Logs/Unity/upm.log
+                return path.join(process.env.HOME || '', 'Library', 'Logs', 'Unity', 'upm.log');
+            case 'linux':
+                // ~/.config/unity3d/upm.log
+                return path.join(process.env.HOME || '', '.config', 'unity3d', 'upm.log');
+            default:
+                throw new Error(`Unsupported platform: ${process.platform}`);
+        }
+    }
 }
