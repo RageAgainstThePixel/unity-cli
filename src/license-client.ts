@@ -111,6 +111,12 @@ export class LicensingClient {
             fs.mkdirSync(servicesConfigDirectory, { recursive: true });
         }
 
+        if (process.platform !== 'win32') {
+            // Ensure the services directory has the correct permissions
+            fs.chmodSync(servicesConfigDirectory, 0o755);
+        }
+
+        fs.accessSync(servicesConfigDirectory, fs.constants.R_OK | fs.constants.W_OK);
         return path.join(servicesConfigDirectory, 'services-config.json');
     }
 
