@@ -109,7 +109,7 @@ jobs:
               exit 0
             else
               # try ~/.config/UnityHub/logs/UnityHub.log
-              ALT_HUB_LOG_PATH="${HOME}/.config/UnityHub/logs/UnityHub.log"
+              ALT_HUB_LOG_PATH="~/.config/UnityHub/logs/UnityHub.log"
               echo "Checking alternative Hub log path: ${ALT_HUB_LOG_PATH}"
               
               if [ -f "${ALT_HUB_LOG_PATH}" ]; then
