@@ -74,6 +74,30 @@ jobs:
         shell: bash
         run: |
           unity-cli activate-license --license personal --email "${{ secrets.UNITY_USERNAME }}" --password "${{ secrets.UNITY_PASSWORD }}"
+      - name: Print log paths
+        shell: bash
+        run: |
+          HUB_LOG_PATH=$(unity-cli hub-logs)
+          LICENSING_CLIENT_LOG_PATH=$(unity-cli licensing-client-logs)
+          LICENSING_AUDIT_LOG_PATH=$(unity-cli licensing-audit-logs)
+          
+          echo "Hub Log Path: ${HUB_LOG_PATH}"
+          echo "Licensing Client Log Path: ${LICENSING_CLIENT_LOG_PATH}"
+          echo "Licensing Audit Log Path: ${LICENSING_AUDIT_LOG_PATH}"
+          
+          # verify that the log files exist
+          if [ ! -f "${LICENSING_CLIENT_LOG_PATH}" ]; then
+            echo "Error: Licensing Client log file does not exist at ${LICENSING_CLIENT_LOG_PATH}"
+            exit 1
+          fi
+          if [ ! -f "${LICENSING_AUDIT_LOG_PATH}" ]; then
+            echo "Error: Licensing Audit log file does not exist at ${LICENSING_AUDIT_LOG_PATH}"
+            exit 1
+          fi
+          if [ ! -f "${HUB_LOG_PATH}" ]; then
+            echo "Error: Hub log file does not exist at ${HUB_LOG_PATH}"
+            exit 1
+          fi
       - name: Create Unity Project
         if : ${{ matrix.unity-version != 'none' }}
         shell: bash
