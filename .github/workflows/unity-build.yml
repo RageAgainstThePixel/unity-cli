@@ -49,6 +49,7 @@ jobs:
         run: |
           unity-cli hub-install --hub-version 3.12.0
           unity-cli hub-install --auto-update
+          unity-cli hub-version
           if [ "${{ matrix.unity-version }}" != "none" ]; then
             unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-target }}" --json
           fi
