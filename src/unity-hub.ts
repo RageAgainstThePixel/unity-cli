@@ -292,7 +292,7 @@ export class UnityHub {
         }
 
         let isInstalled = false;
-        let installedVersion: SemVer;
+        let installedVersion: SemVer | undefined = undefined;
 
         try {
             await fs.promises.access(this.executable, fs.constants.X_OK);
@@ -303,7 +303,10 @@ export class UnityHub {
         }
 
         if (isInstalled && autoUpdate) {
-            installedVersion = await this.getInstalledHubVersion();
+            if (!installedVersion) {
+                installedVersion = await this.getInstalledHubVersion();
+            }
+
             this.logger.ci(`Installed Unity Hub version: ${installedVersion.version}`);
             let versionToInstall: SemVer | null = null;
 
