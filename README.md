@@ -120,7 +120,7 @@ unity-cli license-context
 
 #### Licensing Logs
 
-`licensing-logs`: Prints the Unity licensing logs.
+`licensing-logs`: Prints the path to the Unity Licensing Client log files.
 
 ```bash
 unity-cli licensing-logs
@@ -162,6 +162,7 @@ unity-cli hub-install
 `hub [options] <args...>`: Run Unity Hub command line arguments (passes args directly to the hub executable).
 
 - `--verbose`: Enable verbose output.
+- `--json`: Prints the last line of output as a json string, which contains the operation results.
 - `<args...>`: Arguments to pass directly to the Unity Hub executable.
 
 Lists available Unity Hub commands:

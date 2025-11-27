@@ -149,7 +149,7 @@ program.command('license-context')
     });
 
 program.command('licensing-logs')
-    .description('Print the path to the Unity Licensing Client log files.')
+    .description('Prints the path to the Unity Licensing Client log files.')
     .action(async () => {
         const client = new LicensingClient();
         process.stdout.write(`${client.logPath()}\n`);
@@ -224,6 +224,7 @@ program.command('hub-install')
 program.command('hub')
     .description('Run commands directly to the Unity Hub. (You need not to pass --headless or -- to this command).')
     .option('--verbose', 'Enable verbose logging.')
+    .option('--json', 'Prints the last line of output as a json string, which contains the operation results.')
     .allowUnknownOption(true)
     .argument('<args...>', 'Arguments to pass to the Unity Hub executable.')
     .action(async (args: string[], options) => {
@@ -234,7 +235,12 @@ program.command('hub')
         Logger.instance.debug(JSON.stringify({ args, options }));
 
         const unityHub = new UnityHub();
-        await unityHub.Exec(args, { silent: false, showCommand: Logger.instance.logLevel === LogLevel.DEBUG });
+        const output = await unityHub.Exec(args, { silent: false, showCommand: Logger.instance.logLevel === LogLevel.DEBUG });
+
+        if (options.json) {
+            process.stdout.write(`\n${JSON.stringify({ output })}\n`);
+        }
+
         process.exit(0);
     });
 
