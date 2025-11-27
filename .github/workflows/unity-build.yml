@@ -103,6 +103,13 @@ jobs:
             if [ -f "${ALT_HUB_LOG_PATH}" ]; then
               echo "::warning::Found Hub log file at alternative location: ${ALT_HUB_LOG_PATH}"
               exit 0
+            else
+              # try ~/.config/UnityHub/logs/UnityHub.log
+              ALT_HUB_LOG_PATH="${HOME}/.config/UnityHub/logs/UnityHub.log"
+              if [ -f "${ALT_HUB_LOG_PATH}" ]; then
+                echo "::warning::Found Hub log file at alternative location: ${ALT_HUB_LOG_PATH}"
+                exit 0
+              fi
             fi
             exit 1
           fi
