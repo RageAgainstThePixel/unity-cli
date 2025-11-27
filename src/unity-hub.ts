@@ -1258,4 +1258,25 @@ done
 
         return moduleMap;
     }
+
+    /**
+     * Returns the path to the Unity Hub log file.
+     * @see https://docs.unity.com/en-us/licensing-server/troubleshooting-client#logs
+     * @returns The Unity Hub log file path.
+     */
+    public static LogPath(): string {
+        switch (process.platform) {
+            case 'win32':
+                // %APPDATA%\UnityHub\logs\info-log.json
+                return path.join(process.env.APPDATA || '', 'UnityHub', 'logs', 'info-log.json');
+            case 'darwin':
+                // ~/Library/Application Support/UnityHub/logs/info-log.json
+                return path.join(os.homedir(), 'Library', 'Application Support', 'UnityHub', 'logs', 'info-log.json');
+            case 'linux':
+                // ~/.config/UnityHub/logs/info-log.json
+                return path.join(os.homedir(), '.config', 'UnityHub', 'logs', 'info-log.json');
+            default:
+                throw new Error(`Unsupported platform: ${process.platform}`);
+        }
+    }
 }

@@ -148,11 +148,17 @@ program.command('license-context')
         process.exit(0);
     });
 
-program.command('licensing-logs')
-    .description('Prints the path to the Unity Licensing Client log files.')
+program.command('licensing-client-logs')
+    .description('Prints the path to the Unity Licensing Client log file.')
     .action(async () => {
-        const client = new LicensingClient();
-        process.stdout.write(`${client.logPath()}\n`);
+        process.stdout.write(`${LicensingClient.ClientLogPath()}\n`);
+        process.exit(0);
+    });
+
+program.command('licensing-audit-logs')
+    .description('Prints the Unity Licensing Client audit log.')
+    .action(async () => {
+        process.stdout.write(`${LicensingClient.ClientAuditLogPath()}\n`);
         process.exit(0);
     });
 
@@ -186,6 +192,13 @@ program.command('hub-path')
             process.stdout.write(`${hub.executable}\n`);
         }
 
+        process.exit(0);
+    });
+
+program.command('hub-logs')
+    .description('Prints the path to the Unity Hub log file.')
+    .action(async () => {
+        process.stdout.write(`${UnityHub.LogPath()}\n`);
         process.exit(0);
     });
 

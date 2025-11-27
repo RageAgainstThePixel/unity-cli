@@ -15,10 +15,12 @@ A powerful command line utility for the Unity Game Engine. Automate Unity projec
       - [Activate License](#activate-license)
       - [Return License](#return-license)
       - [License Context](#license-context)
-      - [Licensing Logs](#licensing-logs)
+      - [Licensing Client Logs](#licensing-client-logs)
+      - [Licensing Audit Logs](#licensing-audit-logs)
     - [Unity Hub](#unity-hub)
       - [Hub Version](#hub-version)
       - [Hub Path](#hub-path)
+      - [Hub Logs](#hub-logs)
       - [Unity Hub Install](#unity-hub-install)
       - [Run Unity Hub Commands](#run-unity-hub-commands)
       - [Setup Unity Editor](#setup-unity-editor)
@@ -121,12 +123,20 @@ unity-cli return-license --license personal
 unity-cli license-context
 ```
 
-##### Licensing Logs
+##### Licensing Client Logs
 
-`licensing-logs`: Prints the path to the Unity Licensing Client log files.
+`licensing-client-logs`: Prints the path to the Unity Licensing Client log file.
 
 ```bash
-unity-cli licensing-logs
+unity-cli licensing-client-logs
+```
+
+##### Licensing Audit Logs
+
+`licensing-audit-logs`: Prints the path to the Unity Licensing Client audit log.
+
+```bash
+unity-cli licensing-audit-logs
 ```
 
 #### Unity Hub
@@ -145,6 +155,14 @@ unity-cli hub-version
 
 ```bash
 unity-cli hub-path
+```
+
+##### Hub Logs
+
+`hub-logs`: Prints the path to the Unity Hub log file.
+
+```bash
+unity-cli hub-logs
 ```
 
 ##### Unity Hub Install

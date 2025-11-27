@@ -124,7 +124,7 @@ export class LicensingClient {
      * @see https://docs.unity.com/en-us/licensing-server/troubleshooting-client#logs
      * @returns The path to the log file.
      */
-    public logPath(): string {
+    public static ClientLogPath(): string {
         switch (process.platform) {
             case 'win32':
                 // $env:LOCALAPPDATA\Unity\Unity.Licensing.Client.log
@@ -135,6 +135,27 @@ export class LicensingClient {
             case 'linux':
                 // ~/.config/unity3d/Unity/Unity.Licensing.Client.log
                 return path.join(os.homedir(), '.config', 'unity3d', 'Unity', 'Unity.Licensing.Client.log');
+            default:
+                throw new Error(`Unsupported platform: ${process.platform}`);
+        }
+    }
+
+    /**
+     * Gets the path to the Unity Licensing Client audit log file.
+     * @see https://docs.unity.com/en-us/licensing-server/troubleshooting-client#logs
+     * @returns The path to the audit log file.
+     */
+    public static ClientAuditLogPath(): string {
+        switch (process.platform) {
+            case 'win32':
+                // $env:LOCALAPPDATA\Unity\Unity.Entitlements.Audit.log
+                return path.join(process.env.LOCALAPPDATA || '', 'Unity', 'Unity.Entitlements.Audit.log');
+            case 'darwin':
+                // ~/Library/Logs/Unity/Unity.Entitlements.Audit.log
+                return path.join(os.homedir(), 'Library', 'Logs', 'Unity', 'Unity.Entitlements.Audit.log');
+            case 'linux':
+                // ~/.config/unity3d/Unity/Unity.Entitlements.Audit.log
+                return path.join(os.homedir(), '.config', 'unity3d', 'Unity', 'Unity.Entitlements.Audit.log');
             default:
                 throw new Error(`Unsupported platform: ${process.platform}`);
         }
