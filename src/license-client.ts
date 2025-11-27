@@ -111,6 +111,11 @@ export class LicensingClient {
             fs.mkdirSync(servicesConfigDirectory, { recursive: true });
         }
 
+        if (process.platform !== 'win32') {
+            fs.chmodSync(servicesConfigDirectory, 0o755);
+        }
+
+        fs.accessSync(servicesConfigDirectory, fs.constants.R_OK | fs.constants.W_OK);
         return path.join(servicesConfigDirectory, 'services-config.json');
     }
 
@@ -418,6 +423,11 @@ export class LicensingClient {
                     fs.writeFileSync(servicesConfigPath, Buffer.from(options.servicesConfig, 'base64'));
                 }
 
+                if (process.platform !== 'win32') {
+                    fs.chmodSync(servicesConfigPath, 0o644);
+                }
+
+                fs.accessSync(servicesConfigPath, fs.constants.R_OK);
                 this.logger.debug(`Using services config at: ${servicesConfigPath}`);
 
                 const output = await this.exec([`--acquire-floating`], true);
