@@ -112,8 +112,7 @@ export class LicensingClient {
         }
 
         if (process.platform !== 'win32') {
-            // Ensure the services directory has the correct permissions
-            fs.chmodSync(servicesConfigDirectory, 0o644);
+            fs.chmodSync(servicesConfigDirectory, 0o755);
         }
 
         fs.accessSync(servicesConfigDirectory, fs.constants.R_OK | fs.constants.W_OK);
@@ -428,6 +427,7 @@ export class LicensingClient {
                     fs.chmodSync(servicesConfigPath, 0o644);
                 }
 
+                fs.accessSync(servicesConfigPath, fs.constants.R_OK);
                 this.logger.debug(`Using services config at: ${servicesConfigPath}`);
 
                 const output = await this.exec([`--acquire-floating`], true);
