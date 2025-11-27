@@ -98,6 +98,12 @@ jobs:
           fi
           if [ ! -f "${HUB_LOG_PATH}" ]; then
             echo "Error: Hub log file does not exist at ${HUB_LOG_PATH}"
+            # try looking in UNITY_HUB_PATH/Logs/
+            ALT_HUB_LOG_PATH="${UNITY_HUB_PATH}/Logs/UnityHub.log"
+            if [ -f "${ALT_HUB_LOG_PATH}" ]; then
+              echo "::warning::Found Hub log file at alternative location: ${ALT_HUB_LOG_PATH}"
+              exit 0
+            fi
             exit 1
           fi
       - name: Create Unity Project

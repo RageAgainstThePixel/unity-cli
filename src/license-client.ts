@@ -131,10 +131,10 @@ export class LicensingClient {
                 return path.join(process.env.LOCALAPPDATA || '', 'Unity', 'Unity.Licensing.Client.log');
             case 'darwin':
                 // ~/Library/Logs/Unity/Unity.Licensing.Client.log
-                return path.join(os.homedir(), 'Library', 'Logs', 'Unity', 'Unity.Licensing.Client.log');
+                return path.join(process.env.HOME || '', 'Library', 'Logs', 'Unity', 'Unity.Licensing.Client.log');
             case 'linux':
                 // ~/.config/unity3d/Unity/Unity.Licensing.Client.log
-                return path.join(os.homedir(), '.config', 'unity3d', 'Unity', 'Unity.Licensing.Client.log');
+                return path.join(process.env.HOME || '', '.config', 'unity3d', 'Unity', 'Unity.Licensing.Client.log');
             default:
                 throw new Error(`Unsupported platform: ${process.platform}`);
         }
@@ -152,10 +152,10 @@ export class LicensingClient {
                 return path.join(process.env.LOCALAPPDATA || '', 'Unity', 'Unity.Entitlements.Audit.log');
             case 'darwin':
                 // ~/Library/Logs/Unity/Unity.Entitlements.Audit.log
-                return path.join(os.homedir(), 'Library', 'Logs', 'Unity', 'Unity.Entitlements.Audit.log');
+                return path.join(process.env.HOME || '', 'Library', 'Logs', 'Unity', 'Unity.Entitlements.Audit.log');
             case 'linux':
                 // ~/.config/unity3d/Unity/Unity.Entitlements.Audit.log
-                return path.join(os.homedir(), '.config', 'unity3d', 'Unity', 'Unity.Entitlements.Audit.log');
+                return path.join(process.env.HOME || '', '.config', 'unity3d', 'Unity', 'Unity.Entitlements.Audit.log');
             default:
                 throw new Error(`Unsupported platform: ${process.platform}`);
         }
