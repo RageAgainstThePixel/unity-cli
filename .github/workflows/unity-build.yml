@@ -158,6 +158,8 @@ jobs:
               HUB_DIR=$(dirname "${UNITY_HUB_PATH}")
               find "${HUB_DIR}" -type f \( -name "info-log.json" \) -exec echo "{}" \;
             fi
+            # print all files found in ~/.config/UnityHub/logs/
+            find ~/.config/UnityHub/logs/ -type f -exec echo "{}" \;
             echo "::error:: Hub log file does not exist at any known location"
           fi
           
