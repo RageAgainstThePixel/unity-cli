@@ -92,20 +92,26 @@ jobs:
             echo "Error: Licensing Client log file does not exist at ${LICENSING_CLIENT_LOG_PATH}"
             exit 1
           fi
+          
           if [ ! -f "${LICENSING_AUDIT_LOG_PATH}" ]; then
             echo "Error: Licensing Audit log file does not exist at ${LICENSING_AUDIT_LOG_PATH}"
             exit 1
           fi
+          
           if [ ! -f "${HUB_LOG_PATH}" ]; then
-            echo "Error: Hub log file does not exist at ${HUB_LOG_PATH}"
-            # try looking in UNITY_HUB_PATH/Logs/
+            echo "::warning:: Hub log file does not exist at ${HUB_LOG_PATH}"
+            
             ALT_HUB_LOG_PATH="${UNITY_HUB_PATH}/Logs/UnityHub.log"
+            echo "Checking alternative Hub log path: ${ALT_HUB_LOG_PATH}"
+            
             if [ -f "${ALT_HUB_LOG_PATH}" ]; then
               echo "::warning::Found Hub log file at alternative location: ${ALT_HUB_LOG_PATH}"
               exit 0
             else
               # try ~/.config/UnityHub/logs/UnityHub.log
               ALT_HUB_LOG_PATH="${HOME}/.config/UnityHub/logs/UnityHub.log"
+              echo "Checking alternative Hub log path: ${ALT_HUB_LOG_PATH}"
+              
               if [ -f "${ALT_HUB_LOG_PATH}" ]; then
                 echo "::warning::Found Hub log file at alternative location: ${ALT_HUB_LOG_PATH}"
                 exit 0
