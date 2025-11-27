@@ -156,7 +156,7 @@ program.command('licensing-client-logs')
     });
 
 program.command('licensing-audit-logs')
-    .description('Prints the Unity Licensing Client audit log.')
+    .description('Prints the path to the Unity Licensing Client audit log file.')
     .action(async () => {
         process.stdout.write(`${LicensingClient.ClientAuditLogPath()}\n`);
         process.exit(0);
