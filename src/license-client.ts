@@ -425,7 +425,7 @@ export class LicensingClient {
                 }
 
                 if (process.platform !== 'win32') {
-                    fs.chmodSync(servicesConfigPath, 0o644);
+                    fs.chmodSync(servicesConfigPath, 0o755);
                 }
 
                 this.logger.debug(`Using services config at: ${servicesConfigPath}`);
