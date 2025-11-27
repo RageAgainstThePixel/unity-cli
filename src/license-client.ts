@@ -418,6 +418,10 @@ export class LicensingClient {
                     fs.writeFileSync(servicesConfigPath, Buffer.from(options.servicesConfig, 'base64'));
                 }
 
+                if (process.platform !== 'win32') {
+                    fs.chmodSync(servicesConfigPath, 0o644);
+                }
+
                 this.logger.debug(`Using services config at: ${servicesConfigPath}`);
 
                 const output = await this.exec([`--acquire-floating`], true);
