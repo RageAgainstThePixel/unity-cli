@@ -75,63 +75,6 @@ jobs:
         run: |
           unity-cli license-context
           unity-cli activate-license --license personal --email "${{ secrets.UNITY_USERNAME }}" --password "${{ secrets.UNITY_PASSWORD }}"
-      - name: Print log paths
-        if: ${{ matrix.unity-version != 'none' }}
-        shell: bash
-        run: |
-          HUB_LOG_PATH=$(unity-cli hub-logs)
-          PACKAGE_MANAGER_LOG_PATH=$(unity-cli package-manager-logs)
-          LICENSING_CLIENT_LOG_PATH=$(unity-cli licensing-client-logs)
-          LICENSING_AUDIT_LOG_PATH=$(unity-cli licensing-audit-logs)
-          
-          echo "Hub Log Path: ${HUB_LOG_PATH}"
-          echo "Package Manager Log Path: ${PACKAGE_MANAGER_LOG_PATH}"
-          echo "Licensing Client Log Path: ${LICENSING_CLIENT_LOG_PATH}"
-          echo "Licensing Audit Log Path: ${LICENSING_AUDIT_LOG_PATH}"
-          
-          # verify that the log files exist
-          if [ ! -f "${LICENSING_CLIENT_LOG_PATH}" ]; then
-            echo "::error::Licensing Client log file does not exist at ${LICENSING_CLIENT_LOG_PATH}"
-            exit 1
-          fi
-          
-          if [ ! -f "${PACKAGE_MANAGER_LOG_PATH}" ]; then
-            echo "::error::Package Manager log file does not exist at ${PACKAGE_MANAGER_LOG_PATH}"
-            exit 1
-          fi
-          
-          if [ ! -f "${LICENSING_AUDIT_LOG_PATH}" ]; then
-            echo "::error::Licensing Audit log file does not exist at ${LICENSING_AUDIT_LOG_PATH}"
-            exit 1
-          fi
-          
-          if [ ! -f "${HUB_LOG_PATH}" ]; then
-            echo "::warning:: Hub log file does not exist at ${HUB_LOG_PATH}"
-            
-            ALT_HUB_LOG_PATH="${UNITY_HUB_PATH}/logs/info-log.json"
-            echo "Checking alternative Hub log path: ${ALT_HUB_LOG_PATH}"
-            
-            if [ -f "${ALT_HUB_LOG_PATH}" ]; then
-              echo "::warning::Found Hub log file at alternative location: ${ALT_HUB_LOG_PATH}"
-              exit 0
-            else
-              # try ~/.config/UnityHub/logs/UnityHub.log
-              ALT_HUB_LOG_PATH="~/.config/UnityHub/logs/info-log.json"
-              echo "Checking alternative Hub log path: ${ALT_HUB_LOG_PATH}"
-              
-              if [ -f "${ALT_HUB_LOG_PATH}" ]; then
-                echo "::warning::Found Hub log file at alternative location: ${ALT_HUB_LOG_PATH}"
-                exit 0
-              fi
-            fi
-            
-            # list all .log and .json files in ~/.config/UnityHub/ directory
-            echo "Listing all .log and .json files in ~/.config/UnityHub/ directory:"
-            ls -l ~/.config/UnityHub/*.log ~/.config/UnityHub/*.json || true
-            
-            echo "::error:: Hub log file does not exist at any known location"
-            exit 1
-          fi
       - name: Create Unity Project
         if: ${{ matrix.unity-version != 'none' }}
         shell: bash
@@ -192,6 +135,38 @@ jobs:
             exit 0
           fi
           unity-cli uninstall-unity --unity-editor "${UNITY_EDITOR_PATH}"
+      - name: Print log paths
+        if: ${{ matrix.unity-version != 'none' }}
+        shell: bash
+        run: |
+          HUB_LOG_PATH=$(unity-cli hub-logs)
+          PACKAGE_MANAGER_LOG_PATH=$(unity-cli package-manager-logs)
+          LICENSING_CLIENT_LOG_PATH=$(unity-cli licensing-client-logs)
+          LICENSING_AUDIT_LOG_PATH=$(unity-cli licensing-audit-logs)
+          
+          echo "Hub Log Path: ${HUB_LOG_PATH}"
+          echo "Package Manager Log Path: ${PACKAGE_MANAGER_LOG_PATH}"
+          echo "Licensing Client Log Path: ${LICENSING_CLIENT_LOG_PATH}"
+          echo "Licensing Audit Log Path: ${LICENSING_AUDIT_LOG_PATH}"
+          
+          if [ ! -f "${HUB_LOG_PATH}" ]; then
+            echo "::warning:: Hub log file does not exist at ${HUB_LOG_PATH}"
+            find all .log and .json files in ~/.config/unity3d/ - print their paths
+            find ~/.config/unity3d/ -type f \( -name "*.log" -o -name "*.json" \) -exec echo "Found log/json file: {}" \;
+            echo "::error:: Hub log file does not exist at any known location"
+          fi
+          
+          if [ ! -f "${PACKAGE_MANAGER_LOG_PATH}" ]; then
+            echo "::error::Package Manager log file does not exist at ${PACKAGE_MANAGER_LOG_PATH}"
+          fi
+          
+          if [ ! -f "${LICENSING_CLIENT_LOG_PATH}" ]; then
+            echo "::error::Licensing Client log file does not exist at ${LICENSING_CLIENT_LOG_PATH}"
+          fi
+          
+          if [ ! -f "${LICENSING_AUDIT_LOG_PATH}" ]; then
+            echo "::error::Licensing Audit log file does not exist at ${LICENSING_AUDIT_LOG_PATH}"
+          fi
       - name: Return License
         if: always()
         shell: bash
