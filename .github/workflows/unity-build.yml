@@ -117,6 +117,20 @@ jobs:
                 exit 0
               fi
             fi
+            
+            echo "::error:: Hub log file does not exist at any known location"
+            
+            # search the whole disk for *.UnityHub.log files and print their paths
+            echo "Searching for UnityHub.log files on the system:"
+            paths=$(find / -type f -name "*.UnityHub.log" 2>/dev/null)
+            if [ -z "$paths" ]; then
+              echo "No UnityHub.log files found on the system."
+            else
+              echo "Found UnityHub.log files at the following locations:"
+              for path in $paths; do
+                echo "$path"
+              done
+            fi
             exit 1
           fi
       - name: Create Unity Project
