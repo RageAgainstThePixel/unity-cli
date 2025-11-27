@@ -14,6 +14,8 @@ A powerful command line utility for the Unity Game Engine. Automate Unity projec
       - [License Version](#license-version)
       - [Activate License](#activate-license)
       - [Return License](#return-license)
+      - [License Context](#license-context)
+      - [Licensing Logs](#licensing-logs)
     - [Unity Hub](#unity-hub)
       - [Hub Version](#hub-version)
       - [Hub Path](#hub-path)
@@ -26,6 +28,7 @@ A powerful command line utility for the Unity Game Engine. Automate Unity projec
       - [Create Unity Project](#create-unity-project)
       - [Open Unity Project](#open-unity-project)
       - [Run Unity Editor Commands](#run-unity-editor-commands)
+      - [Unity Editor Logs](#unity-editor-logs)
     - [Unity Package Manager](#unity-package-manager)
       - [Sign a Unity Package](#sign-a-unity-package)
 - [Logging](#logging)
@@ -292,6 +295,14 @@ unity-cli open-project
 
 ```bash
 unity-cli run --unity-project <path-to-project> -quit -batchmode -executeMethod StartCommandLineBuild
+```
+
+#### Unity Editor Logs
+
+`editor-logs`: Prints the path to the Unity Editor log files.
+
+```bash
+unity-cli editor-logs
 ```
 
 #### Unity Package Manager
