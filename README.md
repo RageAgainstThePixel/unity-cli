@@ -21,6 +21,7 @@ A powerful command line utility for the Unity Game Engine. Automate Unity projec
       - [Hub Version](#hub-version)
       - [Hub Path](#hub-path)
       - [Hub Logs](#hub-logs)
+      - [Package Manager Logs](#package-manager-logs)
       - [Unity Hub Install](#unity-hub-install)
       - [Run Unity Hub Commands](#run-unity-hub-commands)
       - [Setup Unity Editor](#setup-unity-editor)
@@ -163,6 +164,14 @@ unity-cli hub-path
 
 ```bash
 unity-cli hub-logs
+```
+
+##### Package Manager Logs
+
+`package-manager-logs`: Prints the path to the Unity Package Manager log file.
+
+```bash
+unity-cli package-manager-logs
 ```
 
 ##### Unity Hub Install

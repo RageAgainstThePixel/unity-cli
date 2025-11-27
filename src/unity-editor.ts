@@ -452,12 +452,12 @@ export class UnityEditor {
      */
     static GetEditorLogsDirectory() {
         switch (process.platform) {
+            case 'win32':
+                return path.join(process.env.LOCALAPPDATA || '', 'Unity', 'Editor');
             case 'darwin':
                 return path.join(process.env.HOME || '', 'Library', 'Logs', 'Unity');
             case 'linux':
                 return path.join(process.env.HOME || '', '.config', 'unity3d', 'Editor');
-            case 'win32':
-                return path.join(process.env.LOCALAPPDATA || '', 'Unity', 'Editor');
             default:
                 throw new Error(`Unsupported platform: ${process.platform}`);
         }

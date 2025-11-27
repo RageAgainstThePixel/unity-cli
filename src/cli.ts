@@ -202,6 +202,13 @@ program.command('hub-logs')
         process.exit(0);
     });
 
+program.command('package-manager-logs')
+    .description('Prints the path to the Unity Package Manager log file.')
+    .action(async () => {
+        process.stdout.write(`${UnityHub.PackageManagerLogsPath()}\n`);
+        process.exit(0);
+    });
+
 program.command('hub-install')
     .description('Install the Unity Hub.')
     .option('--verbose', 'Enable verbose logging.')
