@@ -151,7 +151,7 @@ jobs:
           
           if [ ! -f "${HUB_LOG_PATH}" ]; then
             echo "::warning:: Hub log file does not exist at ${HUB_LOG_PATH}"
-            find all .log and .json files in ~/.config/unity3d/ - print their paths
+            # find all .log and .json files in ~/.config/unity3d/ - print their paths
             find ~/.config/unity3d/ -type f \( -name "*.log" -o -name "*.json" \) -exec echo "Found log/json file: {}" \;
             echo "::error:: Hub log file does not exist at any known location"
           fi
