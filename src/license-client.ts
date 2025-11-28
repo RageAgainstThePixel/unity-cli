@@ -136,11 +136,15 @@ export class LicensingClient {
         }
 
         try {
-            const decoded = Buffer.from(trimmedInput, 'base64').toString('utf-8').trim();
-            const decodedJson = tryParseJson(decoded);
+            const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
 
-            if (decodedJson) {
-                return decodedJson;
+            if (base64Regex.test(trimmedInput)) {
+                const decoded = Buffer.from(trimmedInput, 'base64').toString('utf-8').trim();
+                const decodedJson = tryParseJson(decoded);
+
+                if (decodedJson) {
+                    return decodedJson;
+                }
             }
         }
         catch (error) {
