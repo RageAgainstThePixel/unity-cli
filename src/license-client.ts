@@ -145,14 +145,17 @@ export class LicensingClient {
             return directJson;
         }
 
-        const decoded = Buffer.from(trimmedInput, 'base64').toString('utf-8').trim();
-        const decodedJson = this.tryParseJson(decoded);
+        const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+        if (base64Regex.test(trimmedInput)) {
+            const decoded = Buffer.from(trimmedInput, 'base64').toString('utf-8').trim();
+            const decodedJson = this.tryParseJson(decoded);
 
-        if (decodedJson) {
-            return decodedJson;
+            if (decodedJson) {
+                return decodedJson;
+            }
         }
 
-        throw new Error('Services config value is not a valid file path, JSON string, or base64 encoded JSON string.');
+        throw new Error('Services config value is not a valid JSON string or base64 encoded JSON string.');
     }
 
     /**

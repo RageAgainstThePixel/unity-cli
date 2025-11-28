@@ -18,7 +18,7 @@ describe('LicensingClient services config handling', () => {
     });
 
     it('rejects invalid inline config', () => {
-        expect(() => invokeResolver('not-a-valid-config')).toThrow('Services config value is not a valid file path, JSON string, or base64 encoded JSON string.');
+        expect(() => invokeResolver('not-a-valid-config')).toThrow('Services config value is not a valid JSON string or base64 encoded JSON string.');
     });
 
     it('rejects empty inline config', () => {
