@@ -1,4 +1,8 @@
-import { LicensingClient } from '../src/license-client';
+import { LicensingClient, LicenseType } from '../src/license-client';
+
+afterEach(() => {
+    jest.restoreAllMocks();
+});
 
 describe('LicensingClient services config handling', () => {
     const invokeResolver = (input: string) => {
@@ -23,5 +27,23 @@ describe('LicensingClient services config handling', () => {
 
     it('rejects empty inline config', () => {
         expect(() => invokeResolver('   ')).toThrow('Services config value is empty. Provide a file path, JSON, or base64 encoded JSON string.');
+    });
+});
+
+describe('LicensingClient floating activation order', () => {
+    it('prepares services config before checking entitlements', async () => {
+        const client = new LicensingClient();
+        const setupSpy = jest.spyOn(client as any, 'setupServicesConfig').mockResolvedValue('/tmp/services-config.json');
+        const entitlementsSpy = jest.spyOn(client, 'GetActiveEntitlements').mockResolvedValue([]);
+        jest.spyOn(client as any, 'exec').mockResolvedValue('Successfully acquired with token: "token-123"');
+
+        await client.Activate({
+            licenseType: LicenseType.floating,
+            servicesConfig: '{"floatingServer":"https://example.com"}'
+        });
+
+        expect(setupSpy).toHaveBeenCalledTimes(1);
+        expect(entitlementsSpy).toHaveBeenCalledTimes(1);
+        expect(entitlementsSpy.mock.invocationCallOrder[0]).toBeGreaterThan(setupSpy.mock.invocationCallOrder[0]);
     });
 });
