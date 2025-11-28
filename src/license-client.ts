@@ -468,6 +468,80 @@ export class LicensingClient {
         await this.exec(['--showContext']);
     }
 
+    private async getClientLogSize(): Promise<number> {
+        try {
+            const stats = await fs.promises.stat(LicensingClient.ClientLogPath());
+            return stats.size;
+        }
+        catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                return 0;
+            }
+
+            throw error;
+        }
+    }
+
+    private async waitForLicenseServerConfiguration(timeoutMs: number = 30_000, pollIntervalMs: number = 1_000): Promise<void> {
+        const logPath = LicensingClient.ClientLogPath();
+        const configuredPattern = /Floating license server URL is:\s*(?<url>[^\s]+)\s*\(via config file\)/;
+        const notConfiguredPattern = /Floating license server is not configured/;
+        const deadline = Date.now() + timeoutMs;
+        let offset = await this.getClientLogSize();
+        let remainder = '';
+
+        while (Date.now() < deadline) {
+            let newChunk = '';
+
+            try {
+                const stats = await fs.promises.stat(logPath);
+
+                if (stats.size > offset) {
+                    const length = stats.size - offset;
+                    const handle = await fs.promises.open(logPath, 'r');
+
+                    try {
+                        const buffer = Buffer.alloc(length);
+                        await handle.read(buffer, 0, length, offset);
+                        newChunk = buffer.toString('utf-8');
+                        offset = stats.size;
+                    }
+                    finally {
+                        await handle.close();
+                    }
+                }
+            }
+            catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+                    this.logger.debug(`Failed to inspect licensing client log: ${error}`);
+                }
+            }
+
+            if (newChunk.length > 0) {
+                remainder += newChunk;
+                const lines = remainder.split(/\r?\n/);
+                remainder = lines.pop() ?? '';
+
+                for (const line of lines) {
+                    const configuredMatch = line.match(configuredPattern);
+
+                    if (configuredMatch && configuredMatch.groups?.url) {
+                        this.logger.info(`License server configured with URL: ${configuredMatch.groups.url}`);
+                        return;
+                    }
+
+                    if (notConfiguredPattern.test(line)) {
+                        this.logger.warn('Floating license server is not configured. Waiting for configuration...');
+                    }
+                }
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+        }
+
+        throw new Error(`Timed out waiting for floating license server configuration. Check '${logPath}' for details.`);
+    }
+
     /**
      * Activates a Unity license.
      * @param options The activation options including license type, services config, serial, username, and password.
@@ -498,6 +572,8 @@ export class LicensingClient {
 
         switch (options.licenseType) {
             case LicenseType.floating: {
+                await this.Context();
+                await this.waitForLicenseServerConfiguration();
                 const output = await this.exec([`--acquire-floating`], true);
                 const tokenMatch = output.match(/with token:\s*"(?<token>[\w-]+)"/);
 
