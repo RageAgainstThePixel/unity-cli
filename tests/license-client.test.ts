@@ -39,13 +39,13 @@ describe('LicensingClient services config handling', () => {
 });
 
 describe('LicensingClient floating activation order', () => {
-    it('prepares services config before checking entitlements', async () => {
+    it('prepares services config without checking entitlements', async () => {
         const client = new LicensingClient();
         const setupSpy = jest.spyOn(client as any, 'setupServicesConfig').mockResolvedValue('/tmp/services-config.json');
         const entitlementsSpy = jest.spyOn(client, 'GetActiveEntitlements').mockResolvedValue([]);
         jest.spyOn(client, 'Context').mockResolvedValue();
-        jest.spyOn(client as any, 'waitForLicenseServerConfiguration').mockResolvedValue(undefined);
-        jest.spyOn(client as any, 'exec').mockResolvedValue('Successfully acquired with token: "token-123"');
+        const waitSpy = jest.spyOn(client as any, 'waitForLicenseServerConfiguration').mockResolvedValue(undefined);
+        const execSpy = jest.spyOn(client as any, 'exec').mockResolvedValue('Successfully acquired with token: "token-123"');
 
         await client.Activate({
             licenseType: LicenseType.floating,
@@ -53,8 +53,10 @@ describe('LicensingClient floating activation order', () => {
         });
 
         expect(setupSpy).toHaveBeenCalledTimes(1);
-        expect(entitlementsSpy).toHaveBeenCalledTimes(1);
-        expect(entitlementsSpy.mock.invocationCallOrder[0]).toBeGreaterThan(setupSpy.mock.invocationCallOrder[0]);
+        expect(entitlementsSpy).not.toHaveBeenCalled();
+        expect(waitSpy).toHaveBeenCalledTimes(1);
+        expect(execSpy).toHaveBeenCalledTimes(1);
+        expect(execSpy.mock.invocationCallOrder[0]).toBeGreaterThan(waitSpy.mock.invocationCallOrder[0]);
     });
 });
 
@@ -69,6 +71,7 @@ describe('LicensingClient waitForLicenseServerConfiguration', () => {
         const client = new LicensingClient();
         const tempLog = createTempLog();
         jest.spyOn(LicensingClient, 'ClientLogPath').mockReturnValue(tempLog);
+        jest.spyOn(client as any, 'exec').mockResolvedValue('');
 
         setTimeout(() => {
             fs.appendFileSync(tempLog, '\nFloating license server URL is: https://example.com (via config file)\n');
@@ -82,6 +85,7 @@ describe('LicensingClient waitForLicenseServerConfiguration', () => {
         const client = new LicensingClient();
         const tempLog = createTempLog();
         jest.spyOn(LicensingClient, 'ClientLogPath').mockReturnValue(tempLog);
+        jest.spyOn(client as any, 'exec').mockResolvedValue('');
 
         await expect((client as any).waitForLicenseServerConfiguration(200, 10)).rejects.toThrow(/Timed out waiting for floating license server configuration/);
         fs.rmSync(tempLog, { force: true });
