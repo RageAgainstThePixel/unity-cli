@@ -713,12 +713,12 @@ export class LicensingClient {
         }
         else {
             await this.exec([`--return-ulf`]);
-        }
 
-        const activeLicenses = await this.GetActiveEntitlements();
+            const activeLicenses = await this.GetActiveEntitlements();
 
-        if (activeLicenses.includes(licenseType)) {
-            throw new Error(`Failed to return license of type '${licenseType}'`);
+            if (activeLicenses.includes(licenseType)) {
+                throw new Error(`Failed to return license of type '${licenseType}'`);
+            }
         }
 
         this.logger.info(`Successfully returned license of type '${licenseType}'`);
