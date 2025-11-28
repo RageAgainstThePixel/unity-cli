@@ -4,7 +4,10 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 import { Logger } from './logging';
 import { UnityHub } from './unity-hub';
-import { ResolveGlobToPath } from './utilities';
+import {
+    ResolveGlobToPath,
+    tryParseJson
+} from './utilities';
 
 export enum LicenseType {
     personal = 'personal',
@@ -119,19 +122,6 @@ export class LicensingClient {
         return path.join(servicesConfigDirectory, 'services-config.json');
     }
 
-    private tryParseJson(content: string | undefined): string | undefined {
-        if (!content) {
-            return undefined;
-        }
-
-        try {
-            JSON.parse(content);
-            return content;
-        } catch {
-            return undefined;
-        }
-    }
-
     private resolveServicesConfigContent(input: string): string {
         const trimmedInput = input.trim();
 
@@ -139,23 +129,50 @@ export class LicensingClient {
             throw new Error('Services config value is empty. Provide a file path, JSON, or base64 encoded JSON string.');
         }
 
-        const directJson = this.tryParseJson(trimmedInput);
+        const rawJson = tryParseJson(trimmedInput);
 
-        if (directJson) {
-            return directJson;
+        if (rawJson) {
+            return rawJson;
         }
 
-        const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
-        if (base64Regex.test(trimmedInput)) {
-            const decoded = Buffer.from(trimmedInput, 'base64').toString('utf-8').trim();
-            const decodedJson = this.tryParseJson(decoded);
+        try {
+            const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
 
-            if (decodedJson) {
-                return decodedJson;
+            if (base64Regex.test(trimmedInput)) {
+                const decoded = Buffer.from(trimmedInput, 'base64').toString('utf-8').trim();
+                const decodedJson = tryParseJson(decoded);
+
+                if (decodedJson) {
+                    return decodedJson;
+                }
+            } else {
+                throw new Error('Input does not match base64 format.');
             }
+        }
+        catch (error) {
+            throw new Error(`Failed to decode services config as base64: ${error}`);
         }
 
         throw new Error('Services config value is not a valid JSON string or base64 encoded JSON string.');
+    }
+
+    private async setupServicesConfig(configSource: string): Promise<string> {
+        const servicesConfigPath = this.servicesConfigPath();
+
+        if (fs.existsSync(configSource)) {
+            fs.copyFileSync(configSource, servicesConfigPath);
+        }
+        else {
+            const configContent = this.resolveServicesConfigContent(configSource);
+            fs.writeFileSync(servicesConfigPath, configContent, { encoding: 'utf-8' });
+        }
+
+        if (process.platform !== 'win32') {
+            fs.chmodSync(servicesConfigPath, 0o644);
+        }
+
+        fs.accessSync(servicesConfigPath, fs.constants.R_OK);
+        return servicesConfigPath;
     }
 
     /**
@@ -459,8 +476,19 @@ export class LicensingClient {
      * @throws Error if activation fails or required parameters are missing.
      */
     public async Activate(options: ActivateOptions, skipEntitlementCheck: boolean = false): Promise<string | undefined> {
+        let servicesConfigPath: string | undefined;
+
+        if (options.licenseType === LicenseType.floating) {
+            if (!options.servicesConfig) {
+                throw new Error('Services config path is required for floating license activation');
+            }
+
+            servicesConfigPath = await this.setupServicesConfig(options.servicesConfig);
+            this.logger.debug(`Using services config at: ${servicesConfigPath}`);
+        }
+
         if (!skipEntitlementCheck) {
-            let activeLicenses = await this.GetActiveEntitlements();
+            const activeLicenses = await this.GetActiveEntitlements();
 
             if (activeLicenses.includes(options.licenseType)) {
                 this.logger.info(`License of type '${options.licenseType}' is already active, skipping activation`);
@@ -470,27 +498,6 @@ export class LicensingClient {
 
         switch (options.licenseType) {
             case LicenseType.floating: {
-                if (!options.servicesConfig) {
-                    throw new Error('Services config path is required for floating license activation');
-                }
-
-                const servicesConfigPath = this.servicesConfigPath();
-
-                if (fs.existsSync(options.servicesConfig)) {
-                    fs.copyFileSync(options.servicesConfig, servicesConfigPath);
-                }
-                else {
-                    const configContent = this.resolveServicesConfigContent(options.servicesConfig);
-                    fs.writeFileSync(servicesConfigPath, configContent, { encoding: 'utf-8' });
-                }
-
-                if (process.platform !== 'win32') {
-                    fs.chmodSync(servicesConfigPath, 0o644);
-                }
-
-                fs.accessSync(servicesConfigPath, fs.constants.R_OK);
-                this.logger.debug(`Using services config at: ${servicesConfigPath}`);
-
                 const output = await this.exec([`--acquire-floating`], true);
                 const tokenMatch = output.match(/with token:\s*"(?<token>[\w-]+)"/);
 

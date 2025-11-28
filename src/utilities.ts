@@ -506,3 +506,16 @@ export async function isProcessElevated(): Promise<boolean> {
     ], { silent: true, showCommand: false });
     return output.trim().toLowerCase() === 'true';
 }
+
+export function tryParseJson(content: string | undefined): string | undefined {
+    if (!content) {
+        return undefined;
+    }
+
+    try {
+        JSON.parse(content);
+        return content;
+    } catch {
+        return undefined;
+    }
+}
