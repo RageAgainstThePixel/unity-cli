@@ -638,11 +638,7 @@ export class LicensingClient {
      * @throws Error if deactivation fails.
      */
     public async Deactivate(licenseType: LicenseType, token?: string): Promise<void> {
-        const activeLicenses = await this.GetActiveEntitlements();
-
-        if (activeLicenses.includes(licenseType)) {
-            await this.returnLicense(licenseType, token);
-        }
+        await this.returnLicense(licenseType, token);
     }
 
     /**
@@ -712,9 +708,16 @@ export class LicensingClient {
             await this.exec([`--return-floating`, token]);
         }
         else {
-            await this.exec([`--return-ulf`]);
+            let activeLicenses = await this.GetActiveEntitlements();
 
-            const activeLicenses = await this.GetActiveEntitlements();
+            if (activeLicenses.includes(licenseType)) {
+                await this.exec([`--return-ulf`]);
+            } else {
+                this.logger.info(`No active license of type '${licenseType}' found`);
+                return;
+            }
+
+            activeLicenses = await this.GetActiveEntitlements();
 
             if (activeLicenses.includes(licenseType)) {
                 throw new Error(`Failed to return license of type '${licenseType}'`);
