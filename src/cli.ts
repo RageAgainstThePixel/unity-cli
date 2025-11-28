@@ -42,7 +42,7 @@ program.command('activate-license')
     .option('-e, --email <email>', 'Email associated with the Unity account. Required when activating a personal or professional license.')
     .option('-p, --password <password>', 'Password for the Unity account. Required when activating a personal or professional license.')
     .option('-s, --serial <serial>', 'License serial number. Required when activating a professional license.')
-    .option('-c, --config <config>', 'Path to the configuration file, or base64 encoded JSON string. Required when activating a floating license.')
+    .option('-c, --config <config>', 'Path to the configuration file, raw JSON, or base64 encoded JSON string. Required when activating a floating license.')
     .option('--verbose', 'Enable verbose logging.')
     .option('--json', 'Prints the last line of output as JSON string.')
     .action(async (options) => {
