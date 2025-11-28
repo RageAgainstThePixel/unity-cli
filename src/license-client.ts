@@ -92,7 +92,7 @@ export class LicensingClient {
         switch (process.platform) {
             case 'win32':
                 // %PROGRAMDATA%\Unity\Config
-                servicesConfigDirectory = path.join(process.env.PROGRAMDATA || '', 'Unity', 'Config');
+                servicesConfigDirectory = path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'Unity', 'Config');
                 break;
             case 'darwin':
                 // /Library/Application Support/Unity/config
@@ -117,6 +117,45 @@ export class LicensingClient {
 
         fs.accessSync(servicesConfigDirectory, fs.constants.R_OK | fs.constants.W_OK);
         return path.join(servicesConfigDirectory, 'services-config.json');
+    }
+
+    private tryParseJson(content: string | undefined): string | undefined {
+        if (!content) {
+            return undefined;
+        }
+
+        try {
+            JSON.parse(content);
+            return content;
+        } catch {
+            return undefined;
+        }
+    }
+
+    private resolveServicesConfigContent(input: string): string {
+        const trimmedInput = input.trim();
+
+        if (trimmedInput.length === 0) {
+            throw new Error('Services config value is empty. Provide a file path, JSON, or base64 encoded JSON string.');
+        }
+
+        const directJson = this.tryParseJson(trimmedInput);
+
+        if (directJson) {
+            return directJson;
+        }
+
+        const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+        if (base64Regex.test(trimmedInput)) {
+            const decoded = Buffer.from(trimmedInput, 'base64').toString('utf-8').trim();
+            const decodedJson = this.tryParseJson(decoded);
+
+            if (decodedJson) {
+                return decodedJson;
+            }
+        }
+
+        throw new Error('Services config value is not a valid JSON string or base64 encoded JSON string.');
     }
 
     /**
@@ -441,7 +480,8 @@ export class LicensingClient {
                     fs.copyFileSync(options.servicesConfig, servicesConfigPath);
                 }
                 else {
-                    fs.writeFileSync(servicesConfigPath, Buffer.from(options.servicesConfig, 'base64'));
+                    const configContent = this.resolveServicesConfigContent(options.servicesConfig);
+                    fs.writeFileSync(servicesConfigPath, configContent, { encoding: 'utf-8' });
                 }
 
                 if (process.platform !== 'win32') {

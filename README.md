@@ -54,6 +54,9 @@ A powerful command line utility for the Unity Game Engine. Automate Unity projec
 npm install -g @rage-against-the-pixel/unity-cli
 ```
 
+> [!IMPORTANT]
+> Requires Node v22.12 or higher.
+
 ## Usage
 
 In general, the command structure is:
@@ -96,7 +99,7 @@ unity-cli license-version
 - `-e`, `--email`: Email associated with the Unity account. Required when activating a personal or professional license.
 - `-p`, `--password`: Password for the Unity account. Required when activating a personal or professional license.
 - `-s`, `--serial`: License serial number. Required when activating a professional license.
-- `-c`, `--config`: Path to the configuration file, or base64 encoded JSON string. Required when activating a floating license.
+- `-c`, `--config`: Path to the configuration file, raw JSON, or base64 encoded JSON string. Required when activating a floating license.
 - `--json`: Prints the last line of output as JSON string.
 - `--verbose`: Enable verbose output.
 
