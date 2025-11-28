@@ -513,7 +513,8 @@ export class LicensingClient {
             }
             catch (error) {
                 if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-                    this.logger.debug(`Failed to inspect licensing client log: ${error}`);
+                    this.logger.error(`Failed to inspect licensing client log: ${error}`);
+                    continue;
                 }
             }
 
@@ -531,11 +532,12 @@ export class LicensingClient {
                     }
 
                     if (notConfiguredPattern.test(line)) {
-                        this.logger.warn('Floating license server is not configured. Waiting for configuration...');
+                        this.logger.debug('Floating license server is not configured. Waiting for configuration...');
                     }
                 }
             }
 
+            await this.exec(['--showContext'], true);
             await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
         }
 
@@ -561,6 +563,9 @@ export class LicensingClient {
             this.logger.debug(`Using services config at: ${servicesConfigPath}`);
         }
 
+        // For floating licenses, skip the entitlement check
+        skipEntitlementCheck = options.licenseType === LicenseType.floating;
+
         if (!skipEntitlementCheck) {
             const activeLicenses = await this.GetActiveEntitlements();
 
@@ -572,7 +577,6 @@ export class LicensingClient {
 
         switch (options.licenseType) {
             case LicenseType.floating: {
-                await this.Context();
                 await this.waitForLicenseServerConfiguration();
                 const output = await this.exec([`--acquire-floating`], true);
                 const tokenMatch = output.match(/with token:\s*"(?<token>[\w-]+)"/);
