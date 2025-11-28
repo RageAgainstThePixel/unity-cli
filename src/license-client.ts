@@ -145,10 +145,12 @@ export class LicensingClient {
                 if (decodedJson) {
                     return decodedJson;
                 }
+            } else {
+                throw new Error('Input does not match base64 format.');
             }
         }
         catch (error) {
-            this.logger.debug(`Failed to decode services config as base64: ${error}`);
+            throw new Error(`Failed to decode services config as base64: ${error}`);
         }
 
         throw new Error('Services config value is not a valid JSON string or base64 encoded JSON string.');

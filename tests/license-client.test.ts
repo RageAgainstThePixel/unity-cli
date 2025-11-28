@@ -21,8 +21,13 @@ describe('LicensingClient services config handling', () => {
         expect(invokeResolver(encoded)).toBe(json);
     });
 
-    it('rejects invalid inline config', () => {
-        expect(() => invokeResolver('not-a-valid-config')).toThrow('Services config value is not a valid JSON string or base64 encoded JSON string.');
+    it('rejects invalid inline config even if it looks like base64', () => {
+        // "YWJjZA==" decodes to "abcd", which is not valid JSON
+        expect(() => invokeResolver('YWJjZA==')).toThrow('Services config value is not a valid JSON string or base64 encoded JSON string.');
+    });
+
+    it('throws when inline config does not match base64 format', () => {
+        expect(() => invokeResolver('not-a-valid-config')).toThrow(/Input does not match base64 format/);
     });
 
     it('rejects empty inline config', () => {
