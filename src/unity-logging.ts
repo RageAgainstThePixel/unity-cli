@@ -95,7 +95,7 @@ class ActionTelemetryAccumulator {
     private totalErrorCount = 0;
     private playerBuildInfoSteps: PlayerBuildInfoStepSummary[] = [];
 
-    record(action: UTPBase): boolean {
+    public record(action: UTPBase): boolean {
         if (action.phase === Phase.Begin) {
             this.pendingActions.set(this.getActionKey(action), action);
             return true;
@@ -133,7 +133,7 @@ class ActionTelemetryAccumulator {
         return false;
     }
 
-    recordPlayerBuildInfo(info: UTPPlayerBuildInfo): boolean {
+    public recordPlayerBuildInfo(info: UTPPlayerBuildInfo): boolean {
         if (!Array.isArray(info.steps) || info.steps.length === 0) {
             return false;
         }
@@ -162,7 +162,7 @@ class ActionTelemetryAccumulator {
         return true;
     }
 
-    snapshot(): ActionTableSnapshot | undefined {
+    public snapshot(): ActionTableSnapshot | undefined {
         if (this.completedActions.length === 0 && this.pendingActions.size === 0 && this.playerBuildInfoSteps.length === 0) {
             return undefined;
         }
@@ -902,14 +902,13 @@ function formatMemoryLeakTable(memLeaks: UTPMemoryLeak): string {
 
 function buildUtpLogPath(logPath: string): string {
     const parsed = path.parse(logPath);
-    const utpFileName = `utp-${parsed.name}.json`;
+    const utpFileName = `${parsed.name}-utp-json.log`;
     return parsed.dir ? path.join(parsed.dir, utpFileName) : utpFileName;
 }
 
 async function writeUtpTelemetryLog(filePath: string, entries: UTP[], logger: Logger): Promise<void> {
     try {
-        const content = `${JSON.stringify(entries, null, 2)}\n`;
-        await fs.promises.writeFile(filePath, content, 'utf8');
+        await fs.promises.writeFile(filePath, `${JSON.stringify(entries)}\n`, 'utf8');
     } catch (error) {
         logger.warn(`Failed to write UTP telemetry log (${filePath}): ${error}`);
     }
@@ -940,20 +939,51 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
     };
 
     const flushTelemetryLog = async (): Promise<void> => {
-        if (telemetryFlushed) {
-            return;
-        }
+        if (telemetryFlushed) { return; }
         telemetryFlushed = true;
         await writeUtpTelemetryLog(utpLogPath, telemetry, logger);
     };
 
-    const writeStdout = (content: string, restoreTable: boolean = true): void => {
+    const writeStdoutThenTableContent = (content: string, restoreTable: boolean = true): void => {
         actionTableRenderer.prepareForContent();
         process.stdout.write(content);
         if (restoreTable) {
             renderActionTable();
         }
     };
+
+    function printUTP(utp: UTP): void {
+        // switch utp types, fallback to json if we don't have a toString() implementation or a type implementation
+        switch (utp.type) {
+            case 'Action': {
+                const actionEntry = utp as UTPBase;
+                const tableChanged = actionAccumulator.record(actionEntry);
+
+                if (tableChanged) {
+                    renderActionTable();
+                }
+
+                break;
+            }
+            case 'MemoryLeaks':
+                logger.debug(formatMemoryLeakTable(utp as UTPMemoryLeak));
+                break;
+            case 'PlayerBuildInfo': {
+                const infoEntry = utp as UTPPlayerBuildInfo;
+                const changed = actionAccumulator.recordPlayerBuildInfo(infoEntry);
+
+                if (changed) {
+                    renderActionTable();
+                }
+
+                break;
+            }
+            default:
+                // Print raw JSON for unhandled UTP types
+                writeStdoutThenTableContent(`${JSON.stringify(utp)}\n`);
+                break;
+        }
+    }
 
     async function readNewLogContent(): Promise<void> {
         try {
@@ -990,10 +1020,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                                 const jsonPart = line.substring('##utp:'.length).trim();
                                 try {
                                     const sanitizedJson = sanitizeTelemetryJson(jsonPart);
-
-                                    if (!sanitizedJson) {
-                                        continue;
-                                    }
+                                    if (!sanitizedJson) { continue; }
 
                                     const utpJson = JSON.parse(sanitizedJson);
                                     const utp = utpJson as UTP;
@@ -1030,44 +1057,15 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                                                 }
                                             }
                                         }
-                                    } else {
-                                        // switch utp types, fallback to json if we don't have a toString() implementation or a type implementation
-                                        switch (utp.type) {
-                                            case 'Action': {
-                                                const actionEntry = utp as UTPBase;
-                                                const tableChanged = actionAccumulator.record(actionEntry);
-
-                                                if (tableChanged) {
-                                                    renderActionTable();
-                                                }
-
-                                                break;
-                                            }
-                                            case 'MemoryLeaks':
-                                                logger.debug(formatMemoryLeakTable(utp as UTPMemoryLeak));
-                                                break;
-                                            case 'PlayerBuildInfo': {
-                                                const infoEntry = utp as UTPPlayerBuildInfo;
-                                                const changed = actionAccumulator.recordPlayerBuildInfo(infoEntry);
-
-                                                if (changed) {
-                                                    renderActionTable();
-                                                }
-
-                                                break;
-                                            }
-                                            default:
-                                                // Print raw JSON for unhandled UTP types
-                                                writeStdout(`${jsonPart}\n`);
-                                                break;
-                                        }
+                                    } else if (Logger.instance.logLevel === LogLevel.UTP) {
+                                        printUTP(utp);
                                     }
                                 } catch (error) {
                                     logger.warn(`Failed to parse telemetry JSON: ${error} -- raw: ${jsonPart}`);
                                 }
                             } else {
                                 if (Logger.instance.logLevel !== LogLevel.UTP) {
-                                    writeStdout(`${line}\n`);
+                                    process.stdout.write(`${line}\n`);
                                 }
                             }
                         }
@@ -1098,7 +1096,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
 
                 try {
                     // write a final newline to separate log output
-                    writeStdout('\n');
+                    process.stdout.write('\n');
                 } catch (error: any) {
                     if (error.code !== 'EPIPE') {
                         logger.warn(`Error while writing log tail: ${error}`);
