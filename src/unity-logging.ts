@@ -902,7 +902,7 @@ function formatMemoryLeakTable(memLeaks: UTPMemoryLeak): string {
 
 function buildUtpLogPath(logPath: string): string {
     const parsed = path.parse(logPath);
-    const utpFileName = `utp-${parsed.name}.json.log`;
+    const utpFileName = `${parsed.name}-utp-json.log`;
     return parsed.dir ? path.join(parsed.dir, utpFileName) : utpFileName;
 }
 
@@ -944,7 +944,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
         await writeUtpTelemetryLog(utpLogPath, telemetry, logger);
     };
 
-    const writeTableStdout = (content: string, restoreTable: boolean = true): void => {
+    const writeStdoutThenTableContent = (content: string, restoreTable: boolean = true): void => {
         actionTableRenderer.prepareForContent();
         process.stdout.write(content);
         if (restoreTable) {
@@ -980,7 +980,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
             }
             default:
                 // Print raw JSON for unhandled UTP types
-                writeTableStdout(`${JSON.stringify(utp)}\n`);
+                writeStdoutThenTableContent(`${JSON.stringify(utp)}\n`);
                 break;
         }
     }
