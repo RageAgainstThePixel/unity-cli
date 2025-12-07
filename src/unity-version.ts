@@ -271,10 +271,6 @@ export class UnityVersion {
 
         let candidates = UnityVersion.filterFinalReleases(releases, normalizedMajor, requestedMinor, channels);
 
-        if (!candidates.length && minorToken === '0') {
-            candidates = UnityVersion.filterFinalReleases(releases, normalizedMajor, undefined, channels);
-        }
-
         Logger.instance.debug(`Found ${candidates.length} candidate(s) for version pattern ${version}`);
         candidates.forEach(release => {
             Logger.instance.debug(`  - ${release.version}`);

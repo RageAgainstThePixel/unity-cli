@@ -62,6 +62,68 @@ describe('UnityVersion', () => {
         expect(UnityVersion.compare(match, older)).toBeGreaterThan(0);
     });
 
+    it('finds latest final release when only major is provided', () => {
+        const available = [
+            '2021.3.5f2',
+            '2021.3.0f1',
+            '2020.3.7f1',
+            '2021.2.9f1'
+        ];
+
+        const version = new UnityVersion('2021');
+        const match = version.findMatch(available);
+
+        expect(match.version).toBe('2021.3.5f2');
+    });
+
+    it('finds latest minor when using wildcard', () => {
+        const available = [
+            '2021.2.9f1',
+            '2021.3.5f2',
+            '2021.3.4f1'
+        ];
+
+        const version = new UnityVersion('2021.*');
+        const match = version.findMatch(available);
+
+        expect(match.version).toBe('2021.3.5f2');
+    });
+
+    it('prefers newer patch channels when allowed', () => {
+        const available = [
+            '2021.3.4f1',
+            '2021.3.5p2'
+        ];
+
+        const version = new UnityVersion('2021.3');
+        const match = version.findMatch(available, ['f', 'p']);
+
+        expect(match.version).toBe('2021.3.5p2');
+    });
+
+    it('returns original when no channel candidates exist', () => {
+        const available = [
+            '2021.3.5f2'
+        ];
+
+        const version = new UnityVersion('2021.3.x');
+        const match = version.findMatch(available, ['a']);
+
+        expect(match.version).toBe('2021.3.x');
+    });
+
+    it('keeps explicit minor requests when no matching releases are available', () => {
+        const available = [
+            '6000.3.0f1'
+        ];
+
+        const version = new UnityVersion('6000.0.x');
+        const match = version.findMatch(available);
+
+        // When only other minors exist (e.g., 6000.3.*), do not fall back to them.
+        expect(match.version).toBe('6000.0.x');
+    });
+
     it('evaluates caret compatibility with satisfies', () => {
         const baseline = new UnityVersion('2021.3.5f1');
         const compatible = new UnityVersion('2021.4.0f1');
