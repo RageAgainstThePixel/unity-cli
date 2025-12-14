@@ -2,7 +2,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { LogLevel, Logger } from './logging';
 import { Delay, WaitForFileToBeUnlocked } from './utilities';
-import { Phase, Severity, UTP, UTPBase, UTPMemoryLeak, UTPPlayerBuildInfo } from './utp/utp';
+import {
+    Phase,
+    Severity,
+    UTP,
+    UTPBase,
+    UTPMemoryLeak,
+    UTPPlayerBuildInfo,
+    normalizeTelemetryEntry
+} from './utp/utp';
 
 /**
  * Result of the tailLogFile function containing cleanup resources.
@@ -977,7 +985,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                 if (!sanitizedJson) { return; }
 
                 const utpJson = JSON.parse(sanitizedJson);
-                const utp = utpJson as UTP;
+                const utp = normalizeTelemetryEntry(utpJson);
                 telemetry.push(utp);
 
                 if (utp.message && 'severity' in utp &&
@@ -989,7 +997,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                     }
 
                     const file = utp.file ? utp.file.replace(/\\/g, '/') : undefined;
-                    const stacktrace = sanitizeStackTrace(utp.stacktrace);
+                    const stacktrace = sanitizeStackTrace(utp.stackTrace);
                     const message = stacktrace == undefined ? utp.message : `${utp.message}\n${stacktrace}`;
 
                     if (!githubAnnotationPrefixRegex.test(message)) {
@@ -1051,6 +1059,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                 break;
             }
             default:
+                logger.warn(`UTP entry has unknown type: ${utp.type ?? 'undefined'}`);
                 // Print raw JSON for unhandled UTP types
                 writeStdoutThenTableContent(`${JSON.stringify(utp)}\n`);
                 break;

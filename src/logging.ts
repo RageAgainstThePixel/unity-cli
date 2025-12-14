@@ -3,7 +3,7 @@ import * as fs from 'fs';
 export enum LogLevel {
     DEBUG = 'debug',
     CI = 'ci',
-    UTP = 'utp',
+    UTP = 'utp', // minimal logging level
     INFO = 'info',
     WARN = 'warning',
     ERROR = 'error',
