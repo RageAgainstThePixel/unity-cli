@@ -1,6 +1,6 @@
 {
   "name": "@rage-against-the-pixel/unity-cli",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "A command line utility for the Unity Game Engine.",
   "author": "RageAgainstThePixel",
   "license": "MIT",
@@ -60,7 +60,7 @@
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "@types/node": "^24.10.1",
+    "@types/node": "^24.10.4",
     "@types/semver": "^7.7.1",
     "@types/update-notifier": "^6.0.8",
     "jest": "^30.2.0",

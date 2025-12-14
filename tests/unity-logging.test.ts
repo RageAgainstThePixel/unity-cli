@@ -10,6 +10,11 @@ describe('sanitizeTelemetryJson', () => {
         const raw = '\ufeff  {"key":"value"}  ';
         expect(sanitizeTelemetryJson(raw)).toBe('{"key":"value"}');
     });
+
+    it('removes ANSI color codes around JSON', () => {
+        const raw = '\u001b[32m{"type":"TestStatus"}\u001b[0m';
+        expect(sanitizeTelemetryJson(raw)).toBe('{"type":"TestStatus"}');
+    });
 });
 
 describe('stringDisplayWidth', () => {
