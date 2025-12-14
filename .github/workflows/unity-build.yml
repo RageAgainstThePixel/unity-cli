@@ -1,6 +1,4 @@
 name: unity-build
-permissions:
-  contents: read
 on:
   workflow_call:
     inputs:
@@ -15,14 +13,15 @@ on:
 jobs:
   build:
     name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix: ${{ fromJSON(inputs.matrix) }}
       fail-fast: false
-    runs-on: ${{ matrix.os }}
-    permissions:
-      contents: read
+    defaults:
+      run:
+        shell: bash
     env:
-      UNITY_PROJECT_PATH: '' # Set from create-project step
+      UNITY_PROJECT_PATH: '' # Create Unity Project step will set this if needed
     steps:
       - name: Free Disk Space
         if: ${{ matrix.os == 'ubuntu-latest' && (matrix.unity-version != '2018' && matrix.unity-version != '2017.4.40f1') }}
@@ -36,14 +35,12 @@ jobs:
         with:
           node-version: 24.x
       - name: Setup unity-cli
-        shell: bash
         run: |
           npm ci
           npm run build
           npm run link
           unity-cli --version
       - name: Setup Unity
-        shell: bash
         timeout-minutes: 30
         run: |
           unity-cli hub-install --hub-version 3.12.0
@@ -53,7 +50,6 @@ jobs:
             unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-target }}" --json
           fi
       - name: Verify UNITY_HUB_PATH and UNITY_EDITOR_PATH variables
-        shell: bash
         run: |
           echo "UNITY_HUB_PATH: ${UNITY_HUB_PATH}"
           echo "UNITY_EDITOR_PATH: ${UNITY_EDITOR_PATH}"
@@ -70,20 +66,17 @@ jobs:
           fi
       - name: Activate License
         if: ${{ matrix.unity-version != 'none' }}
-        shell: bash
         run: |
           unity-cli license-context
           unity-cli activate-license --license personal --email "${{ secrets.UNITY_USERNAME }}" --password "${{ secrets.UNITY_PASSWORD }}"
       - name: Create Unity Project
         if: ${{ matrix.unity-version != 'none' }}
-        shell: bash
         run: |
           unity-cli list-project-templates --unity-editor "${UNITY_EDITOR_PATH}" --json
           unity-cli create-project --name "Unity Project" --unity-editor "${UNITY_EDITOR_PATH}" --json
       - name: Verify UNITY_PROJECT_PATH variable
         if: ${{ matrix.unity-version != 'none' }}
         id: verify-project-path
-        shell: bash
         run: |
           if [ -z "${UNITY_PROJECT_PATH}" ]; then
             echo "::error::UNITY_PROJECT_PATH is not set"
@@ -105,15 +98,13 @@ jobs:
             echo "Skipping build: Unity version $version does not support the build pipeline package (requires 2019.4+)"
           fi
       - name: Install OpenUPM and build pipeline package
-        shell: bash
         if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' }}
+        working-directory: ${{ env.UNITY_PROJECT_PATH }}
         run: |
           npm install -g openupm-cli
-          cd "${UNITY_PROJECT_PATH}"
           openupm add com.utilities.buildpipeline
       - name: Update Android Target Sdk Version
         if: ${{ matrix.build-target == 'Android' }}
-        shell: bash
         run: |
           # update AndroidTargetSdkVersion to 32 in ProjectSettings/ProjectSettings.asset
           sed -i 's/AndroidTargetSdkVersion: [0-9]*/AndroidTargetSdkVersion: 32/' "${UNITY_PROJECT_PATH}/ProjectSettings/ProjectSettings.asset"
@@ -122,13 +113,12 @@ jobs:
       - name: Build Project
         if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' }}
         timeout-minutes: 60
-        shell: bash
         run: |
+          # we don't have to specify the project path or unity editor path as unity-cli will use the environment variables
           unity-cli run --log-name Validate -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
           unity-cli run --log-name Build -buildTarget ${{ matrix.build-target }} -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity ${{ matrix.build-args }}
       - name: Uninstall Editor
         if: ${{ matrix.unity-version != 'none' }}
-        shell: bash
         run: |
           if [ -z "${UNITY_EDITOR_PATH}" ]; then
             echo "UNITY_EDITOR_PATH is not set, skipping uninstall"
@@ -137,7 +127,6 @@ jobs:
           unity-cli uninstall-unity --unity-editor "${UNITY_EDITOR_PATH}"
       - name: Print log paths
         if: ${{ matrix.unity-version != 'none' }}
-        shell: bash
         run: |
           HUB_LOG_PATH=$(unity-cli hub-logs)
           PACKAGE_MANAGER_LOG_PATH=$(unity-cli package-manager-logs)
@@ -176,6 +165,4 @@ jobs:
           fi
       - name: Return License
         if: always()
-        shell: bash
-        run: |
-          unity-cli return-license --license personal
+        run: unity-cli return-license --license personal
