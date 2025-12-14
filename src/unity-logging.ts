@@ -81,7 +81,7 @@ interface FormattedTableOutput {
 const TIMELINE_HEADING = '🔨 Unity Build Timeline';
 const PLAYER_BUILD_INFO_HEADING = '📋 Player Build Info';
 
-function sanitizeTelemetryJson(raw: string | undefined): string | undefined {
+export function sanitizeTelemetryJson(raw: string | undefined): string | undefined {
     if (!raw) { return undefined; }
     const sanitized = raw
         .replace(/\uFEFF/gu, '')

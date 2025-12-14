@@ -165,6 +165,7 @@ const allowedUtpKeys = new Set<string>([
     'QualitySettings',
     'ScreenSettings',
     'severity',
+    'stacktrace',
     'stackTrace',
     'state',
     'steps',
@@ -176,7 +177,6 @@ const allowedUtpKeys = new Set<string>([
 
 /**
  * Normalizes UTP telemetry entries to canonical shapes and reports unexpected properties.
- * Accepts an optional warn callback to avoid importing logging dependencies here.
  */
 export function normalizeTelemetryEntry(entry: unknown): UTP {
     if (!entry || typeof entry !== 'object') {
