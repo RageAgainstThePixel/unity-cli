@@ -927,13 +927,22 @@ async function writeUtpTelemetryLog(filePath: string, entries: UTP[], logger: Lo
 /**
  * Editor log messages whose severity has been changed.
  * Useful for making certain error messages that are not critical less noisy.
- * Key is the exact log message, value is the remapped LogLevel.
+ * Key is a substring of the log message, value is the remapped LogLevel.
  */
 const remappedEditorLogs: Record<string, LogLevel> = {
     'OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
     'Failed to find a suitable OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
     '~StackAllocator(ALLOC_TEMP_MAIN) m_LastAlloc not NULL. Did you forget to call FreeAllStackAllocations()?': LogLevel.INFO,
 };
+
+function getRemappedEditorLogLevel(message: string): LogLevel | undefined {
+    for (const [fragment, level] of Object.entries(remappedEditorLogs)) {
+        if (message.includes(fragment)) {
+            return level;
+        }
+    }
+    return undefined;
+}
 
 /**
  * Tails a log file using fs.watch and ReadStream for efficient reading.
@@ -993,8 +1002,9 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                     (utp.severity === Severity.Error || utp.severity === Severity.Exception || utp.severity === Severity.Assert)) {
                     let messageLevel: LogLevel = LogLevel.ERROR;
 
-                    if (remappedEditorLogs[utp.message] !== undefined) {
-                        messageLevel = remappedEditorLogs[utp.message] as LogLevel;
+                    const remappedLevel = getRemappedEditorLogLevel(utp.message);
+                    if (remappedLevel !== undefined) {
+                        messageLevel = remappedLevel;
                     }
 
                     const file = utp.file ? utp.file.replace(/\\/g, '/') : undefined;
