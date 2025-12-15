@@ -32,6 +32,7 @@ export interface LogTailResult {
 const remappedEditorLogs: Record<string, LogLevel> = {
     'OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
     'Failed to find a suitable OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
+    '~StackAllocator(ALLOC_TEMP_MAIN) m_LastAlloc not NULL. Did you forget to call FreeAllStackAllocations()?': LogLevel.INFO,
 };
 
 // Detects GitHub-style annotation markers to avoid emitting duplicates

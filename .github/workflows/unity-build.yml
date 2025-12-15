@@ -149,11 +149,11 @@ jobs:
             fi
             # print all files found in ~/.config/
             find ~/.config/ -type f -exec echo "{}" \;
-            echo "::error:: Hub log file does not exist at any known location"
+            echo "::warning:: Hub log file does not exist at any known location"
           fi
           
           if [ ! -f "${PACKAGE_MANAGER_LOG_PATH}" ]; then
-            echo "::error::Package Manager log file does not exist at ${PACKAGE_MANAGER_LOG_PATH}"
+            echo "::warning::Package Manager log file does not exist at ${PACKAGE_MANAGER_LOG_PATH}"
           fi
           
           if [ ! -f "${LICENSING_CLIENT_LOG_PATH}" ]; then
