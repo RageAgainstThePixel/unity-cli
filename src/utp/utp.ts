@@ -191,6 +191,22 @@ export function normalizeTelemetryEntry(entry: unknown): UTP {
         utp.stackTrace = stackTraceLegacy;
     }
 
+    const fileNameLegacy = record.fileName;
+    if (utp.file === undefined && typeof fileNameLegacy === 'string') {
+        utp.file = fileNameLegacy;
+    }
+    if (utp.fileName === undefined && typeof utp.file === 'string') {
+        utp.fileName = utp.file;
+    }
+
+    const lineNumberLegacy = record.lineNumber;
+    if (utp.line === undefined && typeof lineNumberLegacy === 'number') {
+        utp.line = lineNumberLegacy;
+    }
+    if (utp.lineNumber === undefined && typeof utp.line === 'number') {
+        utp.lineNumber = utp.line;
+    }
+
     if (!utp.type) {
         Logger.instance.warn('UTP entry missing type property; telemetry entry may be ignored.');
     }
