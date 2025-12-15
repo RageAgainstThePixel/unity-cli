@@ -24,17 +24,6 @@ export interface LogTailResult {
     telemetry: UTP[];
 }
 
-/**
- * Editor log messages whose severity has been changed.
- * Useful for making certain error messages that are not critical less noisy.
- * Key is the exact log message, value is the remapped LogLevel.
- */
-const remappedEditorLogs: Record<string, LogLevel> = {
-    'OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
-    'Failed to find a suitable OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
-    '~StackAllocator(ALLOC_TEMP_MAIN) m_LastAlloc not NULL. Did you forget to call FreeAllStackAllocations()?': LogLevel.INFO,
-};
-
 // Detects GitHub-style annotation markers to avoid emitting duplicates
 const githubAnnotationPrefixRegex = /\n::[a-z]+::/i;
 // Matches ANSI escape sequences (CSI and single-character)
@@ -934,6 +923,17 @@ async function writeUtpTelemetryLog(filePath: string, entries: UTP[], logger: Lo
         logger.warn(`Failed to write UTP telemetry log (${filePath}): ${error}`);
     }
 }
+
+/**
+ * Editor log messages whose severity has been changed.
+ * Useful for making certain error messages that are not critical less noisy.
+ * Key is the exact log message, value is the remapped LogLevel.
+ */
+const remappedEditorLogs: Record<string, LogLevel> = {
+    'OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
+    'Failed to find a suitable OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
+    '~StackAllocator(ALLOC_TEMP_MAIN) m_LastAlloc not NULL. Did you forget to call FreeAllStackAllocations()?': LogLevel.INFO,
+};
 
 /**
  * Tails a log file using fs.watch and ReadStream for efficient reading.
