@@ -2,7 +2,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { LogLevel, Logger } from './logging';
 import { Delay, WaitForFileToBeUnlocked } from './utilities';
-import { Phase, Severity, UTP, UTPBase, UTPMemoryLeak, UTPPlayerBuildInfo } from './utp';
+import {
+    Phase,
+    Severity,
+    UTP,
+    UTPBase,
+    UTPMemoryLeak,
+    UTPPlayerBuildInfo,
+    normalizeTelemetryEntry
+} from './utp/utp';
 
 /**
  * Result of the tailLogFile function containing cleanup resources.
@@ -16,18 +24,10 @@ export interface LogTailResult {
     telemetry: UTP[];
 }
 
-/**
- * Editor log messages whose severity has been changed.
- * Useful for making certain error messages that are not critical less noisy.
- * Key is the exact log message, value is the remapped LogLevel.
- */
-const remappedEditorLogs: Record<string, LogLevel> = {
-    'OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
-    'Failed to find a suitable OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
-};
-
 // Detects GitHub-style annotation markers to avoid emitting duplicates
-const annotationPrefixRegex = /\n::[a-z]+::/i;
+const githubAnnotationPrefixRegex = /\n::[a-z]+::/i;
+// Matches ANSI escape sequences (CSI and single-character)
+const ansiEscapeSequenceRegex = /\u001b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
 
 type MemoryLabelEntry = [string, number];
 
@@ -71,15 +71,25 @@ interface FormattedTableOutput {
 const TIMELINE_HEADING = '🔨 Unity Build Timeline';
 const PLAYER_BUILD_INFO_HEADING = '📋 Player Build Info';
 
-export function sanitizeTelemetryJson(raw: string): string {
-    if (!raw) {
-        return '';
-    }
-
-    return raw
+export function sanitizeTelemetryJson(raw: string | undefined): string | undefined {
+    if (!raw) { return undefined; }
+    const sanitized = raw
         .replace(/\uFEFF/gu, '')
         .replace(/\u0000/gu, '')
+        .replace(ansiEscapeSequenceRegex, '')
         .trim();
+    if (sanitized === '') { return undefined; }
+    return sanitized;
+}
+
+function sanitizeStackTrace(raw: string | undefined): string | undefined {
+    if (!raw) { return undefined; }
+    const sanitized = raw
+        .replace(githubAnnotationPrefixRegex, '')
+        .replace(ansiEscapeSequenceRegex, '')
+        .trim();
+    if (sanitized === '') { return undefined; }
+    return sanitized;
 }
 
 const MIN_DESCRIPTION_COLUMN_WIDTH = 16;
@@ -908,10 +918,30 @@ function buildUtpLogPath(logPath: string): string {
 
 async function writeUtpTelemetryLog(filePath: string, entries: UTP[], logger: Logger): Promise<void> {
     try {
-        await fs.promises.writeFile(filePath, `${JSON.stringify(entries)}\n`, 'utf8');
+        await fs.promises.writeFile(filePath, `${JSON.stringify(entries, null, 2)}\n`, 'utf8');
     } catch (error) {
         logger.warn(`Failed to write UTP telemetry log (${filePath}): ${error}`);
     }
+}
+
+/**
+ * Editor log messages whose severity has been changed.
+ * Useful for making certain error messages that are not critical less noisy.
+ * Key is a substring of the log message, value is the remapped LogLevel.
+ */
+const remappedEditorLogs: Record<string, LogLevel> = {
+    'OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
+    'Failed to find a suitable OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
+    '~StackAllocator(ALLOC_TEMP_MAIN) m_LastAlloc not NULL. Did you forget to call FreeAllStackAllocations()?': LogLevel.INFO,
+};
+
+function getRemappedEditorLogLevel(message: string): LogLevel | undefined {
+    for (const [fragment, level] of Object.entries(remappedEditorLogs)) {
+        if (message.includes(fragment)) {
+            return level;
+        }
+    }
+    return undefined;
 }
 
 /**
@@ -924,6 +954,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
     let logEnded = false;
     let lastSize = 0;
     const logPollingInterval = 250;
+    let pendingPartialLine = '';
     const telemetry: UTP[] = [];
     const logger = Logger.instance;
     const actionAccumulator = new ActionTelemetryAccumulator();
@@ -949,6 +980,66 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
         process.stdout.write(content);
         if (restoreTable) {
             renderActionTable();
+        }
+    };
+
+    const processLogLine = (rawLine: string): void => {
+        const line = rawLine.trim();
+        if (!line) { return; }
+
+        // Attempt to parse telemetry utp JSON
+        if (line.startsWith('##utp:')) {
+            const jsonPart = line.substring('##utp:'.length).trim();
+            try {
+                const sanitizedJson = sanitizeTelemetryJson(jsonPart);
+                if (!sanitizedJson) { return; }
+
+                const utpJson = JSON.parse(sanitizedJson);
+                const utp = normalizeTelemetryEntry(utpJson);
+                telemetry.push(utp);
+
+                if (utp.message && 'severity' in utp &&
+                    (utp.severity === Severity.Error || utp.severity === Severity.Exception || utp.severity === Severity.Assert)) {
+                    let messageLevel: LogLevel = LogLevel.ERROR;
+
+                    const remappedLevel = getRemappedEditorLogLevel(utp.message);
+                    if (remappedLevel !== undefined) {
+                        messageLevel = remappedLevel;
+                    }
+
+                    const file = utp.file ? utp.file.replace(/\\/g, '/') : undefined;
+                    const stacktrace = sanitizeStackTrace(utp.stackTrace);
+                    const message = stacktrace == undefined ? utp.message : `${utp.message}\n${stacktrace}`;
+
+                    if (!githubAnnotationPrefixRegex.test(message)) {
+                        // only annotate if the file is within the current project
+                        if (projectPath && file && file.startsWith(projectPath)) {
+                            logger.annotate(LogLevel.ERROR, message, file, utp.line);
+                        } else {
+                            switch (messageLevel) {
+                                case LogLevel.WARN:
+                                    logger.warn(message);
+                                    break;
+                                case LogLevel.ERROR:
+                                    logger.error(message);
+                                    break;
+                                case LogLevel.INFO:
+                                default:
+                                    logger.info(message);
+                                    break;
+                            }
+                        }
+                    }
+                } else if (Logger.instance.logLevel === LogLevel.UTP) {
+                    printUTP(utp);
+                }
+            } catch (error) {
+                logger.warn(`Failed to parse telemetry JSON: ${error} -- raw: ${jsonPart}`);
+            }
+        } else {
+            if (Logger.instance.logLevel !== LogLevel.UTP) {
+                process.stdout.write(`${line}\n`);
+            }
         }
     };
 
@@ -979,6 +1070,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                 break;
             }
             default:
+                logger.warn(`UTP entry has unknown type: ${utp.type ?? 'undefined'}`);
                 // Print raw JSON for unhandled UTP types
                 writeStdoutThenTableContent(`${JSON.stringify(utp)}\n`);
                 break;
@@ -1010,64 +1102,18 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
 
                     // Parse telemetry lines in this chunk (lines starting with '##utp:')
                     try {
-                        const lines = chunk.split(/\r?\n/);
+                        const combined = pendingPartialLine + chunk;
+                        const lines = combined.split(/\r?\n/);
+                        const chunkEndsWithEol = chunk.endsWith('\n') || chunk.endsWith('\r');
+
+                        if (!chunkEndsWithEol) {
+                            pendingPartialLine = lines.pop() ?? '';
+                        } else {
+                            pendingPartialLine = '';
+                        }
+
                         for (const rawLine of lines) {
-                            const line = rawLine.trim();
-                            if (!line) { continue; }
-
-                            // Attempt to parse telemetry utp JSON
-                            if (line.startsWith('##utp:')) {
-                                const jsonPart = line.substring('##utp:'.length).trim();
-                                try {
-                                    const sanitizedJson = sanitizeTelemetryJson(jsonPart);
-                                    if (!sanitizedJson) { continue; }
-
-                                    const utpJson = JSON.parse(sanitizedJson);
-                                    const utp = utpJson as UTP;
-                                    telemetry.push(utp);
-
-                                    if (utp.message && 'severity' in utp && (utp.severity === Severity.Error || utp.severity === Severity.Exception || utp.severity === Severity.Assert)) {
-                                        let messageLevel: LogLevel = LogLevel.ERROR;
-
-                                        if (remappedEditorLogs[utp.message] !== undefined) {
-                                            messageLevel = remappedEditorLogs[utp.message] as LogLevel;
-                                        }
-
-                                        const file = utp.file ? utp.file.replace(/\\/g, '/') : undefined;
-                                        const lineNum = utp.line ? utp.line : undefined;
-                                        const message = utp.message;
-                                        const stacktrace = utp.stacktrace ? `${utp.stacktrace}` : undefined;
-
-                                        if (!annotationPrefixRegex.test(message)) {
-                                            // only annotate if the file is within the current project
-                                            if (projectPath && file && file.startsWith(projectPath)) {
-                                                logger.annotate(LogLevel.ERROR, stacktrace == undefined ? message : `${message}\n${stacktrace}`, file, lineNum);
-                                            } else {
-                                                switch (messageLevel) {
-                                                    case LogLevel.WARN:
-                                                        logger.warn(stacktrace == undefined ? message : `${message}\n${stacktrace}`);
-                                                        break;
-                                                    case LogLevel.ERROR:
-                                                        logger.error(stacktrace == undefined ? message : `${message}\n${stacktrace}`);
-                                                        break;
-                                                    case LogLevel.INFO:
-                                                    default:
-                                                        logger.info(stacktrace == undefined ? message : `${message}\n${stacktrace}`);
-                                                        break;
-                                                }
-                                            }
-                                        }
-                                    } else if (Logger.instance.logLevel === LogLevel.UTP) {
-                                        printUTP(utp);
-                                    }
-                                } catch (error) {
-                                    logger.warn(`Failed to parse telemetry JSON: ${error} -- raw: ${jsonPart}`);
-                                }
-                            } else {
-                                if (Logger.instance.logLevel !== LogLevel.UTP) {
-                                    process.stdout.write(`${line}\n`);
-                                }
-                            }
+                            processLogLine(rawLine);
                         }
                     } catch (error: any) {
                         if (error.code !== 'EPIPE') {
@@ -1093,6 +1139,11 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                 // Final read to capture any remaining content after tailing stops
                 await WaitForFileToBeUnlocked(logPath, 10_000);
                 await readNewLogContent();
+
+                if (pendingPartialLine.trim().length > 0) {
+                    processLogLine(pendingPartialLine);
+                    pendingPartialLine = '';
+                }
 
                 try {
                     // write a final newline to separate log output

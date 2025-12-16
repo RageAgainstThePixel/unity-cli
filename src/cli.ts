@@ -710,7 +710,7 @@ program.command('open-project')
 
 program.command('editor-logs')
     .description('Prints the path to the Unity Editor log files.')
-    .action(async (options) => {
+    .action(async () => {
         const unityEditorLogsPath = UnityEditor.GetEditorLogsDirectory();
         process.stdout.write(`${unityEditorLogsPath}\n`);
         process.exit(0);

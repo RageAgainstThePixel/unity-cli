@@ -8,7 +8,16 @@ describe('sanitizeTelemetryJson', () => {
 
     it('strips a UTF-8 BOM and surrounding whitespace', () => {
         const raw = '\ufeff  {"key":"value"}  ';
-        expect(sanitizeTelemetryJson(raw)).toBe('{"key":"value"}');
+        const result = sanitizeTelemetryJson(raw);
+        expect(result).not.toBeUndefined();
+        expect(result).toBe('{"key":"value"}');
+    });
+
+    it('removes ANSI color codes around JSON', () => {
+        const raw = '\u001b[32m{"type":"TestStatus"}\u001b[0m';
+        const result = sanitizeTelemetryJson(raw);
+        expect(result).not.toBeUndefined();
+        expect(result).toBe('{"type":"TestStatus"}');
     });
 });
 
