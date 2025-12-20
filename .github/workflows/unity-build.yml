@@ -17,6 +17,8 @@ jobs:
     strategy:
       matrix: ${{ fromJSON(inputs.matrix) }}
       fail-fast: false
+    permissions:
+      contents: read
     defaults:
       run:
         shell: bash
