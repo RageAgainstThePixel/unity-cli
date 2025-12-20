@@ -100,7 +100,7 @@ jobs:
             echo "Skipping build: Unity version $version does not support the build pipeline package (requires 2019.4+)"
           fi
       - name: Copy selected Unity test
-        if: ${{ matrix.unity-version != 'none' && matrix.tests != '' }}
+        if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' && matrix.tests != '' }}
         run: |
           set -euo pipefail
           test_name="${{ matrix.tests }}"
