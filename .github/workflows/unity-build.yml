@@ -200,7 +200,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: utp-logs-${{ matrix.name }}
+          name: ${{ matrix.os }}-${{ matrix.unity-version }}-${{ matrix.build-target }}-utp-logs
           path: '**/*-utp-json.log'
           if-no-files-found: ignore
       - name: Return License
