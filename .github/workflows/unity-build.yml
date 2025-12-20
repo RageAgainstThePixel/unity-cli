@@ -132,12 +132,12 @@ jobs:
           PACKAGE_MANAGER_LOG_PATH=$(unity-cli package-manager-logs)
           LICENSING_CLIENT_LOG_PATH=$(unity-cli licensing-client-logs)
           LICENSING_AUDIT_LOG_PATH=$(unity-cli licensing-audit-logs)
-          
+
           echo "Hub Log Path: ${HUB_LOG_PATH}"
           echo "Package Manager Log Path: ${PACKAGE_MANAGER_LOG_PATH}"
           echo "Licensing Client Log Path: ${LICENSING_CLIENT_LOG_PATH}"
           echo "Licensing Audit Log Path: ${LICENSING_AUDIT_LOG_PATH}"
-          
+
           if [ ! -f "${HUB_LOG_PATH}" ]; then
             echo "::warning:: Hub log file does not exist at ${HUB_LOG_PATH}"
             # find all info-log.json files in ~/.config/unity3d/ - print their paths
@@ -151,18 +151,25 @@ jobs:
             find ~/.config/ -type f -exec echo "{}" \;
             echo "::warning:: Hub log file does not exist at any known location"
           fi
-          
+
           if [ ! -f "${PACKAGE_MANAGER_LOG_PATH}" ]; then
             echo "::warning::Package Manager log file does not exist at ${PACKAGE_MANAGER_LOG_PATH}"
           fi
-          
+
           if [ ! -f "${LICENSING_CLIENT_LOG_PATH}" ]; then
             echo "::error::Licensing Client log file does not exist at ${LICENSING_CLIENT_LOG_PATH}"
           fi
-          
+
           if [ ! -f "${LICENSING_AUDIT_LOG_PATH}" ]; then
             echo "::error::Licensing Audit log file does not exist at ${LICENSING_AUDIT_LOG_PATH}"
           fi
+      - name: Upload UTP logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: utp-logs-${{ matrix.name }}
+          path: '**/*-utp-json.log'
+          if-no-files-found: ignore
       - name: Return License
         if: always()
         run: unity-cli return-license --license personal
