@@ -18,6 +18,7 @@
     "6000.2"
   ],
   "tests": [
+    "None",
     "CompilerWarnings",
     "CompilerErrors",
     "BuildWarnings",

@@ -19,6 +19,7 @@ jobs:
       fail-fast: false
     permissions:
       contents: read
+      checks: write # to publish unit test results via checks github api
     defaults:
       run:
         shell: bash
@@ -100,7 +101,7 @@ jobs:
             echo "Skipping build: Unity version $version does not support the build pipeline package (requires 2019.4+)"
           fi
       - name: Copy selected Unity test
-        if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' && matrix.tests != '' }}
+        if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' && matrix.tests != '' && matrix.tests != 'None' }}
         run: |
           set -euo pipefail
           test_name="${{ matrix.tests }}"
@@ -136,6 +137,11 @@ jobs:
         run: |
           npm install -g openupm-cli
           openupm add com.utilities.buildpipeline
+          case "${{ matrix.tests }}" in
+            PlaymodeTestsErrors|EditmodeTestsErrors)
+              openupm add com.unity.test-framework
+              ;;
+          esac
       - name: Update Android Target Sdk Version
         if: ${{ matrix.build-target == 'Android' }}
         run: |
@@ -147,9 +153,11 @@ jobs:
         if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' }}
         timeout-minutes: 60
         run: |
+          set -euo pipefail
           # we don't have to specify the project path or unity editor path as unity-cli will use the environment variables
           unity-cli run --log-name Validate -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
           unity-cli run --log-name Build -buildTarget ${{ matrix.build-target }} -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity ${{ matrix.build-args }}
+        continue-on-error: ${{ matrix.tests != 'None' }}
       - name: Uninstall Editor
         if: ${{ matrix.unity-version != 'none' }}
         run: |
@@ -200,7 +208,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ matrix.os }}-${{ matrix.unity-version }}-${{ matrix.build-target }}-utp-logs
+          name: ${{ matrix.os }}-${{ matrix.unity-version }}-${{ matrix.build-target }}-${{ matrix.tests }}-utp-logs
           path: '**/*-utp-json.log'
           if-no-files-found: ignore
       - name: Return License

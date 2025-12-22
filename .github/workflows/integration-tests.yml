@@ -15,11 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      checks: write # to publish unit test results via checks github api
     steps:
       - uses: actions/checkout@v6
         with:
           sparse-checkout: .github/
-      - uses: RageAgainstThePixel/job-builder@v1
+      - uses: RageAgainstThePixel/job-builder@development
         id: setup-jobs
         with:
           build-options: ./.github/workflows/build-options.json
