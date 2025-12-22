@@ -973,6 +973,8 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
         if (telemetryFlushed) { return; }
         telemetryFlushed = true;
         await writeUtpTelemetryLog(utpLogPath, telemetry, logger);
+        const parsed = path.parse(logPath);
+        Logger.instance.CI_appendWorkflowSummary(parsed.name, telemetry);
     };
 
     const writeStdoutThenTableContent = (content: string, restoreTable: boolean = true): void => {

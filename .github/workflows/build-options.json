@@ -17,6 +17,15 @@
     "6000.1.*",
     "6000.2"
   ],
+  "tests": [
+    "None",
+    "CompilerWarnings",
+    "CompilerErrors",
+    "BuildWarnings",
+    "BuildErrors",
+    "PlaymodeTestsErrors",
+    "EditmodeTestsErrors"
+  ],
   "include": [
     {
       "os": "ubuntu-latest",

@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { UTP } from './utp/utp';
 
 export enum LogLevel {
     DEBUG = 'debug',
@@ -258,19 +259,55 @@ export class Logger {
         }
     }
 
-    public CI_appendWorkflowSummary(telemetry: any[]) {
+    public CI_appendWorkflowSummary(name: string, telemetry: UTP[]) {
+        if (telemetry.length === 0) { return; }
         switch (this._ci) {
             case 'GITHUB_ACTIONS': {
                 const githubSummary = process.env.GITHUB_STEP_SUMMARY;
 
                 if (githubSummary) {
-                    let table = `| Key | Value |\n| --- | ----- |\n`;
-                    telemetry.forEach(item => {
-                        table += `| ${item.key} | ${item.value} |\n`;
-                    });
+                    // for now lets just log the number of items we get per type
+                    const typeCounts: Record<string, number> = {};
+                    for (const entry of telemetry) {
+                        const type = entry.type || 'unknown';
+
+                        if (!typeCounts[type]) {
+                            typeCounts[type] = 0;
+                        }
+
+                        typeCounts[type]++;
+                    }
+
+                    let table = `## ${name} Summary\n\n| Type | Count |\n| --- | ---: |\n`;
+                    for (const [type, count] of Object.entries(typeCounts)) {
+                        table += `| ${type} | ${count} |\n`;
+                    }
+
+                    // guard against very large summaries over 1MB. Trim at a row boundary to avoid mangled tables.
+                    const byteLimit = 1024 * 1024;
+                    if (Buffer.byteLength(table, 'utf8') > byteLimit) {
+                        const footer = `\n| ... | ... |\n\n***Summary truncated due to size limits.***\n`;
+                        const footerSize = Buffer.byteLength(footer, 'utf8');
+
+                        const lines = table.split('\n');
+                        let rebuilt = '';
+
+                        for (const line of lines) {
+                            const nextSize = Buffer.byteLength(rebuilt + line + '\n', 'utf8') + footerSize;
+
+                            if (nextSize > byteLimit) {
+                                break;
+                            }
+
+                            rebuilt += `${line}\n`;
+                        }
+
+                        table = rebuilt + footer;
+                    }
 
                     fs.appendFileSync(githubSummary, table, { encoding: 'utf8' });
                 }
+                break;
             }
         }
     }
