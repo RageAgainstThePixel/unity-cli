@@ -260,6 +260,7 @@ export class Logger {
     }
 
     public CI_appendWorkflowSummary(name: string, telemetry: UTP[]) {
+        if (telemetry.length === 0) { return; }
         switch (this._ci) {
             case 'GITHUB_ACTIONS': {
                 const githubSummary = process.env.GITHUB_STEP_SUMMARY;
