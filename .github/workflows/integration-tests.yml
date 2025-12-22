@@ -33,6 +33,7 @@ jobs:
     name: build ${{ matrix.jobs.name }}
     permissions:
       contents: read
+      checks: write # required by nested unity-build workflow
     strategy:
       matrix: ${{ fromJSON(needs.setup.outputs.jobs) }}
       fail-fast: false
