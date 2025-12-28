@@ -100,48 +100,13 @@ jobs:
           else
             echo "Skipping build: Unity version $version does not support the build pipeline package (requires 2019.4+)"
           fi
-      - name: Copy selected Unity test
-        if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' && matrix.tests != '' && matrix.tests != 'None' }}
-        run: |
-          set -euo pipefail
-          test_name="${{ matrix.tests }}"
-          src="${GITHUB_WORKSPACE}/unity-tests/${test_name}.cs"
-          if [ ! -f "$src" ]; then
-            echo "::error::Requested test '$test_name' not found at $src" && exit 1
-          fi
-
-          case "$test_name" in
-            CompilerWarnings|CompilerErrors)
-              dest="$UNITY_PROJECT_PATH/Assets/UnityCliTests"
-              ;;
-            BuildWarnings|BuildErrors)
-              dest="$UNITY_PROJECT_PATH/Assets/Editor/UnityCliTests"
-              ;;
-            PlaymodeTestsErrors)
-              dest="$UNITY_PROJECT_PATH/Assets/Tests/PlayMode/UnityCliTests"
-              ;;
-            EditmodeTestsErrors)
-              dest="$UNITY_PROJECT_PATH/Assets/Tests/EditMode/UnityCliTests"
-              ;;
-            *)
-              echo "::error::Unknown test selection '$test_name'" && exit 1
-              ;;
-          esac
-
-          mkdir -p "$dest"
-          cp "$src" "$dest/"
-          echo "Copied $test_name to $dest"
-      - name: Install OpenUPM and build pipeline package
+      - name: Run Unity test batch (single install)
         if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' }}
-        working-directory: ${{ env.UNITY_PROJECT_PATH }}
-        run: |
-          npm install -g openupm-cli
-          openupm add com.utilities.buildpipeline
-          case "${{ matrix.tests }}" in
-            PlaymodeTestsErrors|EditmodeTestsErrors)
-              openupm add com.unity.test-framework
-              ;;
-          esac
+        uses: ./.github/actions/run-unity-test-batch
+        with:
+          unity_project_path: ${{ env.UNITY_PROJECT_PATH }}
+          build_target: ${{ matrix.build-target }}
+          build_args: ${{ matrix.build-args }}
       - name: Update Android Target Sdk Version
         if: ${{ matrix.build-target == 'Android' }}
         run: |
@@ -149,15 +114,6 @@ jobs:
           sed -i 's/AndroidTargetSdkVersion: [0-9]*/AndroidTargetSdkVersion: 32/' "${UNITY_PROJECT_PATH}/ProjectSettings/ProjectSettings.asset"
           # ensure android dependencies are installed
           unity-cli setup-unity -p "${UNITY_PROJECT_PATH}" -m android
-      - name: Build Project
-        if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' }}
-        timeout-minutes: 60
-        run: |
-          set -euo pipefail
-          # we don't have to specify the project path or unity editor path as unity-cli will use the environment variables
-          unity-cli run --log-name Validate -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
-          unity-cli run --log-name Build -buildTarget ${{ matrix.build-target }} -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity ${{ matrix.build-args }}
-        continue-on-error: ${{ matrix.tests != 'None' }}
       - name: Uninstall Editor
         if: ${{ matrix.unity-version != 'none' }}
         run: |
@@ -208,7 +164,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ matrix.os }}-${{ matrix.unity-version }}-${{ matrix.build-target }}-${{ matrix.tests }}-utp-logs
+          name: ${{ matrix.os }}-${{ matrix.unity-version }}-${{ matrix.build-target }}-tests-batch-utp-logs
           path: '**/*-utp-json.log'
           if-no-files-found: ignore
       - name: Return License

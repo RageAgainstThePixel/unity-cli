@@ -1,0 +1,134 @@
+name: Run Unity Test Batch
+description: Run a list of Unity tests in a single job/install and upload UTP logs per test.
+inputs:
+  unity_project_path:
+    description: Absolute path to the Unity project.
+    required: true
+  build_target:
+    description: Build target to use.
+    required: true
+  build_args:
+    description: Additional build args.
+    required: false
+    default: ""
+  workspace:
+    description: Root workspace path (defaults to github.workspace).
+    required: false
+    default: ${{ github.workspace }}
+runs:
+  using: composite
+  steps:
+    - name: Prepare test list and install packages
+      shell: bash
+      run: |
+        set -euo pipefail
+        tests_input="CompilerWarnings,CompilerErrors,BuildWarnings,BuildErrors,PlaymodeTestsErrors,EditmodeTestsErrors"
+        echo "TESTS_INPUT=$tests_input" >> $GITHUB_ENV
+
+        needs_test_framework=false
+        if [[ "$tests_input" == *"PlaymodeTestsErrors"* || "$tests_input" == *"EditmodeTestsErrors"* ]]; then
+          needs_test_framework=true
+        fi
+
+        npm install -g openupm-cli
+        openupm add com.utilities.buildpipeline
+        if [ "$needs_test_framework" = true ]; then
+          openupm add com.unity.test-framework
+        fi
+
+    - name: Run tests sequentially
+      shell: bash
+      env:
+        UNITY_PROJECT_PATH: ${{ inputs.unity_project_path }}
+        BUILD_TARGET: ${{ inputs.build_target }}
+        BUILD_ARGS: ${{ inputs.build_args }}
+        WORKSPACE_ROOT: ${{ inputs.workspace }}
+      run: |
+        set -euo pipefail
+
+        tests_input="$TESTS_INPUT"
+        IFS=',' read -ra tests <<< "$tests_input"
+        failures=0
+
+        clean_tests() {
+          rm -f "$UNITY_PROJECT_PATH/Assets/UnityCliTests"/*.cs 2>/dev/null || true
+          rm -f "$UNITY_PROJECT_PATH/Assets/Editor/UnityCliTests"/*.cs 2>/dev/null || true
+          rm -f "$UNITY_PROJECT_PATH/Assets/Tests/PlayMode/UnityCliTests"/*.cs 2>/dev/null || true
+          rm -f "$UNITY_PROJECT_PATH/Assets/Tests/EditMode/UnityCliTests"/*.cs 2>/dev/null || true
+        }
+
+        mkdir -p "$WORKSPACE_ROOT/utp-artifacts"
+
+        for raw_test in "${tests[@]}"; do
+          test_name="$(echo "$raw_test" | xargs)"
+          if [ -z "$test_name" ] || [ "$test_name" = "None" ]; then
+            echo "Skipping empty/None test entry"
+            continue
+          fi
+
+          src="$WORKSPACE_ROOT/unity-tests/${test_name}.cs"
+          if [ ! -f "$src" ]; then
+            echo "::error::Requested test '$test_name' not found at $src"
+            failures=$((failures+1))
+            continue
+          fi
+
+          clean_tests
+
+          case "$test_name" in
+            CompilerWarnings|CompilerErrors)
+              dest="$UNITY_PROJECT_PATH/Assets/UnityCliTests"
+              ;;
+            BuildWarnings|BuildErrors)
+              dest="$UNITY_PROJECT_PATH/Assets/Editor/UnityCliTests"
+              ;;
+            PlaymodeTestsErrors)
+              dest="$UNITY_PROJECT_PATH/Assets/Tests/PlayMode/UnityCliTests"
+              ;;
+            EditmodeTestsErrors)
+              dest="$UNITY_PROJECT_PATH/Assets/Tests/EditMode/UnityCliTests"
+              ;;
+            *)
+              echo "::error::Unknown test selection '$test_name'"
+              failures=$((failures+1))
+              continue
+              ;;
+          esac
+
+          mkdir -p "$dest"
+          cp "$src" "$dest/"
+          echo "Running test: $test_name (copied to $dest)"
+
+          if unity-cli run --log-name "${test_name}-Validate" -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset && \
+             unity-cli run --log-name "${test_name}-Build" -buildTarget "$BUILD_TARGET" -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity $BUILD_ARGS; then
+            echo "::notice::Test $test_name succeeded"
+          else
+            echo "::error::Test $test_name failed"
+            failures=$((failures+1))
+          fi
+
+          # Collect logs for this test
+          test_artifacts="$WORKSPACE_ROOT/utp-artifacts/$test_name"
+          mkdir -p "$test_artifacts"
+          find "$WORKSPACE_ROOT" -type f -name "*${test_name}*-utp-json.log" -print -exec cp {} "$test_artifacts" \; || true
+
+          # Reset the Unity project to a clean state before the next test
+          if git -C "$UNITY_PROJECT_PATH" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            git -C "$UNITY_PROJECT_PATH" clean -fdx
+            git -C "$UNITY_PROJECT_PATH" reset --hard
+          else
+            echo "::warning::UNITY_PROJECT_PATH is not a git repository; skipping git clean/reset"
+          fi
+        done
+
+        if [ "$failures" -gt 0 ]; then
+          echo "::error::One or more tests failed in batch ($failures)"
+          exit 1
+        fi
+
+    - name: Upload UTP logs (per test)
+      uses: actions/upload-artifact@v6
+      with:
+        name: unity-tests-batch-utp-logs
+        path: utp-artifacts/**/*-utp-json.log
+        if-no-files-found: ignore
