@@ -104,7 +104,7 @@ jobs:
         if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' }}
         uses: ./.github/actions/run-unity-test-batch
         with:
-          unity-project-path: ${{ steps.verify-project-path.outputs.UNITY_PROJECT_PATH }}
+          unity-project-path: ${{ env.UNITY_PROJECT_PATH }}
           build-target: ${{ matrix.build-target }}
           build-args: ${{ matrix.build-args }}
       - name: Update Android Target Sdk Version
@@ -160,11 +160,25 @@ jobs:
           if [ ! -f "${LICENSING_AUDIT_LOG_PATH}" ]; then
             echo "::error::Licensing Audit log file does not exist at ${LICENSING_AUDIT_LOG_PATH}"
           fi
-      - name: Upload UTP logs
+      - name: Compute UTP artifact name
+        if: always()
+        id: utp-artifact-name
+        env:
+          MATRIX_OS: ${{ matrix.os }}
+          MATRIX_UNITY_VERSION: ${{ matrix.unity-version }}
+          MATRIX_BUILD_TARGET: ${{ matrix.build-target }}
+        run: |
+          set -euo pipefail
+          unity_version="$MATRIX_UNITY_VERSION"
+          unity_version="${unity_version//\*/x}"
+          artifact_name="${MATRIX_OS}-${unity_version}-${MATRIX_BUILD_TARGET}-tests-batch-utp-logs"
+          echo "name=$artifact_name" >> $GITHUB_OUTPUT
+        shell: bash
+      - name: Upload UTP logs artifact
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: ${{ matrix.os }}-${{ matrix.unity-version }}-${{ matrix.build-target }}-tests-batch-utp-logs
+          name: ${{ steps.utp-artifact-name.outputs.name }}
           path: '**/*-utp-json.log'
           if-no-files-found: ignore
       - name: Return License

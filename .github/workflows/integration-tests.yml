@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           sparse-checkout: .github/
-      - uses: RageAgainstThePixel/job-builder@development
+      - uses: RageAgainstThePixel/job-builder@v1
         id: setup-jobs
         with:
           build-options: ./.github/workflows/build-options.json
