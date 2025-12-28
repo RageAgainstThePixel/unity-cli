@@ -100,13 +100,13 @@ jobs:
           else
             echo "Skipping build: Unity version $version does not support the build pipeline package (requires 2019.4+)"
           fi
-      - name: Run Unity test batch (single install)
+      - name: Run Unity UTP test batches
         if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' }}
         uses: ./.github/actions/run-unity-test-batch
         with:
-          unity_project_path: ${{ env.UNITY_PROJECT_PATH }}
-          build_target: ${{ matrix.build-target }}
-          build_args: ${{ matrix.build-args }}
+          unity-project-path: ${{ steps.verify-project-path.outputs.UNITY_PROJECT_PATH }}
+          build-target: ${{ matrix.build-target }}
+          build-args: ${{ matrix.build-args }}
       - name: Update Android Target Sdk Version
         if: ${{ matrix.build-target == 'Android' }}
         run: |

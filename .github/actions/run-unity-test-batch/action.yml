@@ -1,20 +1,15 @@
-name: Run Unity Test Batch
-description: Run a list of Unity tests in a single job/install and upload UTP logs per test.
+name: Run Unity UTP Test Batch
+description: Runs a batch of Unity UTP tests in a given Unity project.
 inputs:
-  unity_project_path:
+  unity-project-path:
     description: Absolute path to the Unity project.
     required: true
-  build_target:
+  build-target:
     description: Build target to use.
     required: true
-  build_args:
+  build-args:
     description: Additional build args.
-    required: false
-    default: ""
-  workspace:
-    description: Root workspace path (defaults to github.workspace).
-    required: false
-    default: ${{ github.workspace }}
+    required: true
 runs:
   using: composite
   steps:
@@ -39,10 +34,9 @@ runs:
     - name: Run tests sequentially
       shell: bash
       env:
-        UNITY_PROJECT_PATH: ${{ inputs.unity_project_path }}
-        BUILD_TARGET: ${{ inputs.build_target }}
-        BUILD_ARGS: ${{ inputs.build_args }}
-        WORKSPACE_ROOT: ${{ inputs.workspace }}
+        UNITY_PROJECT_PATH: ${{ inputs.unity-project-path }}
+        BUILD_TARGET: ${{ inputs.build-target }}
+        BUILD_ARGS: ${{ inputs.build-args }}
       run: |
         set -euo pipefail
 
@@ -57,7 +51,7 @@ runs:
           rm -f "$UNITY_PROJECT_PATH/Assets/Tests/EditMode/UnityCliTests"/*.cs 2>/dev/null || true
         }
 
-        mkdir -p "$WORKSPACE_ROOT/utp-artifacts"
+        mkdir -p "$GITHUB_WORKSPACE/utp-artifacts"
 
         for raw_test in "${tests[@]}"; do
           test_name="$(echo "$raw_test" | xargs)"
@@ -66,7 +60,7 @@ runs:
             continue
           fi
 
-          src="$WORKSPACE_ROOT/unity-tests/${test_name}.cs"
+          src="$GITHUB_WORKSPACE/unity-tests/${test_name}.cs"
           if [ ! -f "$src" ]; then
             echo "::error::Requested test '$test_name' not found at $src"
             failures=$((failures+1))
@@ -108,16 +102,16 @@ runs:
           fi
 
           # Collect logs for this test
-          test_artifacts="$WORKSPACE_ROOT/utp-artifacts/$test_name"
+          test_artifacts="$GITHUB_WORKSPACE/utp-artifacts/$test_name"
           mkdir -p "$test_artifacts"
-          find "$WORKSPACE_ROOT" -type f -name "*${test_name}*-utp-json.log" -print -exec cp {} "$test_artifacts" \; || true
+          find "$GITHUB_WORKSPACE" -type f -name "*${test_name}*-utp-json.log" -print -exec cp {} "$test_artifacts" \; || true
 
           # Reset the Unity project to a clean state before the next test
-          if git -C "$UNITY_PROJECT_PATH" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-            git -C "$UNITY_PROJECT_PATH" clean -fdx
-            git -C "$UNITY_PROJECT_PATH" reset --hard
+          if git -C "$GITHUB_WORKSPACE" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            git -C "$GITHUB_WORKSPACE" clean -fdx
+            git -C "$GITHUB_WORKSPACE" reset --hard
           else
-            echo "::warning::UNITY_PROJECT_PATH is not a git repository; skipping git clean/reset"
+            echo "::warning::GITHUB_WORKSPACE is not a git repository; skipping git clean/reset"
           fi
         done
 
@@ -126,7 +120,7 @@ runs:
           exit 1
         fi
 
-    - name: Upload UTP logs (per test)
+    - name: Upload UTP logs
       uses: actions/upload-artifact@v6
       with:
         name: unity-tests-batch-utp-logs
