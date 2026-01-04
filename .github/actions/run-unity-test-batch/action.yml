@@ -10,6 +10,10 @@ inputs:
   build-args:
     description: Additional build args.
     required: true
+  artifact-name:
+    description: Artifact name for uploaded UTP logs (must be unique per matrix job).
+    required: false
+    default: unity-tests-batch-utp-logs
 runs:
   using: composite
   steps:
@@ -124,6 +128,6 @@ runs:
     - name: Upload UTP logs
       uses: actions/upload-artifact@v6
       with:
-        name: unity-tests-batch-utp-logs
+        name: ${{ inputs.artifact-name }}
         path: utp-artifacts/**/*-utp-json.log
         if-no-files-found: ignore

@@ -107,6 +107,7 @@ jobs:
           unity-project-path: ${{ env.UNITY_PROJECT_PATH }}
           build-target: ${{ matrix.build-target }}
           build-args: ${{ matrix.build-args }}
+          artifact-name: ${{ matrix.os }}-${{ matrix.unity-version }}-${{ matrix.build-target }}-tests-batch-utp-logs
       - name: Update Android Target Sdk Version
         if: ${{ matrix.build-target == 'Android' }}
         run: |
