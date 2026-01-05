@@ -56,6 +56,11 @@ runs:
           rm -f "$UNITY_PROJECT_PATH/Assets/Tests/EditMode/UnityCliTests"/*.cs 2>/dev/null || true
         }
 
+        clean_build_outputs() {
+          rm -rf "$UNITY_PROJECT_PATH/Builds" 2>/dev/null || true
+          mkdir -p "$UNITY_PROJECT_PATH/Builds/Logs"
+        }
+
         mkdir -p "$GITHUB_WORKSPACE/utp-artifacts"
 
         for raw_test in "${tests[@]}"; do
@@ -73,6 +78,7 @@ runs:
           fi
 
           clean_tests
+          clean_build_outputs
 
           case "$test_name" in
             CompilerWarnings|CompilerErrors)
@@ -109,7 +115,7 @@ runs:
           # Collect logs for this test
           test_artifacts="$GITHUB_WORKSPACE/utp-artifacts/$test_name"
           mkdir -p "$test_artifacts"
-          find "$GITHUB_WORKSPACE" -type f -name "*${test_name}*-utp-json.log" -print -exec cp {} "$test_artifacts" \; || true
+          find "$GITHUB_WORKSPACE" -path "$test_artifacts" -prune -o -type f -name "*${test_name}*-utp-json.log" -print -exec cp -n {} "$test_artifacts" \; || true
         done
 
         if [ "$failures" -gt 0 ]; then
