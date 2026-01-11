@@ -9,7 +9,8 @@ inputs:
     required: true
   build-args:
     description: Additional build args.
-    required: true
+    required: false
+    default: ""
   artifact-name:
     description: Artifact name for uploaded UTP logs (must be unique per matrix job).
     required: false
