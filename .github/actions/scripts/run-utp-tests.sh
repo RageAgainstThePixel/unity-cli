@@ -92,25 +92,37 @@ for raw_test in "${tests[@]}"; do
   exp_msg=${expected_message[$test_name]:-}
 
   test_failed=0
+  message_found=0
+
+  if [ -n "$exp_msg" ]; then
+    while IFS= read -r log_file; do
+      if [ -z "$log_file" ]; then
+        continue
+      fi
+      if grep -qi -- "$exp_msg" "$log_file" 2>/dev/null; then
+        message_found=1
+        break
+      fi
+    done < <(find "$UNITY_PROJECT_PATH/Builds/Logs" -maxdepth 1 -type f -name "*${test_name}*.log")
+  fi
 
   if [ "$expected" -eq 0 ]; then
     if [ "$validate_rc" -ne 0 ] || [ "$build_rc" -ne 0 ]; then
       echo "::error::Test $test_name was expected to succeed but failed (validate_rc=$validate_rc, build_rc=$build_rc)"
       test_failed=1
     fi
+    if [ -n "$exp_msg" ] && [ "$message_found" -eq 0 ]; then
+      echo "::error::Test $test_name did not emit expected message '$exp_msg'"
+      test_failed=1
+    fi
   else
-    if [ "$validate_rc" -eq 0 ] && [ "$build_rc" -eq 0 ]; then
+    if [ "$validate_rc" -ne 0 ] || [ "$build_rc" -ne 0 ] || [ "$message_found" -eq 1 ]; then
+      : # Expected failure observed
+    else
       echo "::error::Test $test_name was expected to fail but succeeded"
       test_failed=1
     fi
-  fi
-
-  # Check logs for expected message when provided
-  if [ "$test_failed" -eq 0 ] && [ -n "$exp_msg" ]; then
-    validate_log=$(find "$UNITY_PROJECT_PATH/Builds/Logs" -maxdepth 1 -type f -name "*${test_name}-Validate*.log" | head -n 1)
-    build_log=$(find "$UNITY_PROJECT_PATH/Builds/Logs" -maxdepth 1 -type f -name "*${test_name}-Build*.log" | head -n 1)
-
-    if ! grep -qi "$exp_msg" "$validate_log" "$build_log" 2>/dev/null; then
+    if [ -n "$exp_msg" ] && [ "$message_found" -eq 0 ]; then
       echo "::error::Test $test_name did not emit expected message '$exp_msg'"
       test_failed=1
     fi
