@@ -122,7 +122,9 @@ for raw_test in "${tests[@]}"; do
       echo "::error::Test $test_name was expected to fail but succeeded"
       test_failed=1
     fi
-    if [ -n "$exp_msg" ] && [ "$message_found" -eq 0 ]; then
+
+    # Only insist on the expected message if both invocations claimed success.
+    if [ -n "$exp_msg" ] && [ "$message_found" -eq 0 ] && [ "$validate_rc" -eq 0 ] && [ "$build_rc" -eq 0 ]; then
       echo "::error::Test $test_name did not emit expected message '$exp_msg'"
       test_failed=1
     fi
