@@ -104,6 +104,7 @@ for raw_test in "${tests[@]}"; do
 
   test_failed=0
   message_found=0
+  utp_error_found=0
 
   if [ -n "$exp_msg" ]; then
     while IFS= read -r log_file; do
@@ -117,9 +118,24 @@ for raw_test in "${tests[@]}"; do
     done < <(find "$UNITY_PROJECT_PATH/Builds/Logs" -maxdepth 1 -type f -name "*${test_name}*.log")
   fi
 
+  # Look for error-level UTP entries for this test to treat as expected failure evidence.
+  while IFS= read -r utp_file; do
+    if [ -z "$utp_file" ]; then
+      continue
+    fi
+    if node -e "const fs=require('fs');const p=process.argv[1];try{const data=JSON.parse(fs.readFileSync(p,'utf8'));if(Array.isArray(data)&&data.some(e=>['Error','Exception','Assert'].includes(e?.severity))){process.exit(0);} }catch{}process.exit(1);" "$utp_file"; then
+      utp_error_found=1
+      break
+    fi
+  done < <(find "$UNITY_PROJECT_PATH/Builds/Logs" -maxdepth 1 -type f -name "*${test_name}*-utp-json.log")
+
   if [ "$expected" -eq 0 ]; then
     if [ "$validate_rc" -ne 0 ] || [ "$build_rc" -ne 0 ]; then
       echo "::error::Test $test_name was expected to succeed but failed (validate_rc=$validate_rc, build_rc=$build_rc)"
+      test_failed=1
+    fi
+    if [ "$utp_error_found" -eq 1 ]; then
+      echo "::error::Test $test_name produced UTP errors but was expected to succeed"
       test_failed=1
     fi
     if [ -n "$exp_msg" ] && [ "$message_found" -eq 0 ]; then
@@ -127,7 +143,7 @@ for raw_test in "${tests[@]}"; do
       test_failed=1
     fi
   else
-    if [ "$validate_rc" -ne 0 ] || [ "$build_rc" -ne 0 ] || [ "$message_found" -eq 1 ]; then
+    if [ "$validate_rc" -ne 0 ] || [ "$build_rc" -ne 0 ] || [ "$message_found" -eq 1 ] || [ "$utp_error_found" -eq 1 ]; then
       : # Expected failure observed
     else
       echo "::error::Test $test_name was expected to fail but succeeded"
