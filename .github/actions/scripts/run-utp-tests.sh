@@ -96,8 +96,18 @@ for raw_test in "${tests[@]}"; do
   validate_rc=0
   build_rc=0
 
-  unity-cli run --log-name "${test_name}-Validate" -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset || validate_rc=$?
-  unity-cli run --log-name "${test_name}-Build" -buildTarget "$BUILD_TARGET" -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity "${build_args[@]}" || build_rc=$?
+  ran_custom_flow=0
+
+  if [ "$test_name" = "EditmodeTestsErrors" ]; then
+    unity-cli run --log-name "${test_name}-EditMode" -runTests -testPlatform editmode -testResults "$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml" -quit || validate_rc=$?
+    build_rc=$validate_rc
+    ran_custom_flow=1
+  fi
+
+  if [ "$ran_custom_flow" -eq 0 ]; then
+    unity-cli run --log-name "${test_name}-Validate" -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset || validate_rc=$?
+    unity-cli run --log-name "${test_name}-Build" -buildTarget "$BUILD_TARGET" -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity "${build_args[@]}" || build_rc=$?
+  fi
 
   expected=${expected_status[$test_name]:-0}
   exp_msg=${expected_message[$test_name]:-}
