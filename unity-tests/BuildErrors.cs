@@ -14,7 +14,7 @@ namespace UnityCli.UtpSamples
 
         public void OnPreprocessBuild(BuildReport report)
         {
-            throw new System.Exception("Intentional build failure for test matrix coverage.");
+            throw new System.Exception("Intentional build failure.");
         }
     }
 }

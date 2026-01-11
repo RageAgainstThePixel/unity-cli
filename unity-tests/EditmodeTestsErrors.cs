@@ -10,7 +10,7 @@ namespace UnityCli.UtpSamples
         [Test]
         public void FailsEditmodeSuite()
         {
-            Assert.Fail("Intentional editmode failure for test matrix coverage.");
+            Assert.Fail("Intentional editmode failure.");
         }
     }
 }

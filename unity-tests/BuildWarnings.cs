@@ -14,7 +14,7 @@ namespace UnityCli.UtpSamples
 
         public void OnPreprocessBuild(BuildReport report)
         {
-            UnityEngine.Debug.LogWarning("Intentional build warning for test matrix coverage.");
+            UnityEngine.Debug.LogWarning("Intentional build warning.");
         }
     }
 }

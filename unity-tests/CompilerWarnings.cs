@@ -12,7 +12,7 @@ namespace UnityCli.UtpSamples
             ObsoleteApi(); // CS0618: call to obsolete member
         }
 
-        [System.Obsolete("Intentional warning for test matrix coverage", false)]
+        [System.Obsolete("Intentional warning", false)]
         private static void ObsoleteApi()
         {
         }

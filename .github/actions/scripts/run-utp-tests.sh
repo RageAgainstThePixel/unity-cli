@@ -25,6 +25,7 @@ clean_tests() {
   rm -f "$UNITY_PROJECT_PATH/Assets/Editor/UnityCliTests"/*.cs 2>/dev/null || true
   rm -f "$UNITY_PROJECT_PATH/Assets/Tests/PlayMode/UnityCliTests"/*.cs 2>/dev/null || true
   rm -f "$UNITY_PROJECT_PATH/Assets/Tests/EditMode/UnityCliTests"/*.cs 2>/dev/null || true
+  rm -f "$UNITY_PROJECT_PATH/Assets/Tests/EditMode/Editor/UnityCliTests"/*.cs 2>/dev/null || true
 }
 
 clean_build_outputs() {
@@ -80,7 +81,7 @@ for raw_test in "${tests[@]}"; do
       dest="$UNITY_PROJECT_PATH/Assets/Tests/PlayMode/UnityCliTests"
       ;;
     EditmodeTestsErrors)
-      dest="$UNITY_PROJECT_PATH/Assets/Tests/EditMode/UnityCliTests"
+      dest="$UNITY_PROJECT_PATH/Assets/Tests/EditMode/Editor/UnityCliTests"
       ;;
     *)
       echo "::error::Unknown test selection '$test_name'"
