@@ -195,7 +195,7 @@ for raw_test in "${tests[@]}"; do
 
   test_artifacts="$GITHUB_WORKSPACE/utp-artifacts/$test_name"
   mkdir -p "$test_artifacts"
-  find "$GITHUB_WORKSPACE" -path "$test_artifacts" -prune -o -type f -name "*${test_name}*-utp-json.log" -print -exec cp -n {} "$test_artifacts" \; || true
+  find "$GITHUB_WORKSPACE" -path "$test_artifacts" -prune -o -type f -name "*${test_name}*-utp-json.log" -print -exec cp --update=none {} "$test_artifacts" \; || true
 
 done
 
