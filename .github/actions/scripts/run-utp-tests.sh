@@ -36,21 +36,29 @@ clean_build_outputs() {
 
 # Expectations for each synthetic test
 # expected_status: 0 = should succeed, 1 = should fail
-declare -A expected_status
-expected_status[CompilerWarnings]=0
-expected_status[BuildWarnings]=0
-expected_status[CompilerErrors]=1
-expected_status[BuildErrors]=1
-expected_status[PlaymodeTestsErrors]=1
-expected_status[EditmodeTestsErrors]=1
+expected_status_for() {
+  case "$1" in
+    CompilerWarnings) echo 0 ;;
+    BuildWarnings) echo 0 ;;
+    CompilerErrors) echo 1 ;;
+    BuildErrors) echo 1 ;;
+    PlaymodeTestsErrors) echo 1 ;;
+    EditmodeTestsErrors) echo 1 ;;
+    *) echo 0 ;;
+  esac
+}
 
-declare -A expected_message
-expected_message[CompilerErrors]="Intentional compiler error"
-expected_message[BuildErrors]="Intentional build failure"
-expected_message[PlaymodeTestsErrors]="Intentional playmode failure"
-expected_message[EditmodeTestsErrors]="Intentional editmode failure"
-expected_message[CompilerWarnings]="Intentional warning"
-expected_message[BuildWarnings]="Intentional build warning"
+expected_message_for() {
+  case "$1" in
+    CompilerErrors) echo "Intentional compiler error" ;;
+    BuildErrors) echo "Intentional build failure" ;;
+    PlaymodeTestsErrors) echo "Intentional playmode failure" ;;
+    EditmodeTestsErrors) echo "Intentional editmode failure" ;;
+    CompilerWarnings) echo "Intentional warning" ;;
+    BuildWarnings) echo "Intentional build warning" ;;
+    *) echo "" ;;
+  esac
+}
 
 mkdir -p "$GITHUB_WORKSPACE/utp-artifacts"
 
@@ -129,8 +137,8 @@ for raw_test in "${tests[@]}"; do
     unity-cli run --log-name "${test_name}-Build" -buildTarget "$BUILD_TARGET" -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity "${build_args[@]}" || build_rc=$?
   fi
 
-  expected=${expected_status[$test_name]:-0}
-  exp_msg=${expected_message[$test_name]:-}
+  expected=$(expected_status_for "$test_name")
+  exp_msg=$(expected_message_for "$test_name")
 
   test_failed=0
   message_found=0
@@ -195,7 +203,13 @@ for raw_test in "${tests[@]}"; do
 
   test_artifacts="$GITHUB_WORKSPACE/utp-artifacts/$test_name"
   mkdir -p "$test_artifacts"
-  find "$GITHUB_WORKSPACE" -path "$test_artifacts" -prune -o -type f -name "*${test_name}*-utp-json.log" -print -exec cp --update=none {} "$test_artifacts" \; || true
+  find "$GITHUB_WORKSPACE" -path "$test_artifacts" -prune -o -type f -name "*${test_name}*-utp-json.log" -print | while IFS= read -r utp_src; do
+    [ -z "$utp_src" ] && continue
+    dest_file="$test_artifacts/$(basename "$utp_src")"
+    if [ ! -f "$dest_file" ]; then
+      cp "$utp_src" "$dest_file" || true
+    fi
+  done || true
 
 done
 
