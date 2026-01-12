@@ -25,6 +25,7 @@ clean_tests() {
   rm -f "$UNITY_PROJECT_PATH/Assets/Editor/UnityCliTests"/*.cs 2>/dev/null || true
   rm -f "$UNITY_PROJECT_PATH/Assets/Tests/PlayMode/UnityCliTests"/*.cs 2>/dev/null || true
   rm -f "$UNITY_PROJECT_PATH/Assets/Tests/EditMode/UnityCliTests"/*.cs 2>/dev/null || true
+  rm -f "$UNITY_PROJECT_PATH/Assets/Tests/EditMode/UnityCliTests"/*.asmdef 2>/dev/null || true
   rm -f "$UNITY_PROJECT_PATH/Assets/Tests/EditMode/Editor/UnityCliTests"/*.cs 2>/dev/null || true
 }
 
@@ -70,6 +71,8 @@ for raw_test in "${tests[@]}"; do
   clean_tests
   clean_build_outputs
 
+  asmdef_src=""
+
   case "$test_name" in
     CompilerWarnings|CompilerErrors)
       dest="$UNITY_PROJECT_PATH/Assets/UnityCliTests"
@@ -81,7 +84,8 @@ for raw_test in "${tests[@]}"; do
       dest="$UNITY_PROJECT_PATH/Assets/Tests/PlayMode/UnityCliTests"
       ;;
     EditmodeTestsErrors)
-      dest="$UNITY_PROJECT_PATH/Assets/Tests/EditMode/Editor/UnityCliTests"
+      dest="$UNITY_PROJECT_PATH/Assets/Tests/EditMode/UnityCliTests"
+      asmdef_src="$GITHUB_WORKSPACE/unity-tests/UnityCliTests.EditMode.Editor.asmdef"
       ;;
     *)
       echo "::error::Unknown test selection '$test_name'"
@@ -91,6 +95,14 @@ for raw_test in "${tests[@]}"; do
   esac
 
   mkdir -p "$dest"
+  if [ -n "$asmdef_src" ]; then
+    if [ ! -f "$asmdef_src" ]; then
+      echo "::error::Assembly definition for editmode tests not found at $asmdef_src"
+      failures=$((failures+1))
+      continue
+    fi
+    cp "$asmdef_src" "$dest/"
+  fi
   cp "$src" "$dest/"
   echo "Running test: $test_name (copied to $dest)"
 
@@ -101,6 +113,13 @@ for raw_test in "${tests[@]}"; do
 
   if [ "$test_name" = "EditmodeTestsErrors" ]; then
     unity-cli run --log-name "${test_name}-EditMode" -runTests -testPlatform editmode -testResults "$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml" -quit || validate_rc=$?
+
+    # Guard against zero-discovery runs that exit 0 by treating no test cases as a failure.
+    results_xml="$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml"
+    if [ -f "$results_xml" ] && ! node -e "const fs=require('fs');const p=process.argv[1];try{const t=fs.readFileSync(p,'utf8');const m=t.match(/<test-case /g);if(m&&m.length>0){process.exit(0);} }catch(e){}process.exit(1);" "$results_xml"; then
+      echo "::error::No editmode tests were discovered for $test_name"
+      validate_rc=1
+    fi
     build_rc=$validate_rc
     ran_custom_flow=1
   fi
