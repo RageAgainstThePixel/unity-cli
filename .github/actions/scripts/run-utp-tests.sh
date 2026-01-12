@@ -120,12 +120,10 @@ for raw_test in "${tests[@]}"; do
   ran_custom_flow=0
 
   if [ "$test_name" = "EditmodeTestsErrors" ]; then
-    unity-cli run --log-name "${test_name}-EditMode" -runTests -testPlatform editmode -testResults "$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml" -quit || validate_rc=$?
+    unity-cli run --log-name "${test_name}-EditMode" -runTests -testPlatform editmode -assemblyNames "UnityCli.EditMode.EditorTests" -testResults "$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml" -quit || validate_rc=$?
 
-    # Guard against zero-discovery runs that exit 0 by treating no test cases as a failure.
     results_xml="$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml"
-    if [ -f "$results_xml" ] && ! node -e "const fs=require('fs');const p=process.argv[1];try{const t=fs.readFileSync(p,'utf8');const m=t.match(/<test-case /g);if(m&&m.length>0){process.exit(0);} }catch(e){}process.exit(1);" "$results_xml"; then
-      echo "::error::No editmode tests were discovered for $test_name"
+    if ! grep -q "<test-case " "$results_xml" 2>/dev/null; then
       validate_rc=1
     fi
     build_rc=$validate_rc
@@ -161,7 +159,7 @@ for raw_test in "${tests[@]}"; do
     if [ -z "$utp_file" ]; then
       continue
     fi
-    if node -e "const fs=require('fs');const p=process.argv[1];try{const data=JSON.parse(fs.readFileSync(p,'utf8'));if(Array.isArray(data)&&data.some(e=>['Error','Exception','Assert'].includes(e?.severity))){process.exit(0);} }catch{}process.exit(1);" "$utp_file"; then
+    if grep -qi '"severity"[[:space:]]*:[[:space:]]*"\(Error\|Exception\|Assert\)"' "$utp_file" 2>/dev/null; then
       utp_error_found=1
       break
     fi
