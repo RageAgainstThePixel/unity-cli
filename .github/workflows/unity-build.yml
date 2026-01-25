@@ -100,6 +100,13 @@ jobs:
           else
             echo "Skipping build: Unity version $version does not support the build pipeline package (requires 2019.4+)"
           fi
+      - name: Compute safe artifact name
+        id: artifact-name
+        run: |
+          unity_version="${{ matrix.unity-version }}"
+          unity_version="${unity_version//'*'/x}"
+          echo "name=${{ matrix.os }}-${unity_version}-${{ matrix.build-target }}-tests-batch-utp-logs" >> $GITHUB_OUTPUT
+        shell: bash
       - name: Run Unity UTP test batches
         if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' }}
         uses: ./.github/actions/run-unity-test-batch
@@ -107,7 +114,7 @@ jobs:
           unity-project-path: ${{ env.UNITY_PROJECT_PATH }}
           build-target: ${{ matrix.build-target }}
           build-args: ${{ matrix.build-args }}
-          artifact-name: ${{ matrix.os }}-${{ matrix.unity-version }}-${{ matrix.build-target }}-tests-batch-utp-logs
+          artifact-name: ${{ steps.artifact-name.outputs.name }}
       - name: Update Android Target Sdk Version
         if: ${{ matrix.build-target == 'Android' }}
         run: |
