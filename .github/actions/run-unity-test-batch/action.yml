@@ -43,10 +43,12 @@ runs:
         UNITY_PROJECT_PATH: ${{ inputs.unity-project-path }}
         BUILD_TARGET: ${{ inputs.build-target }}
         BUILD_ARGS: ${{ inputs.build-args }}
+      continue-on-error: true
       run: |
         bash "${GITHUB_WORKSPACE}/.github/actions/scripts/run-utp-tests.sh"
 
     - name: Upload UTP logs
+      if: always()
       uses: actions/upload-artifact@v6
       with:
         name: ${{ inputs.artifact-name }}
