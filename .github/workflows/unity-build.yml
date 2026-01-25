@@ -17,6 +17,9 @@ jobs:
     strategy:
       matrix: ${{ fromJSON(inputs.matrix) }}
       fail-fast: false
+    permissions:
+      contents: read
+      checks: write # to publish unit test results via checks github api
     defaults:
       run:
         shell: bash
@@ -97,12 +100,14 @@ jobs:
           else
             echo "Skipping build: Unity version $version does not support the build pipeline package (requires 2019.4+)"
           fi
-      - name: Install OpenUPM and build pipeline package
+      - name: Run Unity UTP test batches
         if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' }}
-        working-directory: ${{ env.UNITY_PROJECT_PATH }}
-        run: |
-          npm install -g openupm-cli
-          openupm add com.utilities.buildpipeline
+        uses: ./.github/actions/run-unity-test-batch
+        with:
+          unity-project-path: ${{ env.UNITY_PROJECT_PATH }}
+          build-target: ${{ matrix.build-target }}
+          build-args: ${{ matrix.build-args }}
+          artifact-name: ${{ matrix.os }}-${{ matrix.unity-version }}-${{ matrix.build-target }}-tests-batch-utp-logs
       - name: Update Android Target Sdk Version
         if: ${{ matrix.build-target == 'Android' }}
         run: |
@@ -110,13 +115,6 @@ jobs:
           sed -i 's/AndroidTargetSdkVersion: [0-9]*/AndroidTargetSdkVersion: 32/' "${UNITY_PROJECT_PATH}/ProjectSettings/ProjectSettings.asset"
           # ensure android dependencies are installed
           unity-cli setup-unity -p "${UNITY_PROJECT_PATH}" -m android
-      - name: Build Project
-        if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' }}
-        timeout-minutes: 60
-        run: |
-          # we don't have to specify the project path or unity editor path as unity-cli will use the environment variables
-          unity-cli run --log-name Validate -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset
-          unity-cli run --log-name Build -buildTarget ${{ matrix.build-target }} -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity ${{ matrix.build-args }}
       - name: Uninstall Editor
         if: ${{ matrix.unity-version != 'none' }}
         run: |
@@ -132,12 +130,12 @@ jobs:
           PACKAGE_MANAGER_LOG_PATH=$(unity-cli package-manager-logs)
           LICENSING_CLIENT_LOG_PATH=$(unity-cli licensing-client-logs)
           LICENSING_AUDIT_LOG_PATH=$(unity-cli licensing-audit-logs)
-          
+
           echo "Hub Log Path: ${HUB_LOG_PATH}"
           echo "Package Manager Log Path: ${PACKAGE_MANAGER_LOG_PATH}"
           echo "Licensing Client Log Path: ${LICENSING_CLIENT_LOG_PATH}"
           echo "Licensing Audit Log Path: ${LICENSING_AUDIT_LOG_PATH}"
-          
+
           if [ ! -f "${HUB_LOG_PATH}" ]; then
             echo "::warning:: Hub log file does not exist at ${HUB_LOG_PATH}"
             # find all info-log.json files in ~/.config/unity3d/ - print their paths
@@ -151,18 +149,32 @@ jobs:
             find ~/.config/ -type f -exec echo "{}" \;
             echo "::warning:: Hub log file does not exist at any known location"
           fi
-          
+
           if [ ! -f "${PACKAGE_MANAGER_LOG_PATH}" ]; then
             echo "::warning::Package Manager log file does not exist at ${PACKAGE_MANAGER_LOG_PATH}"
           fi
-          
+
           if [ ! -f "${LICENSING_CLIENT_LOG_PATH}" ]; then
             echo "::error::Licensing Client log file does not exist at ${LICENSING_CLIENT_LOG_PATH}"
           fi
-          
+
           if [ ! -f "${LICENSING_AUDIT_LOG_PATH}" ]; then
             echo "::error::Licensing Audit log file does not exist at ${LICENSING_AUDIT_LOG_PATH}"
           fi
+      - name: Compute UTP artifact name
+        if: always()
+        id: utp-artifact-name
+        env:
+          MATRIX_OS: ${{ matrix.os }}
+          MATRIX_UNITY_VERSION: ${{ matrix.unity-version }}
+          MATRIX_BUILD_TARGET: ${{ matrix.build-target }}
+        run: |
+          set -euo pipefail
+          unity_version="$MATRIX_UNITY_VERSION"
+          unity_version="${unity_version//\*/x}"
+          artifact_name="${MATRIX_OS}-${unity_version}-${MATRIX_BUILD_TARGET}-tests-batch-utp-logs"
+          echo "name=$artifact_name" >> $GITHUB_OUTPUT
+        shell: bash
       - name: Return License
         if: always()
         run: unity-cli return-license --license personal

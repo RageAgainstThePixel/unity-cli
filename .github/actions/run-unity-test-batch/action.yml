@@ -1,0 +1,54 @@
+name: Run Unity UTP Test Batch
+description: Runs a batch of Unity UTP tests in a given Unity project.
+inputs:
+  unity-project-path:
+    description: Absolute path to the Unity project.
+    required: true
+  build-target:
+    description: Build target to use.
+    required: true
+  build-args:
+    description: Additional build args.
+    required: false
+    default: ""
+  artifact-name:
+    description: Artifact name for uploaded UTP logs (must be unique per matrix job).
+    required: false
+    default: unity-tests-batch-utp-logs
+runs:
+  using: composite
+  steps:
+    - name: Prepare test list and install packages
+      shell: bash
+      working-directory: ${{ inputs.unity-project-path }}
+      run: |
+        set -euo pipefail
+        tests_input="CompilerWarnings,CompilerErrors,BuildWarnings,BuildErrors,PlaymodeTestsErrors,EditmodeTestsErrors"
+        echo "TESTS_INPUT=$tests_input" >> $GITHUB_ENV
+
+        needs_test_framework=false
+        if [[ "$tests_input" == *"PlaymodeTestsErrors"* || "$tests_input" == *"EditmodeTestsErrors"* ]]; then
+          needs_test_framework=true
+        fi
+
+        npm install -g openupm-cli
+        openupm add com.utilities.buildpipeline
+        if [ "$needs_test_framework" = true ]; then
+          openupm add com.unity.test-framework
+        fi
+
+    - name: Run tests
+      shell: bash
+      env:
+        UNITY_PROJECT_PATH: ${{ inputs.unity-project-path }}
+        BUILD_TARGET: ${{ inputs.build-target }}
+        BUILD_ARGS: ${{ inputs.build-args }}
+      run: |
+        bash "${GITHUB_WORKSPACE}/.github/actions/scripts/run-utp-tests.sh"
+
+    - name: Upload UTP logs
+      uses: actions/upload-artifact@v6
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: utp-artifacts/**/*-utp-json.log
+        if-no-files-found: ignore
