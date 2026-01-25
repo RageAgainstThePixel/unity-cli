@@ -175,13 +175,6 @@ jobs:
           artifact_name="${MATRIX_OS}-${unity_version}-${MATRIX_BUILD_TARGET}-tests-batch-utp-logs"
           echo "name=$artifact_name" >> $GITHUB_OUTPUT
         shell: bash
-      - name: Upload UTP logs artifact
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: ${{ steps.utp-artifact-name.outputs.name }}
-          path: '**/*-utp-json.log'
-          if-no-files-found: ignore
       - name: Return License
         if: always()
         run: unity-cli return-license --license personal
