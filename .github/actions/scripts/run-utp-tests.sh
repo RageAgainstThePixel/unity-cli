@@ -11,7 +11,7 @@ if printf '%s' "$BUILD_ARGS" | grep -qE '[;&`|]'; then
   exit 1
 fi
 
-build_args=()
+declare -a build_args=()
 if [ -n "$BUILD_ARGS" ]; then
   # Split on whitespace into an array without invoking the shell
   read -r -a build_args <<< "$BUILD_ARGS"
@@ -132,7 +132,21 @@ for raw_test in "${tests[@]}"; do
 
   if [ "$ran_custom_flow" -eq 0 ]; then
     unity-cli run --log-name "${test_name}-Validate" -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.ValidateProject -importTMProEssentialsAsset || validate_rc=$?
-    unity-cli run --log-name "${test_name}-Build" -buildTarget "$BUILD_TARGET" -quit -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild -sceneList Assets/Scenes/SampleScene.unity "${build_args[@]}" || build_rc=$?
+
+    build_cmd=(
+      unity-cli run
+      --log-name "${test_name}-Build"
+      -buildTarget "$BUILD_TARGET"
+      -quit
+      -executeMethod Utilities.Editor.BuildPipeline.UnityPlayerBuildTools.StartCommandLineBuild
+      -sceneList Assets/Scenes/SampleScene.unity
+    )
+
+    if [ ${#build_args[@]} -gt 0 ]; then
+      build_cmd+=("${build_args[@]}")
+    fi
+
+    "${build_cmd[@]}" || build_rc=$?
   fi
 
   expected=$(expected_status_for "$test_name")
