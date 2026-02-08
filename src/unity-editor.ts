@@ -192,6 +192,29 @@ export class UnityEditor {
     }
 
     /**
+     * Scrubs sensitive command-line arguments for safe logging.
+     * Replaces values for sensitive flags like -username, -password, etc. with [REDACTED].
+     * @param args The command-line arguments array.
+     * @returns A new array with sensitive values redacted.
+     */
+    private scrubSensitiveArgs(args: string[]): string[] {
+        const sensitiveFlags = ['-username', '-password', '-cloudOrganization', '-serial'];
+        const scrubbedArgs: string[] = [];
+        
+        for (let i = 0; i < args.length; i++) {
+            scrubbedArgs.push(args[i]);
+            
+            // If this is a sensitive flag and the next item is its value
+            if (sensitiveFlags.includes(args[i]) && i + 1 < args.length) {
+                scrubbedArgs.push('[REDACTED]');
+                i++; // Skip the next item (the actual value) since we've already added [REDACTED]
+            }
+        }
+        
+        return scrubbedArgs;
+    }
+
+    /**
      * Run the Unity Editor with the specified command line arguments.
      * @param command The command containing arguments and optional project path.
      * @throws Will throw an error if the Unity Editor fails to start or exits with a non-zero code.
@@ -264,7 +287,10 @@ export class UnityEditor {
 
             const logPath: string = GetArgumentValueAsString('-logFile', command.args);
             logTail = TailLogFile(logPath, command.projectPath);
-            const commandStr = `\x1b[34m${this.editorPath} ${command.args.join(' ')}\x1b[0m`;
+            
+            // Scrub sensitive arguments before logging
+            const scrubbedArgs = this.scrubSensitiveArgs(command.args);
+            const commandStr = `\x1b[34m${this.editorPath} ${scrubbedArgs.join(' ')}\x1b[0m`;
             this.logger.startGroup(commandStr);
 
             if (this.version.isLegacy() && process.platform === 'darwin' && process.arch === 'arm64') {
