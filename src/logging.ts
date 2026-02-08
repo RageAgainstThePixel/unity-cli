@@ -243,6 +243,10 @@ export class Logger {
      * @param optionalParams Additional parameters to log.
      */
     public debugOptions(options: any, ...optionalParams: any[]): void {
+        // Avoid expensive scrubbing and stringification when debug logging is disabled.
+        if (this.logLevel !== LogLevel.DEBUG) {
+            return;
+        }
         const scrubbed = this.scrubSensitiveData(options);
         this.debug(JSON.stringify(scrubbed), ...optionalParams);
     }

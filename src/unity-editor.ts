@@ -197,15 +197,18 @@ export class UnityEditor {
      * @param args The command-line arguments array.
      * @returns A new array with sensitive values redacted.
      */
-    private scrubSensitiveArgs(args: string[]): string[] {
+    public scrubSensitiveArgs(args: string[]): string[] {
         const sensitiveFlags = ['-username', '-password', '-cloudOrganization', '-serial'];
         const scrubbedArgs: string[] = [];
         
         for (let i = 0; i < args.length; i++) {
-            scrubbedArgs.push(args[i]);
+            const arg = args[i];
+            if (!arg) continue;
+            
+            scrubbedArgs.push(arg);
             
             // If this is a sensitive flag and the next item is its value
-            if (sensitiveFlags.includes(args[i]) && i + 1 < args.length) {
+            if (sensitiveFlags.includes(arg) && i + 1 < args.length) {
                 scrubbedArgs.push('[REDACTED]');
                 i++; // Skip the next item (the actual value) since we've already added [REDACTED]
             }
