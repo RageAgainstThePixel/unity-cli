@@ -226,6 +226,87 @@ export class Logger {
     }
 
     /**
+     * Masks a credential value in CI environments before it appears in logs.
+     * This is a convenience wrapper around CI_mask for credential values.
+     * @param value The credential value to mask.
+     */
+    public maskCredential(value: string | undefined): void {
+        if (value && value.length > 0) {
+            this.CI_mask(value);
+        }
+    }
+
+    /**
+     * Logs command-line options with sensitive information scrubbed.
+     * Automatically removes passwords, tokens, emails, and other credentials from the output.
+     * @param options The options object to log (typically from commander.js).
+     * @param optionalParams Additional parameters to log.
+     */
+    public debugOptions(options: any, ...optionalParams: any[]): void {
+        // Avoid expensive scrubbing and stringification when debug logging is disabled.
+        if (this.logLevel !== LogLevel.DEBUG) {
+            return;
+        }
+        const scrubbed = this.scrubSensitiveData(options);
+        this.debug(JSON.stringify(scrubbed), ...optionalParams);
+    }
+
+    /**
+     * List of sensitive option keys that should be scrubbed from debug output.
+     */
+    private readonly SENSITIVE_KEYS = [
+        'password',
+        'email',
+        'serial',
+        'token',
+        'config',
+        'organization',
+        'username',
+        'servicesConfig'
+    ];
+
+    /**
+     * Scrubs sensitive information from an object for safe logging.
+     * Creates a deep clone of the object and replaces sensitive values with [REDACTED].
+     * @param obj The object to scrub (typically command-line options).
+     * @returns A new object with sensitive values replaced.
+     */
+    private scrubSensitiveData(obj: any): any {
+        if (obj === null || obj === undefined) {
+            return obj;
+        }
+
+        if (typeof obj !== 'object') {
+            return obj;
+        }
+
+        if (Array.isArray(obj)) {
+            return obj.map((item: any) => this.scrubSensitiveData(item));
+        }
+
+        const scrubbedObj: any = {};
+
+        for (const key in obj) {
+            if (obj.hasOwnProperty(key)) {
+                const lowerKey = key.toLowerCase();
+                const isSensitive = this.SENSITIVE_KEYS.some(
+                    sensitiveKey => lowerKey.includes(sensitiveKey.toLowerCase())
+                );
+
+                if (isSensitive) {
+                    scrubbedObj[key] = '[REDACTED]';
+                } else if (typeof obj[key] === 'object') {
+                    scrubbedObj[key] = this.scrubSensitiveData(obj[key]);
+                } else {
+                    scrubbedObj[key] = obj[key];
+                }
+            }
+        }
+
+        return scrubbedObj;
+    }
+
+    /**
      * Sets an environment variable in CI environments that support it.
      * @param name The name of the environment variable.
      * @param value The value of the environment variable.
