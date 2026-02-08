@@ -190,27 +190,27 @@ describe('Credential Scrubbing', () => {
     describe('maskCredential', () => {
         it('should call CI_mask for non-empty credentials', () => {
             const maskSpy = jest.spyOn(Logger.instance, 'CI_mask');
-            
+
             Logger.instance.maskCredential('my-secret-password');
-            
+
             expect(maskSpy).toHaveBeenCalledWith('my-secret-password');
             maskSpy.mockRestore();
         });
 
         it('should not call CI_mask for undefined credentials', () => {
             const maskSpy = jest.spyOn(Logger.instance, 'CI_mask');
-            
+
             Logger.instance.maskCredential(undefined);
-            
+
             expect(maskSpy).not.toHaveBeenCalled();
             maskSpy.mockRestore();
         });
 
         it('should not call CI_mask for empty string credentials', () => {
             const maskSpy = jest.spyOn(Logger.instance, 'CI_mask');
-            
+
             Logger.instance.maskCredential('');
-            
+
             expect(maskSpy).not.toHaveBeenCalled();
             maskSpy.mockRestore();
         });
