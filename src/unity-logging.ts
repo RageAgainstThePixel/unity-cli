@@ -92,6 +92,41 @@ function sanitizeStackTrace(raw: string | undefined): string | undefined {
     return sanitized;
 }
 
+interface StackFrame {
+    file: string;
+    line: number;
+    title: string;
+}
+
+const MAX_STACK_FRAME_ANNOTATIONS = 5;
+
+function parseStackFrames(stackTrace: string, projectPath: string | undefined): StackFrame[] {
+    const frames: StackFrame[] = [];
+    const lines = stackTrace.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    for (const stackLine of lines) {
+        const inMatch = stackLine.match(/\s+in\s+([^\s]+):(\d+)\s*$/);
+        const parenMatch = stackLine.match(/\(([^)]+):(\d+)\)\s*$/);
+        const plainMatch = stackLine.match(/^(.+):(\d+)\s*$/);
+        let file: string | undefined;
+        let lineNum: number | undefined;
+        if (inMatch) {
+            file = inMatch[1].replace(/\\/g, '/');
+            lineNum = parseInt(inMatch[2], 10);
+        } else if (parenMatch) {
+            file = parenMatch[1].replace(/\\/g, '/');
+            lineNum = parseInt(parenMatch[2], 10);
+        } else if (plainMatch) {
+            file = plainMatch[1].replace(/\\/g, '/');
+            lineNum = parseInt(plainMatch[2], 10);
+        }
+        if (file && Number.isFinite(lineNum) && lineNum > 0 &&
+            projectPath && file.startsWith(projectPath)) {
+            frames.push({ file, line: lineNum, title: stackLine });
+        }
+    }
+    return frames;
+}
+
 const MIN_DESCRIPTION_COLUMN_WIDTH = 16;
 const DEFAULT_TERMINAL_WIDTH = 120;
 const TERMINAL_WIDTH_SAFETY_MARGIN = 2;
@@ -1017,6 +1052,14 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                         // only annotate if the file is within the current project
                         if (projectPath && file && file.startsWith(projectPath)) {
                             logger.annotate(LogLevel.ERROR, message, file, utp.line);
+                            // Link stack trace to annotations: emit one annotation per frame (capped) for clickable stack in Checks
+                            if (stacktrace && projectPath) {
+                                const frames = parseStackFrames(stacktrace, projectPath);
+                                const toEmit = frames.slice(0, MAX_STACK_FRAME_ANNOTATIONS);
+                                for (const frame of toEmit) {
+                                    logger.annotate(LogLevel.ERROR, frame.title, frame.file, frame.line, undefined, undefined, undefined, 'Stack frame');
+                                }
+                            }
                         } else {
                             switch (messageLevel) {
                                 case LogLevel.WARN:
