@@ -109,19 +109,19 @@ function parseStackFrames(stackTrace: string, projectPath: string | undefined): 
         const plainMatch = stackLine.match(/^(.+):(\d+)\s*$/);
         let file: string | undefined;
         let lineNum: number | undefined;
-        if (inMatch) {
+        if (inMatch && inMatch[1] != null && inMatch[2] != null) {
             file = inMatch[1].replace(/\\/g, '/');
             lineNum = parseInt(inMatch[2], 10);
-        } else if (parenMatch) {
+        } else if (parenMatch && parenMatch[1] != null && parenMatch[2] != null) {
             file = parenMatch[1].replace(/\\/g, '/');
             lineNum = parseInt(parenMatch[2], 10);
-        } else if (plainMatch) {
+        } else if (plainMatch && plainMatch[1] != null && plainMatch[2] != null) {
             file = plainMatch[1].replace(/\\/g, '/');
             lineNum = parseInt(plainMatch[2], 10);
         }
-        if (file && Number.isFinite(lineNum) && lineNum > 0 &&
-            projectPath && file.startsWith(projectPath)) {
-            frames.push({ file, line: lineNum, title: stackLine });
+        const line = lineNum !== undefined && Number.isFinite(lineNum) ? lineNum : undefined;
+        if (file != null && line != null && line > 0 && projectPath != null && file.startsWith(projectPath)) {
+            frames.push({ file, line, title: stackLine });
         }
     }
     return frames;
