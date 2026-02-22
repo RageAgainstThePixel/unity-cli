@@ -343,12 +343,7 @@ export class UnityHub {
                         `Start-Process -FilePath '${uninstaller}' -ArgumentList '/S' -Verb RunAs -Wait`
                     ], { silent: true, showCommand: true });
                     await DeleteDirectory(this.rootDirectory);
-
-                    if (fs.existsSync(this.rootDirectory)) {
-                        this.logger.warn(`Unity Hub root directory still exists after uninstall: ${this.rootDirectory}`);
-                    }
-
-                    await this.installHub(versionToInstall.version);
+                    await this.installHub(version);
                 } else if (process.platform === 'linux') {
                     await Exec('sudo', ['sh', '-c', `#!/bin/bash
 set -e

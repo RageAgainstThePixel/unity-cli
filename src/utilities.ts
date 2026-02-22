@@ -232,20 +232,11 @@ export async function DownloadFile(url: string, downloadPath: string): Promise<v
  */
 export async function DeleteDirectory(targetPath: string | undefined): Promise<void> {
     if (targetPath && targetPath.length > 0 && fs.existsSync(targetPath)) {
-        logger.info(`Attempting to delete directory: ${targetPath}...`);
+        logger.debug(`Attempting to delete directory: ${targetPath}...`);
         try {
             await fs.promises.rm(targetPath, { recursive: true, force: true, maxRetries: 2, retryDelay: 100 });
         } catch (error) {
             logger.warn(`Failed to delete directory: ${targetPath}\n${error}`);
-        }
-    }
-    if (targetPath && targetPath.length > 0 && fs.existsSync(targetPath)) {
-        logger.warn(`Directory still exists after deletion attempt: ${targetPath}`);
-        try {
-            const files = await fs.promises.readdir(targetPath);
-            logger.warn(`Contents of ${targetPath}: ${files.join(', ')}`);
-        } catch (error) {
-            logger.warn(`Failed to read contents of directory: ${targetPath}\n${error}`);
         }
     }
 }
