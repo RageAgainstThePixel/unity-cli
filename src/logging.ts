@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { UTP } from './utp/utp';
 
 export enum LogLevel {
     DEBUG = 'debug',
@@ -258,20 +259,211 @@ export class Logger {
         }
     }
 
-    public CI_appendWorkflowSummary(telemetry: any[]) {
+    private static readonly SUMMARY_BYTE_LIMIT = 1024 * 1024;
+
+    private static formatDurationMs(ms: number | undefined): string {
+        if (ms === undefined || !Number.isFinite(ms)) { return '—'; }
+        if (ms < 1000) { return `${Math.round(ms)}ms`; }
+        return `${(ms / 1000).toFixed(1)}s`;
+    }
+
+    private static truncateStr(s: string, max: number): string {
+        return s.length <= max ? s : s.slice(0, max) + '…';
+    }
+
+    private static truncateSummaryToByteLimit(summary: string, byteLimit: number): string {
+        const footer = `\n***Summary truncated due to size limits.***\n`;
+        const footerSize = Buffer.byteLength(footer, 'utf8');
+        const lines = summary.split('\n');
+        let rebuilt = '';
+        for (const line of lines) {
+            const nextSize = Buffer.byteLength(rebuilt + line + '\n', 'utf8') + footerSize;
+            if (nextSize > byteLimit) { break; }
+            rebuilt += `${line}\n`;
+        }
+        return rebuilt + footer;
+    }
+
+    public CI_appendWorkflowSummary(name: string, telemetry: UTP[]) {
+        if (telemetry.length === 0) { return; }
         switch (this._ci) {
             case 'GITHUB_ACTIONS': {
                 const githubSummary = process.env.GITHUB_STEP_SUMMARY;
-
                 if (githubSummary) {
-                    let table = `| Key | Value |\n| --- | ----- |\n`;
-                    telemetry.forEach(item => {
-                        table += `| ${item.key} | ${item.value} |\n`;
-                    });
+                    const excludedTypes = new Set(['MemoryLeaks', 'MemoryLeak']);
+                    const filtered = telemetry.filter(entry => !excludedTypes.has(entry.type || ''));
+                    if (filtered.length === 0) { return; }
 
-                    fs.appendFileSync(githubSummary, table, { encoding: 'utf8' });
+                    const severityError = (s: string | undefined): boolean =>
+                        s === 'Error' || s === 'Exception' || s === 'Assert';
+                    const errorEntries = filtered.filter(
+                        e => (e.type === 'LogEntry' || e.type === 'Compiler') && severityError(e.severity)
+                    );
+                    const completedActions = filtered.filter(
+                        e => e.type === 'Action' && e.phase === 'End'
+                    );
+                    const logEntries = filtered.filter(e => e.type === 'LogEntry');
+                    const compilerEntries = filtered.filter(e => e.type === 'Compiler');
+
+                    const limit = Logger.SUMMARY_BYTE_LIMIT;
+                    const builders: (() => string)[] = [
+                        () => this.buildSummaryCollapsible(name, errorEntries, completedActions, logEntries, compilerEntries),
+                        () => this.buildSummaryCountsOnly(name, errorEntries, logEntries.length, compilerEntries.length, completedActions.length),
+                        () => this.buildSummaryErrorsAndTimeline(name, errorEntries, completedActions),
+                    ];
+                    let summary = '';
+                    for (const build of builders) {
+                        summary = build();
+                        if (Buffer.byteLength(summary, 'utf8') <= limit) { break; }
+                    }
+                    if (Buffer.byteLength(summary, 'utf8') > limit) {
+                        summary = Logger.truncateSummaryToByteLimit(summary, limit);
+                    }
+                    fs.appendFileSync(githubSummary, summary, { encoding: 'utf8' });
                 }
+                break;
             }
         }
+    }
+
+    /**
+     * Builds summary with collapsible sections per type
+     * (Errors, Build timeline, LogEntry, Compiler), one line per entry.
+     */
+    private buildSummaryCollapsible(
+        name: string,
+        errorEntries: UTP[],
+        completedActions: UTP[],
+        logEntries: UTP[],
+        compilerEntries: UTP[]
+    ): string {
+        const MAX_ERROR = 20;
+        const MAX_ACTION = 50;
+        const MAX_LOG = 50;
+        const MAX_COMPILER = 50;
+        const TRUNCATE_MSG = 120;
+
+        let out = `## ${name} Summary\n\n`;
+
+        if (errorEntries.length > 0) {
+            out += `<details><summary>Errors (${errorEntries.length})</summary>\n\n`;
+            const shown = errorEntries.slice(0, MAX_ERROR);
+            for (const e of shown) {
+                out += `- ${Logger.truncateStr((e.message || '').trim(), TRUNCATE_MSG)}\n`;
+                if (e.file && e.line !== undefined && e.line > 0) {
+                    const file = (e.file || '').replace(/\\/g, '/');
+                    out += `  \`${file}:${e.line}\`\n`;
+                }
+            }
+            if (errorEntries.length > MAX_ERROR) {
+                out += `- ... and ${errorEntries.length - MAX_ERROR} more (see annotations).\n`;
+            }
+            out += `\n</details>\n\n`;
+        }
+
+        if (completedActions.length > 0) {
+            out += `<details><summary>Build timeline (${completedActions.length} actions)</summary>\n\n`;
+            const shown = completedActions.slice(0, MAX_ACTION);
+            for (const a of shown) {
+                const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
+                const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
+                const status = errCount > 0 ? '❌' : '✅';
+                const desc = Logger.truncateStr((a.description || a.name || '—').trim(), 60);
+                out += `${status} ${desc} ${Logger.formatDurationMs(durationMs)} (${errCount} errors)\n`;
+            }
+            out += `\n</details>\n\n`;
+        }
+
+        if (logEntries.length > 0) {
+            out += `<details><summary>LogEntry (${logEntries.length})</summary>\n\n`;
+            const shown = logEntries.slice(0, MAX_LOG);
+            for (const e of shown) {
+                out += `- ${e.severity ?? 'Info'}: ${Logger.truncateStr((e.message || '').trim(), TRUNCATE_MSG)}\n`;
+            }
+            if (logEntries.length > MAX_LOG) {
+                out += `- ... and ${logEntries.length - MAX_LOG} more.\n`;
+            }
+            out += `\n</details>\n\n`;
+        }
+
+        if (compilerEntries.length > 0) {
+            out += `<details><summary>Compiler (${compilerEntries.length})</summary>\n\n`;
+            const shown = compilerEntries.slice(0, MAX_COMPILER);
+            for (const e of shown) {
+                out += `- ${e.severity ?? 'Info'}: ${Logger.truncateStr((e.message || '').trim(), TRUNCATE_MSG)}\n`;
+            }
+            if (compilerEntries.length > MAX_COMPILER) {
+                out += `- ... and ${compilerEntries.length - MAX_COMPILER} more.\n`;
+            }
+            out += `\n</details>\n\n`;
+        }
+
+        return out;
+    }
+
+    /**
+     * Builds summary with type counts in a markdown table.
+     * When there are errors, adds a line pointing to annotations.
+     */
+    private buildSummaryCountsOnly(
+        name: string,
+        errorEntries: UTP[],
+        logEntryCount: number,
+        compilerCount: number,
+        actionCount: number
+    ): string {
+        const errorCount = errorEntries.length;
+
+        let out = `## ${name} Summary\n\n`;
+        out += `| Type | Count |\n`;
+        out += `|------|-------|\n`;
+        out += `| Errors | ${errorCount} |\n`;
+        out += `| LogEntry | ${logEntryCount} |\n`;
+        out += `| Compiler | ${compilerCount} |\n`;
+        out += `| Actions | ${actionCount} |\n\n`;
+        if (errorCount > 0) {
+            out += `See annotations for details.\n`;
+        }
+        return out;
+    }
+
+    /**
+     * Builds minimal summary: errors list with optional file:line,
+     * then one line per completed action (no LogEntry/Compiler).
+     */
+    private buildSummaryErrorsAndTimeline(
+        name: string,
+        errorEntries: UTP[],
+        completedActions: UTP[]
+    ): string {
+        const MAX_ERROR = 20;
+        const TRUNCATE_MSG = 120;
+
+        let out = `## ${name} Summary\n\n`;
+
+        if (errorEntries.length > 0) {
+            const shown = errorEntries.slice(0, MAX_ERROR);
+            for (const e of shown) {
+                out += `- ${Logger.truncateStr((e.message || '').trim(), TRUNCATE_MSG)}\n`;
+                if (e.file && e.line !== undefined && e.line > 0) {
+                    const file = (e.file || '').replace(/\\/g, '/');
+                    out += `  \`${file}:${e.line}\`\n`;
+                }
+            }
+            if (errorEntries.length > MAX_ERROR) {
+                out += `- ... and ${errorEntries.length - MAX_ERROR} more (see annotations).\n`;
+            }
+            out += `\n`;
+        }
+
+        for (const a of completedActions) {
+            const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
+            const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
+            const status = errCount > 0 ? '❌' : '✅';
+            const desc = Logger.truncateStr((a.description || a.name || '—').trim(), 60);
+            out += `${status} ${desc} ${Logger.formatDurationMs(durationMs)} (${errCount} errors)\n`;
+        }
+
+        return out;
     }
 }
