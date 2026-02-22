@@ -266,46 +266,38 @@ export class Logger {
                 const githubSummary = process.env.GITHUB_STEP_SUMMARY;
 
                 if (githubSummary) {
-                    // for now lets just log the number of items we get per type
-                    const typeCounts: Record<string, number> = {};
+                    // Only show LogEntry, Compiler, and Action types in the summary table
+                    const showTypes = new Set(['LogEntry', 'Compiler', 'Action']);
+                    let foldout = `## ${name} Summary\n\n<details>\n<summary>Show Action, Compiler, and LogEntry details</summary>\n\n`;
+                    foldout += `- List of entries as JSON:\n`;
+
                     for (const entry of telemetry) {
                         const type = entry.type || 'unknown';
-
-                        if (!typeCounts[type]) {
-                            typeCounts[type] = 0;
+                        if (!showTypes.has(type)) {
+                            continue;
                         }
-
-                        typeCounts[type]++;
+                        foldout += `  - \`${JSON.stringify(entry)}\`\n`;
                     }
 
-                    let table = `## ${name} Summary\n\n| Type | Count |\n| --- | ---: |\n`;
-                    for (const [type, count] of Object.entries(typeCounts)) {
-                        table += `| ${type} | ${count} |\n`;
-                    }
+                    foldout += `\n</details>\n`;
 
-                    // guard against very large summaries over 1MB. Trim at a row boundary to avoid mangled tables.
+                    // Truncate foldout if over 1MB
                     const byteLimit = 1024 * 1024;
-                    if (Buffer.byteLength(table, 'utf8') > byteLimit) {
-                        const footer = `\n| ... | ... |\n\n***Summary truncated due to size limits.***\n`;
+                    if (Buffer.byteLength(foldout, 'utf8') > byteLimit) {
+                        const footer = `\n- ...\n\n***Summary truncated due to size limits.***\n</details>\n`;
                         const footerSize = Buffer.byteLength(footer, 'utf8');
-
-                        const lines = table.split('\n');
+                        const lines = foldout.split('\n');
                         let rebuilt = '';
-
                         for (const line of lines) {
                             const nextSize = Buffer.byteLength(rebuilt + line + '\n', 'utf8') + footerSize;
-
                             if (nextSize > byteLimit) {
                                 break;
                             }
-
                             rebuilt += `${line}\n`;
                         }
-
-                        table = rebuilt + footer;
+                        foldout = rebuilt + footer;
                     }
-
-                    fs.appendFileSync(githubSummary, table, { encoding: 'utf8' });
+                    fs.appendFileSync(githubSummary, foldout, { encoding: 'utf8' });
                 }
                 break;
             }

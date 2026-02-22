@@ -90,6 +90,7 @@ for raw_test in "${tests[@]}"; do
       ;;
     PlaymodeTestsErrors)
       dest="$UNITY_PROJECT_PATH/Assets/Tests/PlayMode/UnityCliTests"
+      asmdef_src="$GITHUB_WORKSPACE/unity-tests/UnityCliTests.PlayMode.asmdef"
       ;;
     EditmodeTestsErrors)
       dest="$UNITY_PROJECT_PATH/Assets/Tests/EditMode/UnityCliTests"
@@ -105,7 +106,7 @@ for raw_test in "${tests[@]}"; do
   mkdir -p "$dest"
   if [ -n "$asmdef_src" ]; then
     if [ ! -f "$asmdef_src" ]; then
-      echo "::error::Assembly definition for editmode tests not found at $asmdef_src"
+      echo "::error::Assembly definition for tests not found at $asmdef_src"
       failures=$((failures+1))
       continue
     fi
