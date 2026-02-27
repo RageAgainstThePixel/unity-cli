@@ -20,12 +20,18 @@ export class UTPBase {
     errors?: unknown[];
 }
 
+export class UTPAction extends UTPBase { }
+
 export class UTPMemoryLeak extends UTPBase {
     allocatedMemory?: number;
     memoryLabels?: Record<string, number> | Array<Record<string, number>>;
 }
 
+export class UTPMemoryLeaks extends UTPMemoryLeak { }
+
 export class UTPLogEntry extends UTPBase { }
+
+export class UTPCompiler extends UTPBase { }
 
 export class UTPTestPlan extends UTPBase {
     tests?: string[];
@@ -117,6 +123,8 @@ export class UTPPlayerBuildInfo extends UTPBase {
 }
 
 export type UTP =
+    | UTPAction
+    | UTPCompiler
     | UTPBase
     | UTPLogEntry
     | UTPTestPlan
@@ -127,6 +135,7 @@ export type UTP =
     | UTPQualitySettings
     | UTPTestStatus
     | UTPMemoryLeak
+    | UTPMemoryLeaks
     | UTPPlayerBuildInfo;
 
 export enum Phase {
