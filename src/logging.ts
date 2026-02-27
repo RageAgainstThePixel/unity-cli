@@ -19,13 +19,24 @@ function dedupeKey(e: UTP): string {
 }
 
 /**
+ * Returns true if the path looks absolute (Unix / or Windows X:/).
+ */
+function isAbsolutePath(file: string): boolean {
+    const norm = file.replace(/\\/g, '/');
+    if (norm.startsWith('/')) return true;
+    return /^[a-zA-Z]:\//.test(norm);
+}
+
+/**
  * Returns true if the entry's file is under the project path (or entry has no file).
- * projectPath is normalized to forward slashes; comparison is path-prefix.
+ * Relative paths (e.g. Assets/..., Packages/...) are always kept so Unity UTP log/compiler
+ * entries with relative file paths still appear in the summary.
  */
 function isEntryUnderProjectPath(e: UTP, projectPath: string): boolean {
     const file = (e.file || (e as { fileName?: string }).fileName || '').trim();
     if (!file) return true;
     const normFile = file.replace(/\\/g, '/');
+    if (!isAbsolutePath(normFile)) return true;
     const normProject = projectPath.replace(/\\/g, '/');
     const base = normProject.endsWith('/') ? normProject : normProject + '/';
     return normFile === normProject || normFile.startsWith(base);
@@ -105,6 +116,72 @@ function groupBySeverity(merged: UTP[]): { errorCritical: UTP[]; warning: UTP[];
         }
     }
     return { errorCritical, warning, info };
+}
+
+/** Single test result row for summary and CLI table. */
+export interface TestResultSummary {
+    status: string;
+    durationMs: number;
+    description: string;
+    message?: string;
+}
+
+/** Maps UTPTestStatus.state to display status (Unity/NUnit-style: 0 Inconclusive, 1 Passed, 2 Failed, 3 Skipped). */
+export function testStatusFromState(state: number | undefined): string {
+    switch (state) {
+        case 1: return '✅';
+        case 2: return '❌';
+        case 3: return '⏭️';
+        case 0:
+        default: return '◯';
+    }
+}
+
+/** Converts a single TestStatus UTP to TestResultSummary. Exported for CLI use. */
+export function utpToTestResultSummary(e: UTP): TestResultSummary {
+    const state = (e as { state?: number }).state;
+    const durationMs = e.duration ?? (e.durationMicroseconds != null ? e.durationMicroseconds / 1000 : 0);
+    const description = (e.name || e.description || '—').trim();
+    const msg = (e.message || '').trim();
+    const summary: TestResultSummary = {
+        status: testStatusFromState(state),
+        durationMs,
+        description,
+    };
+    if (msg !== '') {
+        summary.message = msg;
+    }
+    return summary;
+}
+
+/** Collects TestStatus entries from telemetry into TestResultSummary rows. */
+function collectTestResults(filtered: UTP[]): TestResultSummary[] {
+    return filtered.filter(e => e.type === 'TestStatus').map(utpToTestResultSummary);
+}
+
+/** Builds a markdown table string for test results (Status | Duration | Test). Exported for CLI use. */
+export function buildTestResultsTableMarkdown(testResults: TestResultSummary[], byteLimit: number, prefix?: string): string {
+    if (testResults.length === 0) return '';
+    const p = prefix ?? '';
+    let out = p + `### Test results\n\n`;
+    out += `| Status | Duration | Test |\n`;
+    out += `|--------|----------|------|\n`;
+    let shown = 0;
+    for (const row of testResults) {
+        const durationStr = row.durationMs >= 1000
+            ? `${(row.durationMs / 1000).toFixed(1)}s`
+            : `${Math.round(row.durationMs)} ms`;
+        const desc = row.description.length > 80 ? row.description.slice(0, 77) + '…' : row.description;
+        const line = `| ${row.status} | ${durationStr} | ${desc} |\n`;
+        if (Buffer.byteLength(out + line, 'utf8') > byteLimit) break;
+        out += line;
+        shown++;
+    }
+    if (shown < testResults.length) {
+        out += `| … | … | … and ${testResults.length - shown} more |\n`;
+    }
+    out += `\n`;
+    return out;
 }
 
 function truncateStr(s: string, max: number): string {
@@ -488,16 +565,16 @@ export class Logger {
                     const completedActions = filtered.filter(
                         e => e.type === 'Action' && e.phase === 'End'
                     );
+                    const testResults = collectTestResults(filtered);
                     const merged = buildMergedLogList(filtered);
                     const pathFiltered = filterMergedByPath(merged, options);
                     const bySeverity = groupBySeverity(pathFiltered);
-                    const errorCount = bySeverity.errorCritical.length;
                     const limit = SUMMARY_BYTE_LIMIT;
 
                     const builders: (() => string)[] = [
-                        () => this.buildSummaryTimelineAndMergedLog(name, completedActions, bySeverity, limit),
-                        () => this.buildSummaryCollapsibleWithMergedLog(name, completedActions, bySeverity, limit),
-                        () => this.buildSummaryTimelineAndCounts(name, completedActions, pathFiltered.length, limit),
+                        () => this.buildSummaryTimelineAndMergedLog(name, completedActions, bySeverity, testResults, limit),
+                        () => this.buildSummaryCollapsibleWithMergedLog(name, completedActions, bySeverity, testResults, limit),
+                        () => this.buildSummaryTimelineAndCounts(name, completedActions, pathFiltered.length, testResults, limit),
                     ];
                     let summary = '';
                     for (const build of builders) {
@@ -515,14 +592,14 @@ export class Logger {
     }
 
     /**
-     * Builds summary: optional stats, build timeline table (always first), then one <details> per
-     * severity that has messages (Error, Warning, Info). Truncates log content only when
-     * needed to stay under byteLimit.
+     * Builds summary: optional stats, build timeline table (only when actions exist), test results
+     * table (when present), then one <details> per severity (Error, Warning, Info).
      */
     private buildSummaryTimelineAndMergedLog(
         name: string,
         completedActions: UTP[],
         bySeverity: { errorCritical: UTP[]; warning: UTP[]; info: UTP[] },
+        testResults: TestResultSummary[],
         byteLimit: number
     ): string {
         let out = `## ${name} Summary\n\n`;
@@ -535,24 +612,31 @@ export class Logger {
         const totalStr = totalSec >= 60 ? `${Math.round(totalSec / 60)}m ${Math.round(totalSec % 60)}s` : `${totalSec.toFixed(1)}s`;
         out += `${bySeverity.errorCritical.length} errors, ${completedActions.length} actions, total ${totalStr}\n\n`;
 
-        out += `| Status | Duration | Errors | Step |\n`;
-        out += `|--------|----------|--------|------|\n`;
-        let timelineShown = 0;
-        for (const a of completedActions) {
-            const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
-            const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
-            const status = errCount > 0 ? '❌' : '✅';
-            const desc = (a.description || a.name || '—').trim();
-            const durationStr = Logger.formatDurationMs(durationMs);
-            const row = `| ${status} | ${durationStr} | ${errCount} | ${desc} |\n`;
-            if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
-            out += row;
-            timelineShown++;
+        if (completedActions.length > 0) {
+            out += `| Status | Duration | Errors | Step |\n`;
+            out += `|--------|----------|--------|------|\n`;
+            let timelineShown = 0;
+            for (const a of completedActions) {
+                const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
+                const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
+                const status = errCount > 0 ? '❌' : '✅';
+                const desc = (a.description || a.name || '—').trim();
+                const durationStr = Logger.formatDurationMs(durationMs);
+                const row = `| ${status} | ${durationStr} | ${errCount} | ${desc} |\n`;
+                if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
+                out += row;
+                timelineShown++;
+            }
+            if (timelineShown < completedActions.length) {
+                out += `| … | … | … | … and ${completedActions.length - timelineShown} more |\n`;
+            }
+            out += `\n`;
         }
-        if (timelineShown < completedActions.length) {
-            out += `| … | … | … | … and ${completedActions.length - timelineShown} more |\n`;
+
+        if (testResults.length > 0) {
+            const remaining = byteLimit - Buffer.byteLength(out, 'utf8');
+            out += buildTestResultsTableMarkdown(testResults, remaining, '');
         }
-        out += `\n`;
 
         const limit = byteLimit;
         const appendFoldout = (title: string, entries: UTP[], dropSuffix: string): void => {
@@ -590,6 +674,7 @@ export class Logger {
         name: string,
         completedActions: UTP[],
         bySeverity: { errorCritical: UTP[]; warning: UTP[]; info: UTP[] },
+        testResults: TestResultSummary[],
         byteLimit: number
     ): string {
         let out = `## ${name} Summary\n\n`;
@@ -610,6 +695,11 @@ export class Logger {
                 out += `| … | … | … | … and ${completedActions.length - timelineShown} more |\n`;
             }
             out += `\n</details>\n\n`;
+        }
+
+        if (testResults.length > 0) {
+            const remaining = byteLimit - Buffer.byteLength(out, 'utf8');
+            out += buildTestResultsTableMarkdown(testResults, remaining, '');
         }
 
         const limit = byteLimit;
@@ -638,38 +728,48 @@ export class Logger {
     }
 
     /**
-     * Fallback: build timeline table + counts table only (no log foldouts).
+     * Fallback: build timeline table (when actions exist) + test results table (when present) + counts table.
      * Used when even collapsible summary would exceed 1 MB.
      */
     private buildSummaryTimelineAndCounts(
         name: string,
         completedActions: UTP[],
         logCount: number,
+        testResults: TestResultSummary[],
         byteLimit: number
     ): string {
         let out = `## ${name} Summary\n\n`;
-        out += `| Status | Duration | Errors | Step |\n`;
-        out += `|--------|----------|--------|------|\n`;
-        let timelineShown = 0;
-        for (const a of completedActions) {
-            const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
-            const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
-            const status = errCount > 0 ? '❌' : '✅';
-            const desc = (a.description || a.name || '—').trim();
-            const row = `| ${status} | ${Logger.formatDurationMs(durationMs)} | ${errCount} | ${desc} |\n`;
-            if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
-            out += row;
-            timelineShown++;
+        if (completedActions.length > 0) {
+            out += `| Status | Duration | Errors | Step |\n`;
+            out += `|--------|----------|--------|------|\n`;
+            let timelineShown = 0;
+            for (const a of completedActions) {
+                const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
+                const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
+                const status = errCount > 0 ? '❌' : '✅';
+                const desc = (a.description || a.name || '—').trim();
+                const row = `| ${status} | ${Logger.formatDurationMs(durationMs)} | ${errCount} | ${desc} |\n`;
+                if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
+                out += row;
+                timelineShown++;
+            }
+            if (timelineShown < completedActions.length) {
+                out += `| … | … | … | … and ${completedActions.length - timelineShown} more |\n`;
+            }
+            out += `\n`;
         }
-        if (timelineShown < completedActions.length) {
-            out += `| … | … | … | … and ${completedActions.length - timelineShown} more |\n`;
+        if (testResults.length > 0) {
+            const remaining = byteLimit - Buffer.byteLength(out, 'utf8');
+            out += buildTestResultsTableMarkdown(testResults, remaining, '');
         }
-        out += `\n`;
         out += `| Type | Count |\n`;
         out += `|------|-------|\n`;
         out += `| Log | ${logCount} |\n`;
-        out += `| Actions | ${completedActions.length} |\n\n`;
-        out += `See annotations for details.\n`;
+        out += `| Actions | ${completedActions.length} |\n`;
+        if (testResults.length > 0) {
+            out += `| Tests | ${testResults.length} |\n`;
+        }
+        out += `\nSee annotations for details.\n`;
         return out;
     }
 }

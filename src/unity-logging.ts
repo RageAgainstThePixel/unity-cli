@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { LogLevel, Logger } from './logging';
+import { LogLevel, Logger, buildTestResultsTableMarkdown, TestResultSummary, utpToTestResultSummary } from './logging';
 import { Delay, WaitForFileToBeUnlocked } from './utilities';
 import {
     Phase,
@@ -991,6 +991,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
     const logPollingInterval = 250;
     let pendingPartialLine = '';
     const telemetry: UTP[] = [];
+    const testResults: TestResultSummary[] = [];
     const logger = Logger.instance;
     const actionAccumulator = new ActionTelemetryAccumulator();
     const actionTableRenderer = new ActionTableRenderer(process.stdout.isTTY === true && process.env.CI !== 'true');
@@ -1014,6 +1015,10 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
             telemetry,
             projectPath != null && projectPath !== '' ? { projectPath } : undefined
         );
+        if (testResults.length > 0) {
+            const table = buildTestResultsTableMarkdown(testResults, 1024 * 1024, '\n');
+            process.stdout.write(table);
+        }
     };
 
     const writeStdoutThenTableContent = (content: string, restoreTable: boolean = true): void => {
@@ -1038,6 +1043,9 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                 const utpJson = JSON.parse(sanitizedJson);
                 const utp = normalizeTelemetryEntry(utpJson);
                 telemetry.push(utp);
+                if (utp.type === 'TestStatus') {
+                    testResults.push(utpToTestResultSummary(utp));
+                }
 
                 if (utp.message && 'severity' in utp &&
                     (utp.severity === Severity.Error || utp.severity === Severity.Exception || utp.severity === Severity.Assert)) {
