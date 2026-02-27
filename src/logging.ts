@@ -1,5 +1,85 @@
 import * as fs from 'fs';
-import { UTP } from './utp/utp';
+import { UTP, Severity } from './utp/utp';
+
+const TRUNCATE_MSG = 120;
+const SUMMARY_BYTE_LIMIT = 1024 * 1024;
+
+/** Severity order for display: Error first, then Warning, then Info */
+function severityRank(s: string | undefined): number {
+    if (s === Severity.Error || s === Severity.Exception || s === Severity.Assert) return 0;
+    if (s === Severity.Warning) return 1;
+    return 2; // Info or unknown
+}
+
+function dedupeKey(e: UTP): string {
+    const msg = (e.message || '').trim();
+    const file = (e.file || (e as { fileName?: string }).fileName || '').replace(/\\/g, '/');
+    const line = e.line ?? (e as { lineNumber?: number }).lineNumber ?? 0;
+    return `${msg}\n${file}\n${line}`;
+}
+
+/**
+ * Builds one merged list from LogEntry, Compiler, and error-severity entries.
+ * Deduplicated by message+file+line, sorted by severity (Error, Warning, Info).
+ */
+function buildMergedLogList(filtered: UTP[]): UTP[] {
+    const logEntries = filtered.filter(e => e.type === 'LogEntry');
+    const compilerEntries = filtered.filter(e => e.type === 'Compiler');
+    const isErrorSeverity = (s: string | undefined) =>
+        s === Severity.Error || s === Severity.Exception || s === Severity.Assert;
+    const errorSeverityEntries = filtered.filter(
+        e => (e.type === 'LogEntry' || e.type === 'Compiler') && isErrorSeverity(e.severity)
+    );
+
+    const seen = new Set<string>();
+    const merged: UTP[] = [];
+
+    const add = (e: UTP) => {
+        const key = dedupeKey(e);
+        if (seen.has(key)) return;
+        seen.add(key);
+        merged.push(e);
+    };
+
+    for (const e of logEntries) add(e);
+    for (const e of compilerEntries) add(e);
+    for (const e of errorSeverityEntries) add(e);
+
+    merged.sort((a, b) => severityRank(a.severity) - severityRank(b.severity));
+    return merged;
+}
+
+/** Groups merged log by severity for foldouts (Error, Warning, Info). */
+function groupBySeverity(merged: UTP[]): { errorCritical: UTP[]; warning: UTP[]; info: UTP[] } {
+    const errorCritical: UTP[] = [];
+    const warning: UTP[] = [];
+    const info: UTP[] = [];
+    for (const e of merged) {
+        if (e.severity === Severity.Error || e.severity === Severity.Exception || e.severity === Severity.Assert) {
+            errorCritical.push(e);
+        } else if (e.severity === Severity.Warning) {
+            warning.push(e);
+        } else {
+            info.push(e);
+        }
+    }
+    return { errorCritical, warning, info };
+}
+
+function truncateStr(s: string, max: number): string {
+    return s.length <= max ? s : s.slice(0, max) + '…';
+}
+
+function formatLogEntryLine(e: UTP, maxMsgLen: number = TRUNCATE_MSG): string {
+    const msg = truncateStr((e.message || '').trim(), maxMsgLen);
+    let line = `- ${msg}\n`;
+    const file = (e.file || (e as { fileName?: string }).fileName || '').replace(/\\/g, '/');
+    if (file && (e.line !== undefined && e.line > 0 || (e as { lineNumber?: number }).lineNumber)) {
+        const ln = e.line ?? (e as { lineNumber?: number }).lineNumber ?? '';
+        line += `  \`${file}${ln ? `(${ln})` : ''}\`\n`;
+    }
+    return line;
+}
 
 export enum LogLevel {
     DEBUG = 'debug',
@@ -259,8 +339,6 @@ export class Logger {
         }
     }
 
-    private static readonly SUMMARY_BYTE_LIMIT = 1024 * 1024;
-
     private static formatDurationMs(ms: number | undefined): string {
         if (ms === undefined || !Number.isFinite(ms)) { return '—'; }
         if (ms < 1000) { return `${Math.round(ms)}ms`; }
@@ -294,22 +372,18 @@ export class Logger {
                     const filtered = telemetry.filter(entry => !excludedTypes.has(entry.type || ''));
                     if (filtered.length === 0) { return; }
 
-                    const severityError = (s: string | undefined): boolean =>
-                        s === 'Error' || s === 'Exception' || s === 'Assert';
-                    const errorEntries = filtered.filter(
-                        e => (e.type === 'LogEntry' || e.type === 'Compiler') && severityError(e.severity)
-                    );
                     const completedActions = filtered.filter(
                         e => e.type === 'Action' && e.phase === 'End'
                     );
-                    const logEntries = filtered.filter(e => e.type === 'LogEntry');
-                    const compilerEntries = filtered.filter(e => e.type === 'Compiler');
+                    const merged = buildMergedLogList(filtered);
+                    const bySeverity = groupBySeverity(merged);
+                    const errorCount = bySeverity.errorCritical.length;
+                    const limit = SUMMARY_BYTE_LIMIT;
 
-                    const limit = Logger.SUMMARY_BYTE_LIMIT;
                     const builders: (() => string)[] = [
-                        () => this.buildSummaryCollapsible(name, errorEntries, completedActions, logEntries, compilerEntries),
-                        () => this.buildSummaryCountsOnly(name, errorEntries, logEntries.length, compilerEntries.length, completedActions.length),
-                        () => this.buildSummaryErrorsAndTimeline(name, errorEntries, completedActions),
+                        () => this.buildSummaryTimelineAndMergedLog(name, completedActions, bySeverity, limit),
+                        () => this.buildSummaryCollapsibleWithMergedLog(name, completedActions, bySeverity, limit),
+                        () => this.buildSummaryTimelineAndCounts(name, completedActions, merged.length, limit),
                     ];
                     let summary = '';
                     for (const build of builders) {
@@ -327,143 +401,161 @@ export class Logger {
     }
 
     /**
-     * Builds summary with collapsible sections per type
-     * (Errors, Build timeline, LogEntry, Compiler), one line per entry.
+     * Builds summary: optional stats, build timeline table (always first), then one <details> per
+     * severity that has messages (Error, Warning, Info). Truncates log content only when
+     * needed to stay under byteLimit.
      */
-    private buildSummaryCollapsible(
+    private buildSummaryTimelineAndMergedLog(
         name: string,
-        errorEntries: UTP[],
         completedActions: UTP[],
-        logEntries: UTP[],
-        compilerEntries: UTP[]
+        bySeverity: { errorCritical: UTP[]; warning: UTP[]; info: UTP[] },
+        byteLimit: number
     ): string {
-        const MAX_ERROR = 20;
-        const MAX_ACTION = 50;
-        const MAX_LOG = 50;
-        const MAX_COMPILER = 50;
-        const TRUNCATE_MSG = 120;
-
         let out = `## ${name} Summary\n\n`;
 
-        if (errorEntries.length > 0) {
-            out += `<details><summary>Errors (${errorEntries.length})</summary>\n\n`;
-            const shown = errorEntries.slice(0, MAX_ERROR);
-            for (const e of shown) {
-                out += `- ${Logger.truncateStr((e.message || '').trim(), TRUNCATE_MSG)}\n`;
-                if (e.file && e.line !== undefined && e.line > 0) {
-                    const file = (e.file || '').replace(/\\/g, '/');
-                    out += `  \`${file}:${e.line}\`\n`;
-                }
-            }
-            if (errorEntries.length > MAX_ERROR) {
-                out += `- ... and ${errorEntries.length - MAX_ERROR} more (see annotations).\n`;
-            }
-            out += `\n</details>\n\n`;
-        }
+        const totalDurationMs = completedActions.reduce(
+            (sum, a) => sum + (a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : 0)),
+            0
+        );
+        const totalSec = totalDurationMs / 1000;
+        const totalStr = totalSec >= 60 ? `${Math.round(totalSec / 60)}m ${Math.round(totalSec % 60)}s` : `${totalSec.toFixed(1)}s`;
+        out += `${bySeverity.errorCritical.length} errors, ${completedActions.length} actions, total ${totalStr}\n\n`;
 
-        if (completedActions.length > 0) {
-            out += `<details><summary>Build timeline (${completedActions.length} actions)</summary>\n\n`;
-            const shown = completedActions.slice(0, MAX_ACTION);
-            for (const a of shown) {
-                const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
-                const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
-                const status = errCount > 0 ? '❌' : '✅';
-                const desc = Logger.truncateStr((a.description || a.name || '—').trim(), 60);
-                out += `${status} ${desc} ${Logger.formatDurationMs(durationMs)} (${errCount} errors)\n`;
-            }
-            out += `\n</details>\n\n`;
-        }
-
-        if (logEntries.length > 0) {
-            out += `<details><summary>LogEntry (${logEntries.length})</summary>\n\n`;
-            const shown = logEntries.slice(0, MAX_LOG);
-            for (const e of shown) {
-                out += `- ${e.severity ?? 'Info'}: ${Logger.truncateStr((e.message || '').trim(), TRUNCATE_MSG)}\n`;
-            }
-            if (logEntries.length > MAX_LOG) {
-                out += `- ... and ${logEntries.length - MAX_LOG} more.\n`;
-            }
-            out += `\n</details>\n\n`;
-        }
-
-        if (compilerEntries.length > 0) {
-            out += `<details><summary>Compiler (${compilerEntries.length})</summary>\n\n`;
-            const shown = compilerEntries.slice(0, MAX_COMPILER);
-            for (const e of shown) {
-                out += `- ${e.severity ?? 'Info'}: ${Logger.truncateStr((e.message || '').trim(), TRUNCATE_MSG)}\n`;
-            }
-            if (compilerEntries.length > MAX_COMPILER) {
-                out += `- ... and ${compilerEntries.length - MAX_COMPILER} more.\n`;
-            }
-            out += `\n</details>\n\n`;
-        }
-
-        return out;
-    }
-
-    /**
-     * Builds summary with type counts in a markdown table.
-     * When there are errors, adds a line pointing to annotations.
-     */
-    private buildSummaryCountsOnly(
-        name: string,
-        errorEntries: UTP[],
-        logEntryCount: number,
-        compilerCount: number,
-        actionCount: number
-    ): string {
-        const errorCount = errorEntries.length;
-
-        let out = `## ${name} Summary\n\n`;
-        out += `| Type | Count |\n`;
-        out += `|------|-------|\n`;
-        out += `| Errors | ${errorCount} |\n`;
-        out += `| LogEntry | ${logEntryCount} |\n`;
-        out += `| Compiler | ${compilerCount} |\n`;
-        out += `| Actions | ${actionCount} |\n\n`;
-        if (errorCount > 0) {
-            out += `See annotations for details.\n`;
-        }
-        return out;
-    }
-
-    /**
-     * Builds minimal summary: errors list with optional file:line,
-     * then one line per completed action (no LogEntry/Compiler).
-     */
-    private buildSummaryErrorsAndTimeline(
-        name: string,
-        errorEntries: UTP[],
-        completedActions: UTP[]
-    ): string {
-        const MAX_ERROR = 20;
-        const TRUNCATE_MSG = 120;
-
-        let out = `## ${name} Summary\n\n`;
-
-        if (errorEntries.length > 0) {
-            const shown = errorEntries.slice(0, MAX_ERROR);
-            for (const e of shown) {
-                out += `- ${Logger.truncateStr((e.message || '').trim(), TRUNCATE_MSG)}\n`;
-                if (e.file && e.line !== undefined && e.line > 0) {
-                    const file = (e.file || '').replace(/\\/g, '/');
-                    out += `  \`${file}:${e.line}\`\n`;
-                }
-            }
-            if (errorEntries.length > MAX_ERROR) {
-                out += `- ... and ${errorEntries.length - MAX_ERROR} more (see annotations).\n`;
-            }
-            out += `\n`;
-        }
-
+        out += `| Status | Duration | Errors | Step |\n`;
+        out += `|--------|----------|--------|------|\n`;
+        let timelineShown = 0;
         for (const a of completedActions) {
             const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
             const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
             const status = errCount > 0 ? '❌' : '✅';
-            const desc = Logger.truncateStr((a.description || a.name || '—').trim(), 60);
-            out += `${status} ${desc} ${Logger.formatDurationMs(durationMs)} (${errCount} errors)\n`;
+            const desc = (a.description || a.name || '—').trim();
+            const durationStr = Logger.formatDurationMs(durationMs);
+            const row = `| ${status} | ${durationStr} | ${errCount} | ${desc} |\n`;
+            if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
+            out += row;
+            timelineShown++;
+        }
+        if (timelineShown < completedActions.length) {
+            out += `| … | … | … | … and ${completedActions.length - timelineShown} more |\n`;
+        }
+        out += `\n`;
+
+        const limit = byteLimit;
+        const appendFoldout = (title: string, entries: UTP[], dropSuffix: string): void => {
+            if (entries.length === 0) return;
+            out += `<details><summary>${title} (${entries.length})</summary>\n\n`;
+            let shown = 0;
+            let omitted = 0;
+            for (const e of entries) {
+                const line = formatLogEntryLine(e);
+                if (Buffer.byteLength(out + line, 'utf8') > limit) {
+                    omitted = entries.length - shown;
+                    break;
+                }
+                out += line;
+                shown++;
+            }
+            if (omitted > 0) {
+                out += `- ... and ${omitted} more ${dropSuffix}\n`;
+            }
+            out += `\n</details>\n\n`;
+        };
+
+        appendFoldout('Error', bySeverity.errorCritical, '(see annotations).');
+        appendFoldout('Warning', bySeverity.warning, '(truncated; see full log).');
+        appendFoldout('Info', bySeverity.info, '(truncated; see full log).');
+
+        return out;
+    }
+
+    /**
+     * Builds summary with timeline in a <details> and merged log foldouts by severity.
+     * Used when primary builder would exceed size limit.
+     */
+    private buildSummaryCollapsibleWithMergedLog(
+        name: string,
+        completedActions: UTP[],
+        bySeverity: { errorCritical: UTP[]; warning: UTP[]; info: UTP[] },
+        byteLimit: number
+    ): string {
+        let out = `## ${name} Summary\n\n`;
+
+        if (completedActions.length > 0) {
+            out += `<details><summary>Build timeline (${completedActions.length} actions)</summary>\n\n`;
+            out += `| Status | Duration | Errors | Step |\n`;
+            out += `|--------|----------|--------|------|\n`;
+            let timelineShown = 0;
+            for (const a of completedActions) {
+                const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
+                const row = `| ${errCount > 0 ? '❌' : '✅'} | ${Logger.formatDurationMs(a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined))} | ${errCount} | ${(a.description || a.name || '—').trim()} |\n`;
+                if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
+                out += row;
+                timelineShown++;
+            }
+            if (timelineShown < completedActions.length) {
+                out += `| … | … | … | … and ${completedActions.length - timelineShown} more |\n`;
+            }
+            out += `\n</details>\n\n`;
         }
 
+        const limit = byteLimit;
+        const appendFoldout = (title: string, entries: UTP[], dropSuffix: string): void => {
+            if (entries.length === 0) return;
+            out += `<details><summary>${title} (${entries.length})</summary>\n\n`;
+            let shown = 0;
+            let omitted = 0;
+            for (const e of entries) {
+                const line = formatLogEntryLine(e);
+                if (Buffer.byteLength(out + line, 'utf8') > limit) {
+                    omitted = entries.length - shown;
+                    break;
+                }
+                out += line;
+                shown++;
+            }
+            if (omitted > 0) out += `- ... and ${omitted} more ${dropSuffix}\n`;
+            out += `\n</details>\n\n`;
+        };
+        appendFoldout('Error', bySeverity.errorCritical, '(see annotations).');
+        appendFoldout('Warning', bySeverity.warning, '(truncated; see full log).');
+        appendFoldout('Info', bySeverity.info, '(truncated; see full log).');
+
+        return out;
+    }
+
+    /**
+     * Fallback: build timeline table + counts table only (no log foldouts).
+     * Used when even collapsible summary would exceed 1 MB.
+     */
+    private buildSummaryTimelineAndCounts(
+        name: string,
+        completedActions: UTP[],
+        logCount: number,
+        byteLimit: number
+    ): string {
+        let out = `## ${name} Summary\n\n`;
+        out += `| Status | Duration | Errors | Step |\n`;
+        out += `|--------|----------|--------|------|\n`;
+        let timelineShown = 0;
+        for (const a of completedActions) {
+            const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
+            const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
+            const status = errCount > 0 ? '❌' : '✅';
+            const desc = (a.description || a.name || '—').trim();
+            const row = `| ${status} | ${Logger.formatDurationMs(durationMs)} | ${errCount} | ${desc} |\n`;
+            if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
+            out += row;
+            timelineShown++;
+        }
+        if (timelineShown < completedActions.length) {
+            out += `| … | … | … | … and ${completedActions.length - timelineShown} more |\n`;
+        }
+        out += `\n`;
+        out += `| Type | Count |\n`;
+        out += `|------|-------|\n`;
+        out += `| Log | ${logCount} |\n`;
+        out += `| Actions | ${completedActions.length} |\n\n`;
+        out += `See annotations for details.\n`;
         return out;
     }
 }
