@@ -38,12 +38,11 @@ clean_build_outputs() {
 # expected_status: 0 = should succeed, 1 = should fail
 expected_status_for() {
   case "$1" in
-    CompilerWarnings) echo 0 ;;
-    BuildWarnings) echo 0 ;;
-    CompilerErrors) echo 1 ;;
-    BuildErrors) echo 1 ;;
-    PlaymodeTestsErrors) echo 1 ;;
-    EditmodeTestsErrors) echo 1 ;;
+    CompilerWarnings|BuildWarnings) echo 0 ;;
+    CompilerErrors|BuildErrors) echo 1 ;;
+    PlaymodeTestsErrors|EditmodeTestsErrors) echo 1 ;;
+    EditmodeSuite|PlaymodeSuite) echo 1 ;;
+    EditmodeTestsPassing|EditmodeTestsSkipped|PlaymodeTestsPassing|PlaymodeTestsSkipped) echo 0 ;;
     *) echo 0 ;;
   esac
 }
@@ -52,8 +51,8 @@ expected_message_for() {
   case "$1" in
     CompilerErrors) echo "Intentional compiler error" ;;
     BuildErrors) echo "Intentional build failure" ;;
-    PlaymodeTestsErrors) echo "Intentional playmode failure" ;;
-    EditmodeTestsErrors) echo "Intentional editmode failure" ;;
+    PlaymodeTestsErrors|PlaymodeSuite) echo "Intentional playmode failure" ;;
+    EditmodeTestsErrors|EditmodeSuite) echo "Intentional editmode failure" ;;
     CompilerWarnings) echo "Intentional warning" ;;
     BuildWarnings) echo "Intentional build warning" ;;
     *) echo "" ;;
@@ -70,7 +69,11 @@ for raw_test in "${tests[@]}"; do
   fi
 
   src="$GITHUB_WORKSPACE/unity-tests/${test_name}.cs"
-  if [ ! -f "$src" ]; then
+  is_suite=0
+  case "$test_name" in
+    EditmodeSuite|PlaymodeSuite) is_suite=1 ;;
+  esac
+  if [ "$is_suite" -eq 0 ] && [ ! -f "$src" ]; then
     echo "::error::Requested test '$test_name' not found at $src"
     failures=$((failures+1))
     continue
@@ -88,13 +91,23 @@ for raw_test in "${tests[@]}"; do
     BuildWarnings|BuildErrors)
       dest="$UNITY_PROJECT_PATH/Assets/Editor/UnityCliTests"
       ;;
-    PlaymodeTestsErrors)
+    PlaymodeTestsErrors|PlaymodeTestsPassing|PlaymodeTestsSkipped)
       dest="$UNITY_PROJECT_PATH/Assets/Tests/PlayMode/UnityCliTests"
       asmdef_src="$GITHUB_WORKSPACE/unity-tests/UnityCliTests.PlayMode.asmdef"
       ;;
-    EditmodeTestsErrors)
+    EditmodeTestsErrors|EditmodeTestsPassing|EditmodeTestsSkipped)
       dest="$UNITY_PROJECT_PATH/Assets/Tests/EditMode/UnityCliTests"
       asmdef_src="$GITHUB_WORKSPACE/unity-tests/UnityCliTests.EditMode.Editor.asmdef"
+      ;;
+    EditmodeSuite)
+      dest="$UNITY_PROJECT_PATH/Assets/Tests/EditMode/UnityCliTests"
+      asmdef_src="$GITHUB_WORKSPACE/unity-tests/UnityCliTests.EditMode.Editor.asmdef"
+      suite_sources="EditmodeTestsErrors,EditmodeTestsPassing,EditmodeTestsSkipped"
+      ;;
+    PlaymodeSuite)
+      dest="$UNITY_PROJECT_PATH/Assets/Tests/PlayMode/UnityCliTests"
+      asmdef_src="$GITHUB_WORKSPACE/unity-tests/UnityCliTests.PlayMode.asmdef"
+      suite_sources="PlaymodeTestsErrors,PlaymodeTestsPassing,PlaymodeTestsSkipped"
       ;;
     *)
       echo "::error::Unknown test selection '$test_name'"
@@ -112,16 +125,45 @@ for raw_test in "${tests[@]}"; do
     fi
     cp "$asmdef_src" "$dest/"
   fi
-  cp "$src" "$dest/"
-  echo "Running test: $test_name (copied to $dest)"
+
+  if [ -n "${suite_sources:-}" ]; then
+    IFS=',' read -ra suite_files <<< "$suite_sources"
+    for f in "${suite_files[@]}"; do
+      f="${f// /}"
+      suite_src="$GITHUB_WORKSPACE/unity-tests/${f}.cs"
+      if [ -f "$suite_src" ]; then
+        cp "$suite_src" "$dest/"
+      fi
+    done
+    unset suite_sources
+    echo "Running suite: $test_name (copied ${#suite_files[@]} test files to $dest)"
+  elif [ -f "$src" ]; then
+    cp "$src" "$dest/"
+    echo "Running test: $test_name (copied to $dest)"
+  else
+    echo "::error::Requested test '$test_name' not found at $src"
+    failures=$((failures+1))
+    continue
+  fi
 
   validate_rc=0
   build_rc=0
 
   ran_custom_flow=0
 
-  if [ "$test_name" = "EditmodeTestsErrors" ]; then
+  if [ "$test_name" = "EditmodeTestsErrors" ] || [ "$test_name" = "EditmodeTestsPassing" ] || [ "$test_name" = "EditmodeTestsSkipped" ] || [ "$test_name" = "EditmodeSuite" ]; then
     unity-cli run --log-name "${test_name}-EditMode" -runTests -testPlatform editmode -assemblyNames "UnityCli.EditMode.EditorTests" -testResults "$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml" -quit || validate_rc=$?
+
+    results_xml="$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml"
+    if ! grep -q "<test-case " "$results_xml" 2>/dev/null; then
+      validate_rc=1
+    fi
+    build_rc=$validate_rc
+    ran_custom_flow=1
+  fi
+
+  if [ "$test_name" = "PlaymodeTestsErrors" ] || [ "$test_name" = "PlaymodeTestsPassing" ] || [ "$test_name" = "PlaymodeTestsSkipped" ] || [ "$test_name" = "PlaymodeSuite" ]; then
+    unity-cli run --log-name "${test_name}-PlayMode" -runTests -testPlatform playmode -assemblyNames "UnityCli.PlayMode.Tests" -testResults "$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml" -quit || validate_rc=$?
 
     results_xml="$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml"
     if ! grep -q "<test-case " "$results_xml" 2>/dev/null; then

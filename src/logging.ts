@@ -639,9 +639,10 @@ export class Logger {
         }
 
         const limit = byteLimit;
-        const appendFoldout = (title: string, entries: UTP[], dropSuffix: string): void => {
+        const appendFoldout = (title: string, entries: UTP[], dropSuffix: string, openByDefault?: boolean): void => {
             if (entries.length === 0) return;
-            out += `<details><summary>${title} (${entries.length})</summary>\n\n`;
+            const openAttr = openByDefault ? ' open' : '';
+            out += `<details${openAttr}><summary>${title} (${entries.length})</summary>\n\n`;
             let shown = 0;
             let omitted = 0;
             for (const e of entries) {
@@ -659,7 +660,7 @@ export class Logger {
             out += `\n</details>\n\n`;
         };
 
-        appendFoldout('Error', bySeverity.errorCritical, '(see annotations).');
+        appendFoldout('Error', bySeverity.errorCritical, '(see annotations).', true);
         appendFoldout('Warning', bySeverity.warning, '(truncated; see full log).');
         appendFoldout('Info', bySeverity.info, '(truncated; see full log).');
 
@@ -703,9 +704,10 @@ export class Logger {
         }
 
         const limit = byteLimit;
-        const appendFoldout = (title: string, entries: UTP[], dropSuffix: string): void => {
+        const appendFoldout = (title: string, entries: UTP[], dropSuffix: string, openByDefault?: boolean): void => {
             if (entries.length === 0) return;
-            out += `<details><summary>${title} (${entries.length})</summary>\n\n`;
+            const openAttr = openByDefault ? ' open' : '';
+            out += `<details${openAttr}><summary>${title} (${entries.length})</summary>\n\n`;
             let shown = 0;
             let omitted = 0;
             for (const e of entries) {
@@ -720,7 +722,7 @@ export class Logger {
             if (omitted > 0) out += `- ... and ${omitted} more ${dropSuffix}\n`;
             out += `\n</details>\n\n`;
         };
-        appendFoldout('Error', bySeverity.errorCritical, '(see annotations).');
+        appendFoldout('Error', bySeverity.errorCritical, '(see annotations).', true);
         appendFoldout('Warning', bySeverity.warning, '(truncated; see full log).');
         appendFoldout('Info', bySeverity.info, '(truncated; see full log).');
 

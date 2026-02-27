@@ -23,11 +23,11 @@ runs:
       working-directory: ${{ inputs.unity-project-path }}
       run: |
         set -euo pipefail
-        tests_input="CompilerWarnings,CompilerErrors,BuildWarnings,BuildErrors,PlaymodeTestsErrors,EditmodeTestsErrors"
+        tests_input="CompilerWarnings,CompilerErrors,BuildWarnings,BuildErrors,PlaymodeTestsErrors,EditmodeTestsErrors,EditmodeTestsPassing,EditmodeTestsSkipped,PlaymodeTestsPassing,PlaymodeTestsSkipped,EditmodeSuite,PlaymodeSuite"
         echo "TESTS_INPUT=$tests_input" >> $GITHUB_ENV
 
         needs_test_framework=false
-        if [[ "$tests_input" == *"PlaymodeTestsErrors"* || "$tests_input" == *"EditmodeTestsErrors"* ]]; then
+        if [[ "$tests_input" == *"PlaymodeTests"* || "$tests_input" == *"EditmodeTests"* || "$tests_input" == *"EditmodeSuite"* || "$tests_input" == *"PlaymodeSuite"* ]]; then
           needs_test_framework=true
         fi
 
@@ -35,6 +35,7 @@ runs:
         openupm add com.utilities.buildpipeline
         if [ "$needs_test_framework" = true ]; then
           openupm add com.unity.test-framework
+          openupm add com.unity.test-framework.utp-reporter || true
         fi
 
     - name: Run tests
