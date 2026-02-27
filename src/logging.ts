@@ -135,35 +135,38 @@ function normalizeMessageForDisplay(
 
     // path(line,col): e.g. Assets/File.cs(2,8): error ...
     const parenColon = trimmed.match(/^(.+?)\((\d+),(\d+)\):\s*/);
-    if (parenColon) {
+    if (parenColon && parenColon[1] != null && parenColon[2] != null && parenColon[3] != null) {
+        const fullMatch = parenColon[0];
         const msgPath = parenColon[1].replace(/\\/g, '/');
         const msgLine = parseInt(parenColon[2], 10);
         const msgCol = parseInt(parenColon[3], 10);
         const pathMatches = msgPath === normFile || normFile.endsWith(msgPath) || msgPath.endsWith(normFile);
         if (pathMatches && (line === undefined || line === msgLine)) {
-            return { message: trimmed.slice(parenColon[0].length).trim(), column: msgCol };
+            return { message: trimmed.slice(fullMatch.length).trim(), column: msgCol };
         }
     }
 
     // path(line): e.g. Assets/File.cs(2): ...
     const parenOnly = trimmed.match(/^(.+?)\((\d+)\):\s*/);
-    if (parenOnly) {
+    if (parenOnly && parenOnly[1] != null && parenOnly[2] != null) {
+        const fullMatch = parenOnly[0];
         const msgPath = parenOnly[1].replace(/\\/g, '/');
         const msgLine = parseInt(parenOnly[2], 10);
         const pathMatches = msgPath === normFile || normFile.endsWith(msgPath) || msgPath.endsWith(normFile);
         if (pathMatches && (line === undefined || line === msgLine)) {
-            return { message: trimmed.slice(parenOnly[0].length).trim() };
+            return { message: trimmed.slice(fullMatch.length).trim() };
         }
     }
 
     // path:line: e.g. path/to/file.cs:10:
     const pathLineColon = trimmed.match(/^(.+?):(\d+):\s*/);
-    if (pathLineColon) {
+    if (pathLineColon && pathLineColon[1] != null && pathLineColon[2] != null) {
+        const fullMatch = pathLineColon[0];
         const msgPath = pathLineColon[1].replace(/\\/g, '/');
         const msgLine = parseInt(pathLineColon[2], 10);
         const pathMatches = msgPath === normFile || normFile.endsWith(msgPath) || msgPath.endsWith(normFile);
         if (pathMatches && (line === undefined || line === msgLine)) {
-            return { message: trimmed.slice(pathLineColon[0].length).trim() };
+            return { message: trimmed.slice(fullMatch.length).trim() };
         }
     }
 
