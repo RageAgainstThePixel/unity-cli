@@ -1009,7 +1009,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
         telemetryFlushed = true;
         await writeUtpTelemetryLog(utpLogPath, telemetry, logger);
         const parsed = path.parse(logPath);
-        Logger.instance.CI_appendWorkflowSummary(parsed.name, telemetry);
+        Logger.instance.CI_appendWorkflowSummary(parsed.name, telemetry, { projectPath: projectPath ?? undefined });
     };
 
     const writeStdoutThenTableContent = (content: string, restoreTable: boolean = true): void => {

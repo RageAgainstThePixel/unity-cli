@@ -19,6 +19,31 @@ function dedupeKey(e: UTP): string {
 }
 
 /**
+ * Returns true if the entry's file is under the project path (or entry has no file).
+ * projectPath is normalized to forward slashes; comparison is path-prefix.
+ */
+function isEntryUnderProjectPath(e: UTP, projectPath: string): boolean {
+    const file = (e.file || (e as { fileName?: string }).fileName || '').trim();
+    if (!file) return true;
+    const normFile = file.replace(/\\/g, '/');
+    const normProject = projectPath.replace(/\\/g, '/');
+    const base = normProject.endsWith('/') ? normProject : normProject + '/';
+    return normFile === normProject || normFile.startsWith(base);
+}
+
+/**
+ * Returns true if the entry's file looks like a Unity engine path (should be omitted when not using projectPath).
+ */
+function isUnityEnginePath(file: string): boolean {
+    const norm = file.replace(/\\/g, '/');
+    if (UNITY_ENGINE_PATH_PREFIXES.some(p => norm.startsWith(p))) return true;
+    if (norm.includes('/Runtime/') || norm.includes('\\Runtime\\')) return true;
+    if (!norm.endsWith('.cpp')) return false;
+    const underProject = norm.includes('/Assets/') || norm.includes('/Packages/') || norm.includes('/Library/PackageCache/');
+    return !underProject;
+}
+
+/**
  * Builds one merged list from LogEntry, Compiler, and error-severity entries.
  * Deduplicated by message+file+line, sorted by severity (Error, Warning, Info).
  */
@@ -49,6 +74,22 @@ function buildMergedLogList(filtered: UTP[]): UTP[] {
     return merged;
 }
 
+/**
+ * Filters merged list to project-relevant entries only.
+ * When projectPath is set: keep entries with no file or file under projectPath.
+ * When projectPath is not set: exclude Unity engine paths only (keep PackageCache and project paths).
+ */
+function filterMergedByPath(merged: UTP[], options: { projectPath?: string } | undefined): UTP[] {
+    if (options?.projectPath != null && options.projectPath !== '') {
+        return merged.filter(e => isEntryUnderProjectPath(e, options.projectPath!));
+    }
+    return merged.filter(e => {
+        const file = (e.file || (e as { fileName?: string }).fileName || '').trim();
+        if (!file) return true;
+        return !isUnityEnginePath(file);
+    });
+}
+
 /** Groups merged log by severity for foldouts (Error, Warning, Info). */
 function groupBySeverity(merged: UTP[]): { errorCritical: UTP[]; warning: UTP[]; info: UTP[] } {
     const errorCritical: UTP[] = [];
@@ -70,15 +111,84 @@ function truncateStr(s: string, max: number): string {
     return s.length <= max ? s : s.slice(0, max) + '…';
 }
 
-function formatLogEntryLine(e: UTP, maxMsgLen: number = TRUNCATE_MSG): string {
-    const msg = truncateStr((e.message || '').trim(), maxMsgLen);
-    let line = `- ${msg}\n`;
-    const file = (e.file || (e as { fileName?: string }).fileName || '').replace(/\\/g, '/');
-    if (file && (e.line !== undefined && e.line > 0 || (e as { lineNumber?: number }).lineNumber)) {
-        const ln = e.line ?? (e as { lineNumber?: number }).lineNumber ?? '';
-        line += `  \`${file}${ln ? `(${ln})` : ''}\`\n`;
+/** Paths to treat as Unity engine (omit from summary when using heuristic filter). */
+const UNITY_ENGINE_PATH_PREFIXES = [
+    'Runtime/',
+    './Runtime/',
+    'Modules/',
+    './Modules/',
+];
+
+/**
+ * Normalizes a log message for display by stripping a redundant file:line prefix
+ * when it matches the entry's file/line so the path appears only once.
+ * Returns the normalized message and optional column if present in the prefix.
+ */
+function normalizeMessageForDisplay(
+    message: string,
+    file: string,
+    line: number | undefined
+): { message: string; column?: number } {
+    const trimmed = message.trim();
+    const normFile = file.replace(/\\/g, '/');
+    if (!normFile && line === undefined) return { message: trimmed };
+
+    // path(line,col): e.g. Assets/File.cs(2,8): error ...
+    const parenColon = trimmed.match(/^(.+?)\((\d+),(\d+)\):\s*/);
+    if (parenColon) {
+        const msgPath = parenColon[1].replace(/\\/g, '/');
+        const msgLine = parseInt(parenColon[2], 10);
+        const msgCol = parseInt(parenColon[3], 10);
+        const pathMatches = msgPath === normFile || normFile.endsWith(msgPath) || msgPath.endsWith(normFile);
+        if (pathMatches && (line === undefined || line === msgLine)) {
+            return { message: trimmed.slice(parenColon[0].length).trim(), column: msgCol };
+        }
     }
-    return line;
+
+    // path(line): e.g. Assets/File.cs(2): ...
+    const parenOnly = trimmed.match(/^(.+?)\((\d+)\):\s*/);
+    if (parenOnly) {
+        const msgPath = parenOnly[1].replace(/\\/g, '/');
+        const msgLine = parseInt(parenOnly[2], 10);
+        const pathMatches = msgPath === normFile || normFile.endsWith(msgPath) || msgPath.endsWith(normFile);
+        if (pathMatches && (line === undefined || line === msgLine)) {
+            return { message: trimmed.slice(parenOnly[0].length).trim() };
+        }
+    }
+
+    // path:line: e.g. path/to/file.cs:10:
+    const pathLineColon = trimmed.match(/^(.+?):(\d+):\s*/);
+    if (pathLineColon) {
+        const msgPath = pathLineColon[1].replace(/\\/g, '/');
+        const msgLine = parseInt(pathLineColon[2], 10);
+        const pathMatches = msgPath === normFile || normFile.endsWith(msgPath) || msgPath.endsWith(normFile);
+        if (pathMatches && (line === undefined || line === msgLine)) {
+            return { message: trimmed.slice(pathLineColon[0].length).trim() };
+        }
+    }
+
+    return { message: trimmed };
+}
+
+/**
+ * One line per entry: path(line,col): &lt;message&gt; or path(line): &lt;message&gt; when column is missing.
+ * When file/line are missing, outputs: - &lt;message&gt;.
+ */
+function formatLogEntryLine(e: UTP, maxMsgLen: number = TRUNCATE_MSG): string {
+    const file = (e.file || (e as { fileName?: string }).fileName || '').replace(/\\/g, '/');
+    const line = e.line ?? (e as { lineNumber?: number }).lineNumber;
+    const hasLocation = file && (line !== undefined && line > 0);
+    const rawMsg = (e.message || '').trim();
+    const { message: normalizedMsg, column } = hasLocation
+        ? normalizeMessageForDisplay(rawMsg, file, line)
+        : { message: rawMsg, column: undefined as number | undefined };
+    const msg = truncateStr(normalizedMsg, maxMsgLen);
+
+    if (hasLocation) {
+        const loc = column !== undefined ? `${file}(${line},${column})` : `${file}(${line})`;
+        return `- ${loc}: ${msg}\n`;
+    }
+    return `- ${msg}\n`;
 }
 
 export enum LogLevel {
@@ -362,7 +472,7 @@ export class Logger {
         return rebuilt + footer;
     }
 
-    public CI_appendWorkflowSummary(name: string, telemetry: UTP[]) {
+    public CI_appendWorkflowSummary(name: string, telemetry: UTP[], options?: { projectPath?: string }) {
         if (telemetry.length === 0) { return; }
         switch (this._ci) {
             case 'GITHUB_ACTIONS': {
@@ -376,14 +486,15 @@ export class Logger {
                         e => e.type === 'Action' && e.phase === 'End'
                     );
                     const merged = buildMergedLogList(filtered);
-                    const bySeverity = groupBySeverity(merged);
+                    const pathFiltered = filterMergedByPath(merged, options);
+                    const bySeverity = groupBySeverity(pathFiltered);
                     const errorCount = bySeverity.errorCritical.length;
                     const limit = SUMMARY_BYTE_LIMIT;
 
                     const builders: (() => string)[] = [
                         () => this.buildSummaryTimelineAndMergedLog(name, completedActions, bySeverity, limit),
                         () => this.buildSummaryCollapsibleWithMergedLog(name, completedActions, bySeverity, limit),
-                        () => this.buildSummaryTimelineAndCounts(name, completedActions, merged.length, limit),
+                        () => this.buildSummaryTimelineAndCounts(name, completedActions, pathFiltered.length, limit),
                     ];
                     let summary = '';
                     for (const build of builders) {
