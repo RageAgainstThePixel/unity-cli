@@ -1,4 +1,4 @@
-import { Logger } from "../logging";
+import { Logger } from "./logging";
 
 export class UTPBase {
     type?: string;
