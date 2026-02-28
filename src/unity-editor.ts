@@ -277,6 +277,7 @@ export class UnityEditor {
             const baseEditorEnv: NodeJS.ProcessEnv = {
                 ...process.env,
                 UNITY_THISISABUILDMACHINE: '1',
+                DISABLE_EMBEDDED_BUILD_PIPELINE_PLUGIN_LOGGING: '1',
                 ...(linuxEnvOverrides ?? {})
             };
 

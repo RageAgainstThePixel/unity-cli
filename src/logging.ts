@@ -1,4 +1,275 @@
 import * as fs from 'fs';
+import { UTP, Severity } from './utp/utp';
+
+const TRUNCATE_MSG = 120;
+const SUMMARY_BYTE_LIMIT = 1024 * 1024;
+
+/** Severity order for display: Error first, then Warning, then Info */
+function severityRank(s: string | undefined): number {
+    if (s === Severity.Error || s === Severity.Exception || s === Severity.Assert) return 0;
+    if (s === Severity.Warning) return 1;
+    return 2; // Info or unknown
+}
+
+function dedupeKey(e: UTP): string {
+    const msg = (e.message || '').trim();
+    const file = (e.file || (e as { fileName?: string }).fileName || '').replace(/\\/g, '/');
+    const line = e.line ?? (e as { lineNumber?: number }).lineNumber ?? 0;
+    return `${msg}\n${file}\n${line}`;
+}
+
+/**
+ * Returns true if the path looks absolute (Unix / or Windows X:/).
+ */
+function isAbsolutePath(file: string): boolean {
+    const norm = file.replace(/\\/g, '/');
+    if (norm.startsWith('/')) return true;
+    return /^[a-zA-Z]:\//.test(norm);
+}
+
+/**
+ * Returns true if the entry's file is under the project path (or entry has no file).
+ * Relative paths (e.g. Assets/..., Packages/...) are always kept so Unity UTP log/compiler
+ * entries with relative file paths still appear in the summary.
+ */
+function isEntryUnderProjectPath(e: UTP, projectPath: string): boolean {
+    const file = (e.file || (e as { fileName?: string }).fileName || '').trim();
+    if (!file) return true;
+    const normFile = file.replace(/\\/g, '/');
+    if (!isAbsolutePath(normFile)) return true;
+    const normProject = projectPath.replace(/\\/g, '/');
+    const base = normProject.endsWith('/') ? normProject : normProject + '/';
+    return normFile === normProject || normFile.startsWith(base);
+}
+
+/**
+ * Returns true if the entry's file looks like a Unity engine path (should be omitted when not using projectPath).
+ */
+function isUnityEnginePath(file: string): boolean {
+    const norm = file.replace(/\\/g, '/');
+    if (UNITY_ENGINE_PATH_PREFIXES.some(p => norm.startsWith(p))) return true;
+    if (norm.includes('/Runtime/') || norm.includes('\\Runtime\\')) return true;
+    if (!norm.endsWith('.cpp')) return false;
+    const underProject = norm.includes('/Assets/') || norm.includes('/Packages/') || norm.includes('/Library/PackageCache/');
+    return !underProject;
+}
+
+/**
+ * Builds one merged list from LogEntry, Compiler, and error-severity entries.
+ * Deduplicated by message+file+line, sorted by severity (Error, Warning, Info).
+ */
+function buildMergedLogList(filtered: UTP[]): UTP[] {
+    const logEntries = filtered.filter(e => e.type === 'LogEntry');
+    const compilerEntries = filtered.filter(e => e.type === 'Compiler');
+    const isErrorSeverity = (s: string | undefined) =>
+        s === Severity.Error || s === Severity.Exception || s === Severity.Assert;
+    const errorSeverityEntries = filtered.filter(
+        e => (e.type === 'LogEntry' || e.type === 'Compiler') && isErrorSeverity(e.severity)
+    );
+
+    const seen = new Set<string>();
+    const merged: UTP[] = [];
+
+    const add = (e: UTP) => {
+        const key = dedupeKey(e);
+        if (seen.has(key)) return;
+        seen.add(key);
+        merged.push(e);
+    };
+
+    for (const e of logEntries) add(e);
+    for (const e of compilerEntries) add(e);
+    for (const e of errorSeverityEntries) add(e);
+
+    merged.sort((a, b) => severityRank(a.severity) - severityRank(b.severity));
+    return merged;
+}
+
+/**
+ * Filters merged list to project-relevant entries only.
+ * When projectPath is set: keep entries with no file or file under projectPath.
+ * When projectPath is not set: exclude Unity engine paths only (keep PackageCache and project paths).
+ */
+function filterMergedByPath(merged: UTP[], options: { projectPath?: string } | undefined): UTP[] {
+    if (options?.projectPath != null && options.projectPath !== '') {
+        return merged.filter(e => isEntryUnderProjectPath(e, options.projectPath!));
+    }
+    return merged.filter(e => {
+        const file = (e.file || (e as { fileName?: string }).fileName || '').trim();
+        if (!file) return true;
+        return !isUnityEnginePath(file);
+    });
+}
+
+/** Groups merged log by severity for foldouts (Error, Warning, Info). */
+function groupBySeverity(merged: UTP[]): { errorCritical: UTP[]; warning: UTP[]; info: UTP[] } {
+    const errorCritical: UTP[] = [];
+    const warning: UTP[] = [];
+    const info: UTP[] = [];
+    for (const e of merged) {
+        if (e.severity === Severity.Error || e.severity === Severity.Exception || e.severity === Severity.Assert) {
+            errorCritical.push(e);
+        } else if (e.severity === Severity.Warning) {
+            warning.push(e);
+        } else {
+            info.push(e);
+        }
+    }
+    return { errorCritical, warning, info };
+}
+
+/** Single test result row for summary and CLI table. */
+export interface TestResultSummary {
+    status: string;
+    durationMs: number;
+    description: string;
+    message?: string;
+}
+
+/** Maps UTPTestStatus.state to display status (Unity/NUnit-style: 0 Inconclusive, 1 Passed, 2 Failed, 3 Skipped). */
+export function testStatusFromState(state: number | undefined): string {
+    switch (state) {
+        case 1: return '✅';
+        case 2: return '❌';
+        case 3: return '⏭️';
+        case 0:
+        default: return '◯';
+    }
+}
+
+/** Converts a single TestStatus UTP to TestResultSummary. Exported for CLI use. */
+export function utpToTestResultSummary(e: UTP): TestResultSummary {
+    const state = (e as { state?: number }).state;
+    const durationMs = e.duration ?? (e.durationMicroseconds != null ? e.durationMicroseconds / 1000 : 0);
+    const description = (e.name || e.description || '—').trim();
+    const msg = (e.message || '').trim();
+    const summary: TestResultSummary = {
+        status: testStatusFromState(state),
+        durationMs,
+        description,
+    };
+    if (msg !== '') {
+        summary.message = msg;
+    }
+    return summary;
+}
+
+/** Collects TestStatus entries from telemetry into TestResultSummary rows. */
+function collectTestResults(filtered: UTP[]): TestResultSummary[] {
+    return filtered.filter(e => e.type === 'TestStatus').map(utpToTestResultSummary);
+}
+
+/** Builds a markdown table string for test results (Status | Duration | Test). Exported for CLI use. */
+export function buildTestResultsTableMarkdown(testResults: TestResultSummary[], byteLimit: number, prefix?: string): string {
+    if (testResults.length === 0) return '';
+    const p = prefix ?? '';
+    let out = p + `### Test results\n\n`;
+    out += `| Status | Duration | Test |\n`;
+    out += `|--------|----------|------|\n`;
+    let shown = 0;
+    for (const row of testResults) {
+        const durationStr = row.durationMs >= 1000
+            ? `${(row.durationMs / 1000).toFixed(1)}s`
+            : `${Math.round(row.durationMs)} ms`;
+        const desc = row.description.length > 80 ? row.description.slice(0, 77) + '…' : row.description;
+        const line = `| ${row.status} | ${durationStr} | ${desc} |\n`;
+        if (Buffer.byteLength(out + line, 'utf8') > byteLimit) break;
+        out += line;
+        shown++;
+    }
+    if (shown < testResults.length) {
+        out += `| … | … | … and ${testResults.length - shown} more |\n`;
+    }
+    out += `\n`;
+    return out;
+}
+
+function truncateStr(s: string, max: number): string {
+    return s.length <= max ? s : s.slice(0, max) + '…';
+}
+
+/** Paths to treat as Unity engine (omit from summary when using heuristic filter). */
+const UNITY_ENGINE_PATH_PREFIXES = [
+    'Runtime/',
+    './Runtime/',
+    'Modules/',
+    './Modules/',
+];
+
+/**
+ * Normalizes a log message for display by stripping a redundant file:line prefix
+ * when it matches the entry's file/line so the path appears only once.
+ * Returns the normalized message and optional column if present in the prefix.
+ */
+function normalizeMessageForDisplay(
+    message: string,
+    file: string,
+    line: number | undefined
+): { message: string; column?: number } {
+    const trimmed = message.trim();
+    const normFile = file.replace(/\\/g, '/');
+    if (!normFile && line === undefined) return { message: trimmed };
+
+    // path(line,col): e.g. Assets/File.cs(2,8): error ...
+    const parenColon = trimmed.match(/^(.+?)\((\d+),(\d+)\):\s*/);
+    if (parenColon && parenColon[1] != null && parenColon[2] != null && parenColon[3] != null) {
+        const fullMatch = parenColon[0];
+        const msgPath = parenColon[1].replace(/\\/g, '/');
+        const msgLine = parseInt(parenColon[2], 10);
+        const msgCol = parseInt(parenColon[3], 10);
+        const pathMatches = msgPath === normFile || normFile.endsWith(msgPath) || msgPath.endsWith(normFile);
+        if (pathMatches && (line === undefined || line === msgLine)) {
+            return { message: trimmed.slice(fullMatch.length).trim(), column: msgCol };
+        }
+    }
+
+    // path(line): e.g. Assets/File.cs(2): ...
+    const parenOnly = trimmed.match(/^(.+?)\((\d+)\):\s*/);
+    if (parenOnly && parenOnly[1] != null && parenOnly[2] != null) {
+        const fullMatch = parenOnly[0];
+        const msgPath = parenOnly[1].replace(/\\/g, '/');
+        const msgLine = parseInt(parenOnly[2], 10);
+        const pathMatches = msgPath === normFile || normFile.endsWith(msgPath) || msgPath.endsWith(normFile);
+        if (pathMatches && (line === undefined || line === msgLine)) {
+            return { message: trimmed.slice(fullMatch.length).trim() };
+        }
+    }
+
+    // path:line: e.g. path/to/file.cs:10:
+    const pathLineColon = trimmed.match(/^(.+?):(\d+):\s*/);
+    if (pathLineColon && pathLineColon[1] != null && pathLineColon[2] != null) {
+        const fullMatch = pathLineColon[0];
+        const msgPath = pathLineColon[1].replace(/\\/g, '/');
+        const msgLine = parseInt(pathLineColon[2], 10);
+        const pathMatches = msgPath === normFile || normFile.endsWith(msgPath) || msgPath.endsWith(normFile);
+        if (pathMatches && (line === undefined || line === msgLine)) {
+            return { message: trimmed.slice(fullMatch.length).trim() };
+        }
+    }
+
+    return { message: trimmed };
+}
+
+/**
+ * One line per entry: path(line,col): &lt;message&gt; or path(line): &lt;message&gt; when column is missing.
+ * When file/line are missing, outputs: - &lt;message&gt;.
+ */
+function formatLogEntryLine(e: UTP, maxMsgLen: number = TRUNCATE_MSG): string {
+    const file = (e.file || (e as { fileName?: string }).fileName || '').replace(/\\/g, '/');
+    const line = e.line ?? (e as { lineNumber?: number }).lineNumber;
+    const hasLocation = file && (line !== undefined && line > 0);
+    const rawMsg = (e.message || '').trim();
+    const { message: normalizedMsg, column } = hasLocation
+        ? normalizeMessageForDisplay(rawMsg, file, line)
+        : { message: rawMsg, column: undefined as number | undefined };
+    const msg = truncateStr(normalizedMsg, maxMsgLen);
+
+    if (hasLocation) {
+        const loc = column !== undefined ? `${file}(${line},${column})` : `${file}(${line})`;
+        return `- ${loc}: ${msg}\n`;
+    }
+    return `- ${msg}\n`;
+}
 
 export enum LogLevel {
     DEBUG = 'debug',
@@ -258,20 +529,249 @@ export class Logger {
         }
     }
 
-    public CI_appendWorkflowSummary(telemetry: any[]) {
+    private static formatDurationMs(ms: number | undefined): string {
+        if (ms === undefined || !Number.isFinite(ms)) { return '—'; }
+        if (ms < 1000) { return `${Math.round(ms)}ms`; }
+        return `${(ms / 1000).toFixed(1)}s`;
+    }
+
+    private static truncateStr(s: string, max: number): string {
+        return s.length <= max ? s : s.slice(0, max) + '…';
+    }
+
+    private static truncateSummaryToByteLimit(summary: string, byteLimit: number): string {
+        const footer = `\n***Summary truncated due to size limits.***\n`;
+        const footerSize = Buffer.byteLength(footer, 'utf8');
+        const lines = summary.split('\n');
+        let rebuilt = '';
+        for (const line of lines) {
+            const nextSize = Buffer.byteLength(rebuilt + line + '\n', 'utf8') + footerSize;
+            if (nextSize > byteLimit) { break; }
+            rebuilt += `${line}\n`;
+        }
+        return rebuilt + footer;
+    }
+
+    public CI_appendWorkflowSummary(name: string, telemetry: UTP[], options?: { projectPath?: string }) {
+        if (telemetry.length === 0) { return; }
         switch (this._ci) {
             case 'GITHUB_ACTIONS': {
                 const githubSummary = process.env.GITHUB_STEP_SUMMARY;
-
                 if (githubSummary) {
-                    let table = `| Key | Value |\n| --- | ----- |\n`;
-                    telemetry.forEach(item => {
-                        table += `| ${item.key} | ${item.value} |\n`;
-                    });
+                    const excludedTypes = new Set(['MemoryLeaks', 'MemoryLeak']);
+                    const filtered = telemetry.filter(entry => !excludedTypes.has(entry.type || ''));
+                    if (filtered.length === 0) { return; }
 
-                    fs.appendFileSync(githubSummary, table, { encoding: 'utf8' });
+                    const completedActions = filtered.filter(
+                        e => e.type === 'Action' && e.phase === 'End'
+                    );
+                    const testResults = collectTestResults(filtered);
+                    const merged = buildMergedLogList(filtered);
+                    const pathFiltered = filterMergedByPath(merged, options);
+                    const bySeverity = groupBySeverity(pathFiltered);
+                    const limit = SUMMARY_BYTE_LIMIT;
+
+                    const builders: (() => string)[] = [
+                        () => this.buildSummaryTimelineAndMergedLog(name, completedActions, bySeverity, testResults, limit),
+                        () => this.buildSummaryCollapsibleWithMergedLog(name, completedActions, bySeverity, testResults, limit),
+                        () => this.buildSummaryTimelineAndCounts(name, completedActions, pathFiltered.length, testResults, limit),
+                    ];
+                    let summary = '';
+                    for (const build of builders) {
+                        summary = build();
+                        if (Buffer.byteLength(summary, 'utf8') <= limit) { break; }
+                    }
+                    if (Buffer.byteLength(summary, 'utf8') > limit) {
+                        summary = Logger.truncateSummaryToByteLimit(summary, limit);
+                    }
+                    fs.appendFileSync(githubSummary, summary, { encoding: 'utf8' });
                 }
+                break;
             }
         }
+    }
+
+    /**
+     * Builds summary: optional stats, build timeline table (only when actions exist), test results
+     * table (when present), then one <details> per severity (Error, Warning, Info).
+     */
+    private buildSummaryTimelineAndMergedLog(
+        name: string,
+        completedActions: UTP[],
+        bySeverity: { errorCritical: UTP[]; warning: UTP[]; info: UTP[] },
+        testResults: TestResultSummary[],
+        byteLimit: number
+    ): string {
+        let out = `## ${name} Summary\n\n`;
+
+        const totalDurationMs = completedActions.reduce(
+            (sum, a) => sum + (a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : 0)),
+            0
+        );
+        const totalSec = totalDurationMs / 1000;
+        const totalStr = totalSec >= 60 ? `${Math.round(totalSec / 60)}m ${Math.round(totalSec % 60)}s` : `${totalSec.toFixed(1)}s`;
+        out += `${bySeverity.errorCritical.length} errors, ${completedActions.length} actions, total ${totalStr}\n\n`;
+
+        if (completedActions.length > 0) {
+            out += `| Status | Duration | Errors | Step |\n`;
+            out += `|--------|----------|--------|------|\n`;
+            let timelineShown = 0;
+            for (const a of completedActions) {
+                const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
+                const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
+                const status = errCount > 0 ? '❌' : '✅';
+                const desc = (a.description || a.name || '—').trim();
+                const durationStr = Logger.formatDurationMs(durationMs);
+                const row = `| ${status} | ${durationStr} | ${errCount} | ${desc} |\n`;
+                if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
+                out += row;
+                timelineShown++;
+            }
+            if (timelineShown < completedActions.length) {
+                out += `| … | … | … | … and ${completedActions.length - timelineShown} more |\n`;
+            }
+            out += `\n`;
+        }
+
+        if (testResults.length > 0) {
+            const remaining = byteLimit - Buffer.byteLength(out, 'utf8');
+            out += buildTestResultsTableMarkdown(testResults, remaining, '');
+        }
+
+        const limit = byteLimit;
+        const appendFoldout = (title: string, entries: UTP[], dropSuffix: string, openByDefault?: boolean): void => {
+            if (entries.length === 0) return;
+            const openAttr = openByDefault ? ' open' : '';
+            out += `<details${openAttr}><summary>${title} (${entries.length})</summary>\n\n`;
+            let shown = 0;
+            let omitted = 0;
+            for (const e of entries) {
+                const line = formatLogEntryLine(e);
+                if (Buffer.byteLength(out + line, 'utf8') > limit) {
+                    omitted = entries.length - shown;
+                    break;
+                }
+                out += line;
+                shown++;
+            }
+            if (omitted > 0) {
+                out += `- ... and ${omitted} more ${dropSuffix}\n`;
+            }
+            out += `\n</details>\n\n`;
+        };
+
+        appendFoldout('Error', bySeverity.errorCritical, '(see annotations).', true);
+        appendFoldout('Warning', bySeverity.warning, '(truncated; see full log).');
+        appendFoldout('Info', bySeverity.info, '(truncated; see full log).');
+
+        return out;
+    }
+
+    /**
+     * Builds summary with timeline in a <details> and merged log foldouts by severity.
+     * Used when primary builder would exceed size limit.
+     */
+    private buildSummaryCollapsibleWithMergedLog(
+        name: string,
+        completedActions: UTP[],
+        bySeverity: { errorCritical: UTP[]; warning: UTP[]; info: UTP[] },
+        testResults: TestResultSummary[],
+        byteLimit: number
+    ): string {
+        let out = `## ${name} Summary\n\n`;
+
+        if (completedActions.length > 0) {
+            out += `<details><summary>Build timeline (${completedActions.length} actions)</summary>\n\n`;
+            out += `| Status | Duration | Errors | Step |\n`;
+            out += `|--------|----------|--------|------|\n`;
+            let timelineShown = 0;
+            for (const a of completedActions) {
+                const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
+                const row = `| ${errCount > 0 ? '❌' : '✅'} | ${Logger.formatDurationMs(a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined))} | ${errCount} | ${(a.description || a.name || '—').trim()} |\n`;
+                if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
+                out += row;
+                timelineShown++;
+            }
+            if (timelineShown < completedActions.length) {
+                out += `| … | … | … | … and ${completedActions.length - timelineShown} more |\n`;
+            }
+            out += `\n</details>\n\n`;
+        }
+
+        if (testResults.length > 0) {
+            const remaining = byteLimit - Buffer.byteLength(out, 'utf8');
+            out += buildTestResultsTableMarkdown(testResults, remaining, '');
+        }
+
+        const limit = byteLimit;
+        const appendFoldout = (title: string, entries: UTP[], dropSuffix: string, openByDefault?: boolean): void => {
+            if (entries.length === 0) return;
+            const openAttr = openByDefault ? ' open' : '';
+            out += `<details${openAttr}><summary>${title} (${entries.length})</summary>\n\n`;
+            let shown = 0;
+            let omitted = 0;
+            for (const e of entries) {
+                const line = formatLogEntryLine(e);
+                if (Buffer.byteLength(out + line, 'utf8') > limit) {
+                    omitted = entries.length - shown;
+                    break;
+                }
+                out += line;
+                shown++;
+            }
+            if (omitted > 0) out += `- ... and ${omitted} more ${dropSuffix}\n`;
+            out += `\n</details>\n\n`;
+        };
+        appendFoldout('Error', bySeverity.errorCritical, '(see annotations).', true);
+        appendFoldout('Warning', bySeverity.warning, '(truncated; see full log).');
+        appendFoldout('Info', bySeverity.info, '(truncated; see full log).');
+
+        return out;
+    }
+
+    /**
+     * Fallback: build timeline table (when actions exist) + test results table (when present) + counts table.
+     * Used when even collapsible summary would exceed 1 MB.
+     */
+    private buildSummaryTimelineAndCounts(
+        name: string,
+        completedActions: UTP[],
+        logCount: number,
+        testResults: TestResultSummary[],
+        byteLimit: number
+    ): string {
+        let out = `## ${name} Summary\n\n`;
+        if (completedActions.length > 0) {
+            out += `| Status | Duration | Errors | Step |\n`;
+            out += `|--------|----------|--------|------|\n`;
+            let timelineShown = 0;
+            for (const a of completedActions) {
+                const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
+                const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
+                const status = errCount > 0 ? '❌' : '✅';
+                const desc = (a.description || a.name || '—').trim();
+                const row = `| ${status} | ${Logger.formatDurationMs(durationMs)} | ${errCount} | ${desc} |\n`;
+                if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
+                out += row;
+                timelineShown++;
+            }
+            if (timelineShown < completedActions.length) {
+                out += `| … | … | … | … and ${completedActions.length - timelineShown} more |\n`;
+            }
+            out += `\n`;
+        }
+        if (testResults.length > 0) {
+            const remaining = byteLimit - Buffer.byteLength(out, 'utf8');
+            out += buildTestResultsTableMarkdown(testResults, remaining, '');
+        }
+        out += `| Type | Count |\n`;
+        out += `|------|-------|\n`;
+        out += `| Log | ${logCount} |\n`;
+        out += `| Actions | ${completedActions.length} |\n`;
+        if (testResults.length > 0) {
+            out += `| Tests | ${testResults.length} |\n`;
+        }
+        out += `\nSee annotations for details.\n`;
+        return out;
     }
 }
