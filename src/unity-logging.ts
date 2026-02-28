@@ -1,6 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { LogLevel, Logger } from './logging';
+import {
+    LogLevel,
+    Logger,
+    buildTestResultsTableMarkdown,
+    TestResultSummary,
+    utpToTestResultSummary
+} from './logging';
 import { Delay, WaitForFileToBeUnlocked } from './utilities';
 import {
     Phase,
@@ -10,7 +16,7 @@ import {
     UTPMemoryLeak,
     UTPPlayerBuildInfo,
     normalizeTelemetryEntry
-} from './utp/utp';
+} from './utp';
 
 /**
  * Result of the tailLogFile function containing cleanup resources.
@@ -90,6 +96,41 @@ function sanitizeStackTrace(raw: string | undefined): string | undefined {
         .trim();
     if (sanitized === '') { return undefined; }
     return sanitized;
+}
+
+interface StackFrame {
+    file: string;
+    line: number;
+    title: string;
+}
+
+const MAX_STACK_FRAME_ANNOTATIONS = 5;
+
+function parseStackFrames(stackTrace: string, projectPath: string | undefined): StackFrame[] {
+    const frames: StackFrame[] = [];
+    const lines = stackTrace.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    for (const stackLine of lines) {
+        const inMatch = stackLine.match(/\s+in\s+([^\s]+):(\d+)\s*$/);
+        const parenMatch = stackLine.match(/\(([^)]+):(\d+)\)\s*$/);
+        const plainMatch = stackLine.match(/^(.+):(\d+)\s*$/);
+        let file: string | undefined;
+        let lineNum: number | undefined;
+        if (inMatch && inMatch[1] != null && inMatch[2] != null) {
+            file = inMatch[1].replace(/\\/g, '/');
+            lineNum = parseInt(inMatch[2], 10);
+        } else if (parenMatch && parenMatch[1] != null && parenMatch[2] != null) {
+            file = parenMatch[1].replace(/\\/g, '/');
+            lineNum = parseInt(parenMatch[2], 10);
+        } else if (plainMatch && plainMatch[1] != null && plainMatch[2] != null) {
+            file = plainMatch[1].replace(/\\/g, '/');
+            lineNum = parseInt(plainMatch[2], 10);
+        }
+        const line = lineNum !== undefined && Number.isFinite(lineNum) ? lineNum : undefined;
+        if (file != null && line != null && line > 0 && projectPath != null && file.startsWith(projectPath)) {
+            frames.push({ file, line, title: stackLine });
+        }
+    }
+    return frames;
 }
 
 const MIN_DESCRIPTION_COLUMN_WIDTH = 16;
@@ -956,6 +997,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
     const logPollingInterval = 250;
     let pendingPartialLine = '';
     const telemetry: UTP[] = [];
+    const testResults: TestResultSummary[] = [];
     const logger = Logger.instance;
     const actionAccumulator = new ActionTelemetryAccumulator();
     const actionTableRenderer = new ActionTableRenderer(process.stdout.isTTY === true && process.env.CI !== 'true');
@@ -973,6 +1015,16 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
         if (telemetryFlushed) { return; }
         telemetryFlushed = true;
         await writeUtpTelemetryLog(utpLogPath, telemetry, logger);
+        const parsed = path.parse(logPath);
+        Logger.instance.CI_appendWorkflowSummary(
+            parsed.name,
+            telemetry,
+            projectPath != null && projectPath !== '' ? { projectPath } : undefined
+        );
+        if (testResults.length > 0) {
+            const table = buildTestResultsTableMarkdown(testResults, 1024 * 1024, '\n');
+            process.stdout.write(table);
+        }
     };
 
     const writeStdoutThenTableContent = (content: string, restoreTable: boolean = true): void => {
@@ -997,6 +1049,9 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                 const utpJson = JSON.parse(sanitizedJson);
                 const utp = normalizeTelemetryEntry(utpJson);
                 telemetry.push(utp);
+                if (utp.type === 'TestStatus') {
+                    testResults.push(utpToTestResultSummary(utp));
+                }
 
                 if (utp.message && 'severity' in utp &&
                     (utp.severity === Severity.Error || utp.severity === Severity.Exception || utp.severity === Severity.Assert)) {
@@ -1015,6 +1070,14 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                         // only annotate if the file is within the current project
                         if (projectPath && file && file.startsWith(projectPath)) {
                             logger.annotate(LogLevel.ERROR, message, file, utp.line);
+                            // Link stack trace to annotations: emit one annotation per frame (capped) for clickable stack in Checks
+                            if (stacktrace && projectPath) {
+                                const frames = parseStackFrames(stacktrace, projectPath);
+                                const toEmit = frames.slice(0, MAX_STACK_FRAME_ANNOTATIONS);
+                                for (const frame of toEmit) {
+                                    logger.annotate(LogLevel.ERROR, frame.title, frame.file, frame.line, undefined, undefined, undefined, 'Stack frame');
+                                }
+                            }
                         } else {
                             switch (messageLevel) {
                                 case LogLevel.WARN:
