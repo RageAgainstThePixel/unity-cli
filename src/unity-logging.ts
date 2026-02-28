@@ -1,6 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { LogLevel, Logger, buildTestResultsTableMarkdown, TestResultSummary, utpToTestResultSummary } from './logging';
+import {
+    LogLevel,
+    Logger,
+    buildTestResultsTableMarkdown,
+    TestResultSummary,
+    utpToTestResultSummary
+} from './logging';
 import { Delay, WaitForFileToBeUnlocked } from './utilities';
 import {
     Phase,
@@ -10,7 +16,7 @@ import {
     UTPMemoryLeak,
     UTPPlayerBuildInfo,
     normalizeTelemetryEntry
-} from './utp/utp';
+} from './utp';
 
 /**
  * Result of the tailLogFile function containing cleanup resources.

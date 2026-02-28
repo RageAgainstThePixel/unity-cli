@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { UTP, Severity } from './utp/utp';
+import { UTP, Severity } from './utp';
 
 const TRUNCATE_MSG = 120;
 const SUMMARY_BYTE_LIMIT = 1024 * 1024;
