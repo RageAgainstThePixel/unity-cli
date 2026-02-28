@@ -12,7 +12,7 @@ inputs:
     required: false
     default: ""
   artifact-name:
-    description: Artifact name for uploaded UTP logs (must be unique per matrix job).
+    description: Artifact name for uploaded test artifacts (UTP logs, Unity Editor/Player logs, and test results XML; must be unique per matrix job).
     required: false
     default: unity-tests-batch-utp-logs
 runs:
@@ -48,10 +48,10 @@ runs:
       run: |
         bash "${GITHUB_WORKSPACE}/.github/actions/scripts/run-utp-tests.sh"
 
-    - name: Upload UTP logs
+    - name: Upload test artifacts
       if: always()
       uses: actions/upload-artifact@v6
       with:
         name: ${{ inputs.artifact-name }}
-        path: utp-artifacts/**/*-utp-json.log
+        path: utp-artifacts/
         if-no-files-found: ignore

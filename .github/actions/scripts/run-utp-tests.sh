@@ -265,6 +265,12 @@ for raw_test in "${tests[@]}"; do
       cp "$utp_src" "$dest_file" || true
     fi
   done || true
+  # Copy test results XML when present (Edit/Play mode) for later analysis
+  if [ -f "$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml" ]; then
+    cp "$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml" "$test_artifacts/" || true
+  fi
+  # Copy all Unity Editor/Player logs for this scenario
+  find "$UNITY_PROJECT_PATH/Builds/Logs" -maxdepth 1 -type f -name "*${test_name}*.log" -exec cp {} "$test_artifacts/" \; 2>/dev/null || true
 
 done
 
