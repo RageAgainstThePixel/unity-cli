@@ -156,7 +156,9 @@ function collectTestResults(filtered: UTP[]): TestResultSummary[] {
 }
 
 function escapeMarkdownTableCell(value: string): string {
-    return value.replace(/\|/g, '\\|');
+    return value
+        .replace(/\\/g, '\\\\')
+        .replace(/\|/g, '\\|');
 }
 
 /** Builds a markdown table string for test results (Status | Duration | Test). Exported for CLI use. */

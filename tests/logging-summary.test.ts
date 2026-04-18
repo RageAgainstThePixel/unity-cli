@@ -57,4 +57,17 @@ describe('buildTestResultsTableMarkdown', () => {
         expect(md).toContain('A\\|B');
         expect(md.split('\n').filter(l => l.startsWith('|')).length).toBeGreaterThanOrEqual(3);
     });
+
+    it('escapes backslashes before pipes so markdown cells stay well-formed', () => {
+        const rows = [
+            utpToTestResultSummary({
+                type: 'TestStatus',
+                name: 'a\\b|c',
+                state: 1,
+                duration: 10,
+            } as any),
+        ];
+        const md = buildTestResultsTableMarkdown(rows, 1024 * 1024, '');
+        expect(md).toMatch(/a\\\\b\\|c/);
+    });
 });
