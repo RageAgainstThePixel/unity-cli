@@ -4,11 +4,11 @@ import { UTP, Severity } from './utp';
 const TRUNCATE_MSG = 120;
 const SUMMARY_BYTE_LIMIT = 1024 * 1024;
 
-/** Severity order for display: Error first, then Warning, then Info */
+/** Severity order for display: Error first, then Warning, then Info. Undefined treats as Warning. */
 function severityRank(s: string | undefined): number {
     if (s === Severity.Error || s === Severity.Exception || s === Severity.Assert) return 0;
-    if (s === Severity.Warning) return 1;
-    return 2; // Info or unknown
+    if (s === Severity.Warning || s === undefined) return 1;
+    return 2; // Info
 }
 
 function dedupeKey(e: UTP): string {
@@ -55,34 +55,30 @@ function isUnityEnginePath(file: string): boolean {
 }
 
 /**
- * Builds one merged list from LogEntry, Compiler, and error-severity entries.
- * Deduplicated by message+file+line, sorted by severity (Error, Warning, Info).
+ * Merges LogEntry/Compiler rows by message+file+line; on collision keeps the more severe entry.
+ * Exported for unit tests.
  */
-function buildMergedLogList(filtered: UTP[]): UTP[] {
-    const logEntries = filtered.filter(e => e.type === 'LogEntry');
-    const compilerEntries = filtered.filter(e => e.type === 'Compiler');
-    const isErrorSeverity = (s: string | undefined) =>
-        s === Severity.Error || s === Severity.Exception || s === Severity.Assert;
-    const errorSeverityEntries = filtered.filter(
-        e => (e.type === 'LogEntry' || e.type === 'Compiler') && isErrorSeverity(e.severity)
-    );
-
-    const seen = new Set<string>();
-    const merged: UTP[] = [];
-
-    const add = (e: UTP) => {
+export function mergeLogEntriesPreferringSeverity(candidates: UTP[]): UTP[] {
+    const byKey = new Map<string, UTP>();
+    for (const e of candidates) {
         const key = dedupeKey(e);
-        if (seen.has(key)) return;
-        seen.add(key);
-        merged.push(e);
-    };
-
-    for (const e of logEntries) add(e);
-    for (const e of compilerEntries) add(e);
-    for (const e of errorSeverityEntries) add(e);
-
+        const existing = byKey.get(key);
+        if (!existing || severityRank(e.severity) < severityRank(existing.severity)) {
+            byKey.set(key, e);
+        }
+    }
+    const merged = [...byKey.values()];
     merged.sort((a, b) => severityRank(a.severity) - severityRank(b.severity));
     return merged;
+}
+
+/**
+ * Builds one merged list from LogEntry and Compiler entries.
+ * Deduplicated by message+file+line (keeping worse severity on collision), sorted by severity.
+ */
+function buildMergedLogList(filtered: UTP[]): UTP[] {
+    const candidates = filtered.filter(e => e.type === 'LogEntry' || e.type === 'Compiler');
+    return mergeLogEntriesPreferringSeverity(candidates);
 }
 
 /**
@@ -101,7 +97,7 @@ function filterMergedByPath(merged: UTP[], options: { projectPath?: string } | u
     });
 }
 
-/** Groups merged log by severity for foldouts (Error, Warning, Info). */
+/** Groups merged log by severity for foldouts (Error, Warning, Info). Missing severity is grouped as Warning. */
 function groupBySeverity(merged: UTP[]): { errorCritical: UTP[]; warning: UTP[]; info: UTP[] } {
     const errorCritical: UTP[] = [];
     const warning: UTP[] = [];
@@ -109,7 +105,7 @@ function groupBySeverity(merged: UTP[]): { errorCritical: UTP[]; warning: UTP[];
     for (const e of merged) {
         if (e.severity === Severity.Error || e.severity === Severity.Exception || e.severity === Severity.Assert) {
             errorCritical.push(e);
-        } else if (e.severity === Severity.Warning) {
+        } else if (e.severity === Severity.Warning || e.severity === undefined) {
             warning.push(e);
         } else {
             info.push(e);
@@ -159,6 +155,10 @@ function collectTestResults(filtered: UTP[]): TestResultSummary[] {
     return filtered.filter(e => e.type === 'TestStatus').map(utpToTestResultSummary);
 }
 
+function escapeMarkdownTableCell(value: string): string {
+    return value.replace(/\|/g, '\\|');
+}
+
 /** Builds a markdown table string for test results (Status | Duration | Test). Exported for CLI use. */
 export function buildTestResultsTableMarkdown(testResults: TestResultSummary[], byteLimit: number, prefix?: string): string {
     if (testResults.length === 0) return '';
@@ -171,8 +171,9 @@ export function buildTestResultsTableMarkdown(testResults: TestResultSummary[], 
         const durationStr = row.durationMs >= 1000
             ? `${(row.durationMs / 1000).toFixed(1)}s`
             : `${Math.round(row.durationMs)} ms`;
-        const desc = row.description.length > 80 ? row.description.slice(0, 77) + '…' : row.description;
-        const line = `| ${row.status} | ${durationStr} | ${desc} |\n`;
+        const rawDesc = row.description.length > 80 ? row.description.slice(0, 77) + '…' : row.description;
+        const desc = escapeMarkdownTableCell(rawDesc);
+        const line = `| ${escapeMarkdownTableCell(row.status)} | ${escapeMarkdownTableCell(durationStr)} | ${desc} |\n`;
         if (Buffer.byteLength(out + line, 'utf8') > byteLimit) break;
         out += line;
         shown++;
@@ -610,7 +611,7 @@ export class Logger {
         );
         const totalSec = totalDurationMs / 1000;
         const totalStr = totalSec >= 60 ? `${Math.round(totalSec / 60)}m ${Math.round(totalSec % 60)}s` : `${totalSec.toFixed(1)}s`;
-        out += `${bySeverity.errorCritical.length} errors, ${completedActions.length} actions, total ${totalStr}\n\n`;
+        out += `${bySeverity.errorCritical.length} log/compiler issues, ${completedActions.length} actions, total ${totalStr}\n\n`;
 
         if (completedActions.length > 0) {
             out += `| Status | Duration | Errors | Step |\n`;

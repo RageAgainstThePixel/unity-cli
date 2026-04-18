@@ -20,6 +20,18 @@ fi
 IFS=',' read -ra tests <<< "$TESTS_INPUT"
 failures=0
 
+effective_tests=0
+for raw_test in "${tests[@]}"; do
+  tname="$(echo "$raw_test" | xargs)"
+  if [ -n "$tname" ] && [ "$tname" != "None" ]; then
+    effective_tests=$((effective_tests + 1))
+  fi
+done
+if [ "$effective_tests" -eq 0 ]; then
+  echo "::error::TESTS_INPUT is empty or contains no runnable test entries"
+  exit 1
+fi
+
 clean_tests() {
   rm -f "$UNITY_PROJECT_PATH/Assets/UnityCliTests"/*.cs 2>/dev/null || true
   rm -f "$UNITY_PROJECT_PATH/Assets/Editor/UnityCliTests"/*.cs 2>/dev/null || true
@@ -258,7 +270,17 @@ for raw_test in "${tests[@]}"; do
 
   test_artifacts="$GITHUB_WORKSPACE/utp-artifacts/$test_name"
   mkdir -p "$test_artifacts"
-  find "$GITHUB_WORKSPACE" -path "$test_artifacts" -prune -o -type f -name "*${test_name}*-utp-json.log" -print | while IFS= read -r utp_src; do
+  logs_dir="$UNITY_PROJECT_PATH/Builds/Logs"
+  utp_pattern="*${test_name}*-utp-json.log"
+  # Primary: project Builds/Logs; fallback: workspace (e.g. alternate log roots). Exclude staging and .git.
+  {
+    if [ -d "$logs_dir" ]; then
+      find "$logs_dir" -maxdepth 1 -type f -name "$utp_pattern" -print
+    fi
+    if [ -n "${GITHUB_WORKSPACE:-}" ] && [ -d "$GITHUB_WORKSPACE" ]; then
+      find "$GITHUB_WORKSPACE" \( -path '*/utp-artifacts/*' -o -path '*/.git/*' \) -prune -o -type f -name "$utp_pattern" -print 2>/dev/null
+    fi
+  } | sort -u | while IFS= read -r utp_src; do
     [ -z "$utp_src" ] && continue
     dest_file="$test_artifacts/$(basename "$utp_src")"
     if [ ! -f "$dest_file" ]; then

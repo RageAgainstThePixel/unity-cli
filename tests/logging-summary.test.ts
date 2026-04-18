@@ -1,0 +1,60 @@
+import { Severity } from '../src/utp';
+import { mergeLogEntriesPreferringSeverity, buildTestResultsTableMarkdown, utpToTestResultSummary } from '../src/logging';
+
+describe('mergeLogEntriesPreferringSeverity', () => {
+    it('keeps Error over Info when dedupe key matches', () => {
+        const info = {
+            type: 'LogEntry',
+            message: 'dup',
+            file: 'Assets/Foo.cs',
+            line: 3,
+            severity: Severity.Info,
+        };
+        const err = {
+            type: 'LogEntry',
+            message: 'dup',
+            file: 'Assets/Foo.cs',
+            line: 3,
+            severity: Severity.Error,
+        };
+        const merged = mergeLogEntriesPreferringSeverity([info, err]);
+        expect(merged).toHaveLength(1);
+        expect(merged[0].severity).toBe(Severity.Error);
+    });
+
+    it('keeps first entry when severities tie', () => {
+        const a = {
+            type: 'Compiler',
+            message: 'm',
+            file: 'Assets/Foo.cs',
+            line: 1,
+            severity: Severity.Warning,
+        };
+        const b = {
+            type: 'Compiler',
+            message: 'm',
+            file: 'Assets/Foo.cs',
+            line: 1,
+            severity: Severity.Warning,
+        };
+        const merged = mergeLogEntriesPreferringSeverity([a, b]);
+        expect(merged).toHaveLength(1);
+        expect(merged[0]).toBe(a);
+    });
+});
+
+describe('buildTestResultsTableMarkdown', () => {
+    it('escapes pipe characters in cells', () => {
+        const rows = [
+            utpToTestResultSummary({
+                type: 'TestStatus',
+                name: 'A|B',
+                state: 1,
+                duration: 10,
+            } as any),
+        ];
+        const md = buildTestResultsTableMarkdown(rows, 1024 * 1024, '');
+        expect(md).toContain('A\\|B');
+        expect(md.split('\n').filter(l => l.startsWith('|')).length).toBeGreaterThanOrEqual(3);
+    });
+});

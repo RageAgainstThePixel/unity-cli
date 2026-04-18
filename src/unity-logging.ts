@@ -106,6 +106,23 @@ interface StackFrame {
 
 const MAX_STACK_FRAME_ANNOTATIONS = 5;
 
+/**
+ * True if filePath is the project root or under it. Normalizes separators; on Windows compares case-insensitively.
+ * Exported for unit tests.
+ */
+export function isFileUnderProjectPath(filePath: string, projectRoot: string): boolean {
+    const normFile = path.normalize(filePath).replace(/\\/g, '/');
+    const normRoot = path.normalize(projectRoot).replace(/\\/g, '/');
+    const base = normRoot.endsWith('/') ? normRoot : `${normRoot}/`;
+    if (process.platform === 'win32') {
+        const f = normFile.toLowerCase();
+        const r = normRoot.toLowerCase();
+        const b = base.toLowerCase();
+        return f === r || f.startsWith(b);
+    }
+    return normFile === normRoot || normFile.startsWith(base);
+}
+
 function parseStackFrames(stackTrace: string, projectPath: string | undefined): StackFrame[] {
     const frames: StackFrame[] = [];
     const lines = stackTrace.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -126,7 +143,7 @@ function parseStackFrames(stackTrace: string, projectPath: string | undefined): 
             lineNum = parseInt(plainMatch[2], 10);
         }
         const line = lineNum !== undefined && Number.isFinite(lineNum) ? lineNum : undefined;
-        if (file != null && line != null && line > 0 && projectPath != null && file.startsWith(projectPath)) {
+        if (file != null && line != null && line > 0 && projectPath != null && isFileUnderProjectPath(file, projectPath)) {
             frames.push({ file, line, title: stackLine });
         }
     }
@@ -998,6 +1015,8 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
     let pendingPartialLine = '';
     const telemetry: UTP[] = [];
     const testResults: TestResultSummary[] = [];
+    /** Dedupe stdout test table rows when Unity emits duplicate TestStatus lines (key: name + state + description). */
+    const seenTestStatusKeys = new Set<string>();
     const logger = Logger.instance;
     const actionAccumulator = new ActionTelemetryAccumulator();
     const actionTableRenderer = new ActionTableRenderer(process.stdout.isTTY === true && process.env.CI !== 'true');
@@ -1050,7 +1069,12 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                 const utp = normalizeTelemetryEntry(utpJson);
                 telemetry.push(utp);
                 if (utp.type === 'TestStatus') {
-                    testResults.push(utpToTestResultSummary(utp));
+                    const ts = utp as UTP & { name?: string; state?: number; description?: string };
+                    const dedupeKey = `${ts.name ?? ''}\u0000${ts.state ?? ''}\u0000${ts.description ?? ''}`;
+                    if (!seenTestStatusKeys.has(dedupeKey)) {
+                        seenTestStatusKeys.add(dedupeKey);
+                        testResults.push(utpToTestResultSummary(utp));
+                    }
                 }
 
                 if (utp.message && 'severity' in utp &&
@@ -1068,7 +1092,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
 
                     if (!githubAnnotationPrefixRegex.test(message)) {
                         // only annotate if the file is within the current project
-                        if (projectPath && file && file.startsWith(projectPath)) {
+                        if (projectPath && file && isFileUnderProjectPath(file, projectPath)) {
                             logger.annotate(LogLevel.ERROR, message, file, utp.line);
                             // Link stack trace to annotations: emit one annotation per frame (capped) for clickable stack in Checks
                             if (stacktrace && projectPath) {
@@ -1120,6 +1144,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                 break;
             }
             case 'MemoryLeaks':
+            case 'MemoryLeak':
                 logger.debug(formatMemoryLeakTable(utp as UTPMemoryLeak));
                 break;
             case 'PlayerBuildInfo': {

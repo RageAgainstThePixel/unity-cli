@@ -100,12 +100,40 @@ jobs:
           else
             echo "Skipping build: Unity version $version does not support the build pipeline package (requires 2019.4+)"
           fi
+      - name: Update Android Target Sdk Version
+        if: ${{ matrix.build-target == 'Android' && matrix.unity-version != 'none' }}
+        run: |
+          # update AndroidTargetSdkVersion to 32 in ProjectSettings/ProjectSettings.asset
+          sed -i 's/AndroidTargetSdkVersion: [0-9]*/AndroidTargetSdkVersion: 32/' "${UNITY_PROJECT_PATH}/ProjectSettings/ProjectSettings.asset"
+          # ensure android dependencies are installed before UTP/build batches
+          unity-cli setup-unity -p "${UNITY_PROJECT_PATH}" -m android
       - name: Compute safe artifact name
         id: artifact-name
+        env:
+          MATRIX_NAME: ${{ matrix.name }}
         run: |
+          set -euo pipefail
           unity_version="${{ matrix.unity-version }}"
           unity_version="${unity_version//'*'/x}"
-          echo "name=${{ matrix.os }}-${unity_version}-${{ matrix.build-target }}-tests-batch-utp-logs" >> $GITHUB_OUTPUT
+          bt="${{ matrix.build-target }}"
+          bt="${bt:-none}"
+          # Per-job slug so parallel matrix rows never collide (name encodes the job-builder row).
+          base="${{ matrix.os }}-${unity_version}-${bt}"
+          ba="${{ matrix.build-args }}"
+          if [ -n "${ba}" ]; then
+            if command -v sha256sum >/dev/null 2>&1; then
+              bah=$(printf '%s' "$ba" | sha256sum | awk '{print $1}' | cut -c1-12)
+            else
+              bah=$(printf '%s' "$ba" | shasum -a 256 2>/dev/null | awk '{print $1}' | cut -c1-12)
+            fi
+            base="${base}-ba${bah}"
+          fi
+          mname="${MATRIX_NAME:-}"
+          if [ -n "$mname" ]; then
+            slug=$(printf '%s' "$mname" | sed 's/[^a-zA-Z0-9._-]/_/g' | cut -c1-100)
+            base="${slug}__${base}"
+          fi
+          echo "name=${base}-utp-batch-logs" >> $GITHUB_OUTPUT
         shell: bash
       - name: Run Unity UTP test batches
         if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' }}
@@ -115,13 +143,6 @@ jobs:
           build-target: ${{ matrix.build-target }}
           build-args: ${{ matrix.build-args }}
           artifact-name: ${{ steps.artifact-name.outputs.name }}
-      - name: Update Android Target Sdk Version
-        if: ${{ matrix.build-target == 'Android' }}
-        run: |
-          # update AndroidTargetSdkVersion to 32 in ProjectSettings/ProjectSettings.asset
-          sed -i 's/AndroidTargetSdkVersion: [0-9]*/AndroidTargetSdkVersion: 32/' "${UNITY_PROJECT_PATH}/ProjectSettings/ProjectSettings.asset"
-          # ensure android dependencies are installed
-          unity-cli setup-unity -p "${UNITY_PROJECT_PATH}" -m android
       - name: Uninstall Editor
         if: ${{ matrix.unity-version != 'none' }}
         run: |
@@ -168,20 +189,6 @@ jobs:
           if [ ! -f "${LICENSING_AUDIT_LOG_PATH}" ]; then
             echo "::error::Licensing Audit log file does not exist at ${LICENSING_AUDIT_LOG_PATH}"
           fi
-      - name: Compute UTP artifact name
-        if: always()
-        id: utp-artifact-name
-        env:
-          MATRIX_OS: ${{ matrix.os }}
-          MATRIX_UNITY_VERSION: ${{ matrix.unity-version }}
-          MATRIX_BUILD_TARGET: ${{ matrix.build-target }}
-        run: |
-          set -euo pipefail
-          unity_version="$MATRIX_UNITY_VERSION"
-          unity_version="${unity_version//\*/x}"
-          artifact_name="${MATRIX_OS}-${unity_version}-${MATRIX_BUILD_TARGET}-tests-batch-utp-logs"
-          echo "name=$artifact_name" >> $GITHUB_OUTPUT
-        shell: bash
       - name: Return License
         if: always()
         run: unity-cli return-license --license personal
