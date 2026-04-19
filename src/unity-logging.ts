@@ -15,6 +15,7 @@ import {
     UTPBase,
     UTPMemoryLeak,
     UTPPlayerBuildInfo,
+    UTPTestStatus,
     normalizeTelemetryEntry
 } from './utp';
 
@@ -86,6 +87,47 @@ export function sanitizeTelemetryJson(raw: string | undefined): string | undefin
         .trim();
     if (sanitized === '') { return undefined; }
     return sanitized;
+}
+
+/** Builds the warning when a `##utp:` payload includes unrecognized root properties. Exported for tests. */
+export function formatUtpUnrecognizedTopLevelPropertiesMessage(
+    unknownTopLevelKeys: string[],
+    fullTelemetryLine: string
+): string {
+    return `UTP entry contains unrecognized top-level properties: ${unknownTopLevelKeys.join(', ')}\nFull line: ${fullTelemetryLine}`;
+}
+
+/**
+ * Single-line debug text for `--log-level UTP` for telemetry types that do not use the action / memory / player-build tables.
+ * Returns `undefined` when the type should fall back to unknown-type handling (warn + raw JSON).
+ */
+export function describeUtpForUtpLogLevel(utp: UTP): string | undefined {
+    switch (utp.type) {
+        case 'Compiler':
+        case 'LogEntry': {
+            const u = utp as UTPBase;
+            const loc = u.file != null && u.line != null ? `${u.file}:${u.line}` : (u.file ?? '');
+            const sev = u.severity != null ? String(u.severity) : '';
+            const msg = (u.message ?? '');
+            return `[UTP] ${utp.type} ${sev} ${loc} ${msg}`.replace(/\s+/gu, ' ').trim();
+        }
+        case 'TestStatus': {
+            const u = utp as UTPTestStatus;
+            const name = (u.name ?? u.description ?? '—').trim();
+            const dur = u.duration ?? (u.durationMicroseconds != null ? u.durationMicroseconds / 1000 : 0);
+            const msg = (u.message ?? '');
+            return `[UTP] TestStatus state=${u.state ?? '?'} durMs=${dur} ${name} ${msg}`.replace(/\s+/gu, ' ').trim();
+        }
+        case 'TestPlan':
+        case 'ScreenSettings':
+        case 'PlayerSettings':
+        case 'BuildSettings':
+        case 'PlayerSystemInfo':
+        case 'QualitySettings':
+            return `[UTP] ${utp.type} ${JSON.stringify(utp)}`;
+        default:
+            return undefined;
+    }
 }
 
 function sanitizeStackTrace(raw: string | undefined): string | undefined {
@@ -1066,7 +1108,10 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                 if (!sanitizedJson) { return; }
 
                 const utpJson = JSON.parse(sanitizedJson);
-                const utp = normalizeTelemetryEntry(utpJson);
+                const { utp, unknownTopLevelKeys } = normalizeTelemetryEntry(utpJson);
+                if (unknownTopLevelKeys.length > 0) {
+                    logger.warn(formatUtpUnrecognizedTopLevelPropertiesMessage(unknownTopLevelKeys, line));
+                }
                 telemetry.push(utp);
                 if (utp.type === 'TestStatus') {
                     const ts = utp as UTP & { name?: string; state?: number; description?: string };
@@ -1157,11 +1202,16 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
 
                 break;
             }
-            default:
+            default: {
+                const desc = describeUtpForUtpLogLevel(utp);
+                if (desc !== undefined) {
+                    logger.debug(desc);
+                    break;
+                }
                 logger.warn(`UTP entry has unknown type: ${utp.type ?? 'undefined'}`);
-                // Print raw JSON for unhandled UTP types
                 writeStdoutThenTableContent(`${JSON.stringify(utp)}\n`);
                 break;
+            }
         }
     }
 

@@ -1,0 +1,32 @@
+[
+  {
+    "type": "Compiler",
+    "version": 2,
+    "phase": "Immediate",
+    "time": 1776545848626,
+    "processId": 11122,
+    "severity": "Error",
+    "message": "Assets/UnityCliTests/CompilerErrors.cs(2,8): error CS1029: #error: 'Intentional compiler error: CS1029'",
+    "stacktrace": "",
+    "line": 2,
+    "file": "Assets/UnityCliTests/CompilerErrors.cs",
+    "stackTrace": "",
+    "fileName": "Assets/UnityCliTests/CompilerErrors.cs",
+    "lineNumber": 2
+  },
+  {
+    "type": "LogEntry",
+    "version": 2,
+    "phase": "Immediate",
+    "time": 1776545849441,
+    "processId": 11122,
+    "severity": "Error",
+    "message": "Scripts have compiler errors.",
+    "stacktrace": "",
+    "line": 376,
+    "file": "./Runtime/Utilities/Argv.cpp",
+    "stackTrace": "",
+    "fileName": "./Runtime/Utilities/Argv.cpp",
+    "lineNumber": 376
+  }
+]

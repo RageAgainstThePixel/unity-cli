@@ -1,4 +1,10 @@
-import { type ActionTableSnapshot, formatActionTimelineTable, sanitizeTelemetryJson, stringDisplayWidth } from '../src/unity-logging';
+import {
+    type ActionTableSnapshot,
+    describeUtpForUtpLogLevel,
+    formatActionTimelineTable,
+    sanitizeTelemetryJson,
+    stringDisplayWidth
+} from '../src/unity-logging';
 
 describe('sanitizeTelemetryJson', () => {
     it('removes trailing null characters that break JSON.parse', () => {
@@ -143,5 +149,45 @@ describe('formatActionTimelineTable', () => {
         expect(formatted?.text).toContain('📋 Player Build Info');
         expect(formatted?.text).toContain('Postprocess built player');
         expect(formatted?.text).toContain('# of Errors');
+    });
+});
+
+describe('describeUtpForUtpLogLevel', () => {
+    it('returns a one-line debug string for Compiler', () => {
+        const s = describeUtpForUtpLogLevel({
+            type: 'Compiler',
+            severity: 'Error',
+            message: 'bad',
+            file: 'Assets/A.cs',
+            line: 3,
+        } as any);
+        expect(s).toContain('[UTP] Compiler');
+        expect(s).toContain('Assets/A.cs:3');
+        expect(s).toContain('bad');
+    });
+
+    it('returns a one-line debug string for TestStatus', () => {
+        const s = describeUtpForUtpLogLevel({
+            type: 'TestStatus',
+            name: 'T.Name',
+            state: 1,
+            duration: 42,
+        } as any);
+        expect(s).toContain('TestStatus');
+        expect(s).toContain('state=1');
+        expect(s).toContain('T.Name');
+    });
+
+    it('returns JSON for settings-like types', () => {
+        const s = describeUtpForUtpLogLevel({
+            type: 'BuildSettings',
+            BuildSettings: { Platform: 'Android' },
+        } as any);
+        expect(s).toContain('BuildSettings');
+        expect(s).toContain('Android');
+    });
+
+    it('returns undefined for an unknown type string', () => {
+        expect(describeUtpForUtpLogLevel({ type: 'FutureUnityType', x: 1 } as any)).toBeUndefined();
     });
 });

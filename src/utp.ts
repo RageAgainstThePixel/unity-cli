@@ -152,7 +152,11 @@ export enum Severity {
     Assert = 'Assert'
 }
 
-const allowedUtpKeys = new Set<string>([
+/**
+ * Root-level JSON keys on UTP objects that this CLI recognizes. Other keys are still parsed
+ * but reported via {@link normalizeTelemetryEntry}'s `unknownTopLevelKeys` for logging.
+ */
+export const UTP_SUPPORTED_TOP_LEVEL_PROPERTIES = new Set<string>([
     'allocatedMemory',
     'BuildSettings',
     'description',
@@ -184,12 +188,19 @@ const allowedUtpKeys = new Set<string>([
     'version',
 ]);
 
+export interface NormalizeTelemetryResult {
+    utp: UTP;
+    /** Top-level property names present in the payload but not in {@link UTP_SUPPORTED_TOP_LEVEL_PROPERTIES}. */
+    unknownTopLevelKeys: string[];
+}
+
 /**
- * Normalizes UTP telemetry entries to canonical shapes and reports unexpected properties.
+ * Normalizes UTP telemetry entries to canonical shapes. Unknown top-level keys are listed
+ * for the caller to log (with the raw `##utp:` line when tailing logs).
  */
-export function normalizeTelemetryEntry(entry: unknown): UTP {
+export function normalizeTelemetryEntry(entry: unknown): NormalizeTelemetryResult {
     if (!entry || typeof entry !== 'object') {
-        return entry as UTP;
+        return { utp: entry as UTP, unknownTopLevelKeys: [] };
     }
 
     const utp = entry as UTP;
@@ -225,16 +236,12 @@ export function normalizeTelemetryEntry(entry: unknown): UTP {
         Logger.instance.warn('UTP entry missing type property; telemetry entry may be ignored.');
     }
 
-    const extras: string[] = [];
+    const unknownTopLevelKeys: string[] = [];
     for (const key of Object.keys(record)) {
-        if (!allowedUtpKeys.has(key)) {
-            extras.push(key);
+        if (!UTP_SUPPORTED_TOP_LEVEL_PROPERTIES.has(key)) {
+            unknownTopLevelKeys.push(key);
         }
     }
 
-    if (extras.length > 0) {
-        Logger.instance.warn(`UTP entry contains unrecognized properties: ${extras.join(', ')}`);
-    }
-
-    return utp;
+    return { utp, unknownTopLevelKeys };
 }
