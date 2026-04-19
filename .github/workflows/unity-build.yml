@@ -143,6 +143,9 @@ jobs:
           build-target: ${{ matrix.build-target }}
           build-args: ${{ matrix.build-args }}
           artifact-name: ${{ steps.artifact-name.outputs.name }}
+      - name: Verify UTP JSON keys
+        if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' }}
+        run: node .github/scripts/scan-utp-artifacts.cjs "${GITHUB_WORKSPACE}/utp-artifacts"
       - name: Uninstall Editor
         if: ${{ matrix.unity-version != 'none' }}
         run: |

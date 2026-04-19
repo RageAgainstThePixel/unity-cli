@@ -119,6 +119,7 @@ export interface PlayerBuildInfoStep {
 }
 
 export class UTPPlayerBuildInfo extends UTPBase {
+    success?: boolean;
     steps?: PlayerBuildInfoStep[];
 }
 
@@ -178,6 +179,7 @@ export const UTP_SUPPORTED_TOP_LEVEL_PROPERTIES = new Set<string>([
     'QualitySettings',
     'ScreenSettings',
     'severity',
+    'success',
     'stacktrace',
     'stackTrace',
     'state',
