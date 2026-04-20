@@ -1,5 +1,34 @@
 import { Severity } from '../src/utp';
-import { mergeLogEntriesPreferringSeverity, buildTestResultsTableMarkdown, buildUnitTestJobSummaryMarkdown, utpToTestResultSummary } from '../src/logging';
+import {
+    mergeLogEntriesPreferringSeverity,
+    buildTestResultsTableMarkdown,
+    buildUnitTestJobSummaryMarkdown,
+    stripSummaryNoiseFromLogMessage,
+    truncateStringToUtf8ByteLength,
+    utpToTestResultSummary,
+} from '../src/logging';
+
+describe('truncateStringToUtf8ByteLength', () => {
+    it('returns the string unchanged when it fits', () => {
+        expect(truncateStringToUtf8ByteLength('hello', 100)).toBe('hello');
+    });
+
+    it('truncates with ellipsis when UTF-8 length exceeds the budget', () => {
+        const long = 'a'.repeat(200);
+        const out = truncateStringToUtf8ByteLength(long, 20);
+        expect(out.endsWith('…')).toBe(true);
+        expect(Buffer.byteLength(out, 'utf8')).toBeLessThanOrEqual(20);
+    });
+});
+
+describe('stripSummaryNoiseFromLogMessage', () => {
+    it('removes access token noise and trims', () => {
+        expect(stripSummaryNoiseFromLogMessage('Scripts have compiler errors.\nAccess token is unavailable; failed to update')).toBe(
+            'Scripts have compiler errors.'
+        );
+        expect(stripSummaryNoiseFromLogMessage('Access token is unavailable; failed to update')).toBe('');
+    });
+});
 
 describe('mergeLogEntriesPreferringSeverity', () => {
     it('keeps Error over Info when dedupe key matches', () => {

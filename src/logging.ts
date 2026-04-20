@@ -2,8 +2,6 @@ import { UTP, Severity } from './utp';
 import { GitHubActionsLoggerProvider, GitHubAnnotationLevel } from './github-actions-ci';
 import { ILoggerProvider, LocalCliLoggerProvider, LoggerAnnotationOptions, MarkdownTarget } from './logger-provider';
 
-const TRUNCATE_MSG = 120;
-
 /** Severity order for display: Error first, then Warning, then Info. Undefined treats as Warning. */
 function severityRank(s: string | undefined): number {
     if (s === Severity.Error || s === Severity.Exception || s === Severity.Assert) return 0;
@@ -315,6 +313,65 @@ function truncateStr(s: string, max: number): string {
     return s.length <= max ? s : s.slice(0, max) + '…';
 }
 
+/**
+ * Truncates s to fit within maxBytes in UTF-8. If truncated, appends an ellipsis (…).
+ * If s already fits, returns s unchanged.
+ * Exported for unit tests.
+ */
+export function truncateStringToUtf8ByteLength(s: string, maxBytes: number): string {
+    if (maxBytes <= 0) return '';
+    const ellipsis = '…';
+    const ellBytes = Buffer.byteLength(ellipsis, 'utf8');
+    if (Buffer.byteLength(s, 'utf8') <= maxBytes) return s;
+    if (maxBytes <= ellBytes) {
+        let end = 0;
+        for (let i = 1; i <= s.length; i++) {
+            const sub = s.slice(0, i);
+            if (Buffer.byteLength(sub, 'utf8') > maxBytes) break;
+            end = i;
+        }
+        return s.slice(0, end);
+    }
+    let low = 0;
+    let high = s.length;
+    while (low < high) {
+        const mid = Math.floor((low + high + 1) / 2);
+        const sub = s.slice(0, mid);
+        if (Buffer.byteLength(sub, 'utf8') + ellBytes <= maxBytes) low = mid;
+        else high = mid - 1;
+    }
+    return s.slice(0, low) + ellipsis;
+}
+
+/**
+ * Appends one formatted log line per entry, truncating each line only when it would exceed the
+ * remaining bytes in the workflow summary (byteLimit is total cap for the final string starting from out).
+ */
+function appendWorkflowSummaryLogLines(out: string, entries: UTP[], byteLimit: number): { out: string; shown: number; omitted: number } {
+    let o = out;
+    let shown = 0;
+    const newline = '\n';
+    const nlBytes = Buffer.byteLength(newline, 'utf8');
+    for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        if (entry === undefined) {
+            return { out: o, shown, omitted: entries.length - shown };
+        }
+        const room = byteLimit - Buffer.byteLength(o, 'utf8');
+        if (room < nlBytes) {
+            return { out: o, shown, omitted: entries.length - shown };
+        }
+        const rawLine = formatLogEntryLine(entry, Number.POSITIVE_INFINITY).replace(/\n$/, '');
+        const maxContentBytes = room - nlBytes;
+        const lineBody = Buffer.byteLength(rawLine, 'utf8') <= maxContentBytes
+            ? rawLine
+            : truncateStringToUtf8ByteLength(rawLine, maxContentBytes);
+        o += lineBody + newline;
+        shown++;
+    }
+    return { out: o, shown, omitted: 0 };
+}
+
 function toSingleLineText(value: string): string {
     return value
         .replace(/\r?\n+/g, ' ')
@@ -326,6 +383,49 @@ function formatDurationMsForSummary(ms: number | undefined): string {
     if (ms === undefined || !Number.isFinite(ms)) { return '-'; }
     if (ms < 1000) { return `${Math.round(ms)}ms`; }
     return `${(ms / 1000).toFixed(1)}s`;
+}
+
+/** Unity/CI noise shown in logs; omit from workflow summary foldouts and counts. */
+const SUMMARY_NOISE_ACCESS_TOKEN = 'Access token is unavailable; failed to update';
+
+/**
+ * Removes known noise phrases from a log message for summary display.
+ * Exported for unit tests.
+ */
+export function stripSummaryNoiseFromLogMessage(message: string): string {
+    const flat = toSingleLineText(message);
+    if (!flat) return '';
+    const pattern = SUMMARY_NOISE_ACCESS_TOKEN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const out = flat.replace(new RegExp(pattern, 'gi'), ' ').replace(/\s+/g, ' ').trim();
+    return out;
+}
+
+function filterNoiseFromSummaryLogEntries(entries: UTP[]): UTP[] {
+    const out: UTP[] = [];
+    for (const e of entries) {
+        const stripped = stripSummaryNoiseFromLogMessage(e.message || '');
+        if (stripped === '') continue;
+        const originalFlat = toSingleLineText(e.message || '');
+        if (stripped !== originalFlat) {
+            out.push({ ...e, message: stripped });
+        } else {
+            out.push(e);
+        }
+    }
+    return out;
+}
+
+function renderBuildActionsFoldoutMarkdown(completedActions: UTP[], maxBytes: number): string {
+    const n = completedActions.length;
+    const open = `<details open><summary>Build actions (${n})</summary>\n\n`;
+    const close = `</details>\n\n`;
+    const overhead = Buffer.byteLength(open + close, 'utf8');
+    const innerBudget = Math.max(0, maxBytes - overhead);
+    const table = buildActionTimelineTableMarkdown(completedActions, innerBudget, '');
+    const inner = !table.truncated
+        ? table.markdown
+        : buildActionTimelineCodeblockMarkdown(completedActions, innerBudget, '');
+    return open + inner + close;
 }
 
 /** Paths to treat as Unity engine (omit from summary when using heuristic filter). */
@@ -394,7 +494,7 @@ function normalizeMessageForDisplay(
  * One line per entry: path(line,col): &lt;message&gt; or path(line): &lt;message&gt; when column is missing.
  * When file/line are missing, outputs: - &lt;message&gt;.
  */
-function formatLogEntryLine(e: UTP, maxMsgLen: number = TRUNCATE_MSG): string {
+function formatLogEntryLine(e: UTP, maxMsgLen: number = Number.POSITIVE_INFINITY): string {
     const file = (e.file || (e as { fileName?: string }).fileName || '').replace(/\\/g, '/');
     const line = e.line ?? (e as { lineNumber?: number }).lineNumber;
     const hasLocation = file && (line !== undefined && line > 0);
@@ -402,7 +502,9 @@ function formatLogEntryLine(e: UTP, maxMsgLen: number = TRUNCATE_MSG): string {
     const { message: normalizedMsg, column } = hasLocation
         ? normalizeMessageForDisplay(rawMsg, file, line)
         : { message: rawMsg, column: undefined as number | undefined };
-    const msg = truncateStr(normalizedMsg, maxMsgLen);
+    const msg = Number.isFinite(maxMsgLen) && maxMsgLen >= 0 && maxMsgLen < Number.POSITIVE_INFINITY
+        ? truncateStr(normalizedMsg, maxMsgLen)
+        : normalizedMsg;
 
     if (hasLocation) {
         const loc = column !== undefined ? `${file}(${line},${column})` : `${file}(${line})`;
@@ -599,13 +701,14 @@ export class Logger {
             ...additional.filter(e => e.type === 'LogEntry' || e.type === 'Compiler'),
         ]);
         const pathFiltered = filterMergedByPath(merged, options);
-        const bySeverity = groupBySeverity(pathFiltered);
+        const summaryLogs = filterNoiseFromSummaryLogEntries(pathFiltered);
+        const bySeverity = groupBySeverity(summaryLogs);
         const limit = this.getMarkdownByteLimit('workflow-summary');
 
         const builders: (() => string)[] = [
             () => this.buildSummaryTimelineAndMergedLog(name, completedActions, bySeverity, testResults, limit),
             () => this.buildSummaryCollapsibleWithMergedLog(name, completedActions, bySeverity, testResults, limit),
-            () => this.buildSummaryTimelineAndCounts(name, completedActions, pathFiltered.length, testResults, limit),
+            () => this.buildSummaryTimelineAndCounts(name, completedActions, summaryLogs.length, testResults, limit),
         ];
         let summary = '';
         for (const build of builders) {
@@ -647,12 +750,7 @@ export class Logger {
 
         if (completedActions.length > 0) {
             const remaining = byteLimit - Buffer.byteLength(out, 'utf8');
-            const actionTable = buildActionTimelineTableMarkdown(completedActions, remaining, '');
-            if (!actionTable.truncated) {
-                out += actionTable.markdown;
-            } else {
-                out += buildActionTimelineCodeblockMarkdown(completedActions, remaining, '');
-            }
+            out += renderBuildActionsFoldoutMarkdown(completedActions, remaining);
         }
 
         if (testResults.length > 0) {
@@ -666,19 +764,10 @@ export class Logger {
             const openAttr = openByDefault ? ' open' : '';
             out += `<details${openAttr}><summary>${title} (${entries.length})</summary>\n\n`;
             out += '```text\n';
-            let shown = 0;
-            let omitted = 0;
-            for (const e of entries) {
-                const line = formatLogEntryLine(e);
-                if (Buffer.byteLength(out + line, 'utf8') > limit) {
-                    omitted = entries.length - shown;
-                    break;
-                }
-                out += line;
-                shown++;
-            }
-            if (omitted > 0) {
-                out += `... and ${omitted} more ${dropSuffix}\n`;
+            const appended = appendWorkflowSummaryLogLines(out, entries, limit);
+            out = appended.out;
+            if (appended.omitted > 0) {
+                out += `... and ${appended.omitted} more ${dropSuffix}\n`;
             }
             out += '```\n\n';
             out += `</details>\n\n`;
@@ -705,21 +794,8 @@ export class Logger {
         let out = `## ${name} Summary\n\n`;
 
         if (completedActions.length > 0) {
-            out += `<details><summary>Build timeline (${completedActions.length} actions)</summary>\n\n`;
-            out += '```text\n';
-            let timelineShown = 0;
-            for (const a of completedActions) {
-                const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
-                const row = `${errCount > 0 ? '❌' : '✅'} ${Logger.formatDurationMs(a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined))} ${errCount} - ${toSingleLineText(a.description || a.name || '-')}\n`;
-                if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
-                out += row;
-                timelineShown++;
-            }
-            if (timelineShown < completedActions.length) {
-                out += `... and ${completedActions.length - timelineShown} more actions\n`;
-            }
-            out += '```\n\n';
-            out += `</details>\n\n`;
+            const remaining = byteLimit - Buffer.byteLength(out, 'utf8');
+            out += renderBuildActionsFoldoutMarkdown(completedActions, remaining);
         }
 
         if (testResults.length > 0) {
@@ -733,18 +809,9 @@ export class Logger {
             const openAttr = openByDefault ? ' open' : '';
             out += `<details${openAttr}><summary>${title} (${entries.length})</summary>\n\n`;
             out += '```text\n';
-            let shown = 0;
-            let omitted = 0;
-            for (const e of entries) {
-                const line = formatLogEntryLine(e);
-                if (Buffer.byteLength(out + line, 'utf8') > limit) {
-                    omitted = entries.length - shown;
-                    break;
-                }
-                out += line;
-                shown++;
-            }
-            if (omitted > 0) out += `... and ${omitted} more ${dropSuffix}\n`;
+            const appended = appendWorkflowSummaryLogLines(out, entries, limit);
+            out = appended.out;
+            if (appended.omitted > 0) out += `... and ${appended.omitted} more ${dropSuffix}\n`;
             out += '```\n\n';
             out += `</details>\n\n`;
         };
@@ -768,22 +835,8 @@ export class Logger {
     ): string {
         let out = `## ${name} Summary\n\n`;
         if (completedActions.length > 0) {
-            out += '```text\n';
-            let timelineShown = 0;
-            for (const a of completedActions) {
-                const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
-                const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
-                const status = errCount > 0 ? '❌' : '✅';
-                const desc = toSingleLineText(a.description || a.name || '-');
-                const row = `${status} ${Logger.formatDurationMs(durationMs)} ${errCount} - ${desc}\n`;
-                if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
-                out += row;
-                timelineShown++;
-            }
-            if (timelineShown < completedActions.length) {
-                out += `... and ${completedActions.length - timelineShown} more actions\n`;
-            }
-            out += '```\n\n';
+            const remaining = byteLimit - Buffer.byteLength(out, 'utf8');
+            out += renderBuildActionsFoldoutMarkdown(completedActions, remaining);
         }
         if (testResults.length > 0) {
             const remaining = byteLimit - Buffer.byteLength(out, 'utf8');
