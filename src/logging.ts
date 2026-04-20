@@ -139,7 +139,7 @@ export function testStatusFromState(state: number | undefined): string {
 export function utpToTestResultSummary(e: UTP): TestResultSummary {
     const state = (e as { state?: number }).state;
     const durationMs = e.duration ?? (e.durationMicroseconds != null ? e.durationMicroseconds / 1000 : 0);
-    const description = (e.name || e.description || '—').trim();
+    const description = (e.name || e.description || '-').trim();
     const msg = (e.message || '').trim();
     const summary: TestResultSummary = {
         status: testStatusFromState(state),
@@ -227,7 +227,7 @@ export function buildUnitTestJobSummaryMarkdown(testResults: TestResultSummary[]
     const durationStr = counts.totalDurationMs >= 1000
         ? `${(counts.totalDurationMs / 1000).toFixed(1)}s`
         : `${Math.round(counts.totalDurationMs)} ms`;
-    out += `**${testResults.length}** tests — **${counts.passed}** ✓, **${counts.failed}** ✗, **${counts.skipped}** skipped, **${counts.inconclusive}** inconclusive — **${durationStr}** total\n\n`;
+    out += `**${testResults.length}** tests - **${counts.passed}** ✓, **${counts.failed}** ✗, **${counts.skipped}** skipped, **${counts.inconclusive}** inconclusive - **${durationStr}** total\n\n`;
     out += '| Test | Result | Time | Message |\n';
     out += '| --- | --- | --- | --- |\n';
 
@@ -258,6 +258,59 @@ export function buildUnitTestJobSummaryMarkdown(testResults: TestResultSummary[]
     return out;
 }
 
+function buildActionTimelineTableMarkdown(
+    completedActions: UTP[],
+    byteLimit: number,
+    prefix?: string
+): { markdown: string; truncated: boolean } {
+    if (completedActions.length === 0) return { markdown: '', truncated: false };
+    const p = prefix ?? '';
+    let out = p + '| Status | Duration | Errors | Action |\n';
+    out += '| --- | --- | --- | --- |\n';
+
+    let shown = 0;
+    for (const a of completedActions) {
+        const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
+        const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
+        const status = errCount > 0 ? '❌' : '✅';
+        const action = truncateStr(toSingleLineText(a.description || a.name || '-'), 120);
+        const row = `| ${escapeMarkdownTableCell(status)} | ${escapeMarkdownTableCell(formatDurationMsForSummary(durationMs))} | ${errCount} | ${escapeMarkdownTableCell(action)} |\n`;
+        if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
+        out += row;
+        shown++;
+    }
+
+    const truncated = shown < completedActions.length;
+    if (truncated) {
+        out += `| ... | ... | ... | ... and ${completedActions.length - shown} more actions |\n`;
+    }
+    out += '\n';
+    return { markdown: out, truncated };
+}
+
+function buildActionTimelineCodeblockMarkdown(completedActions: UTP[], byteLimit: number, prefix?: string): string {
+    if (completedActions.length === 0) return '';
+    const p = prefix ?? '';
+    let out = p + '```text\n';
+    let timelineShown = 0;
+    for (const a of completedActions) {
+        const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
+        const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
+        const status = errCount > 0 ? '❌' : '✅';
+        const desc = toSingleLineText(a.description || a.name || '-');
+        const durationStr = formatDurationMsForSummary(durationMs);
+        const row = `${status} ${durationStr} ${errCount} - ${desc}\n`;
+        if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
+        out += row;
+        timelineShown++;
+    }
+    if (timelineShown < completedActions.length) {
+        out += `... and ${completedActions.length - timelineShown} more actions\n`;
+    }
+    out += '```\n\n';
+    return out;
+}
+
 function truncateStr(s: string, max: number): string {
     return s.length <= max ? s : s.slice(0, max) + '…';
 }
@@ -267,6 +320,12 @@ function toSingleLineText(value: string): string {
         .replace(/\r?\n+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
+}
+
+function formatDurationMsForSummary(ms: number | undefined): string {
+    if (ms === undefined || !Number.isFinite(ms)) { return '-'; }
+    if (ms < 1000) { return `${Math.round(ms)}ms`; }
+    return `${(ms / 1000).toFixed(1)}s`;
 }
 
 /** Paths to treat as Unity engine (omit from summary when using heuristic filter). */
@@ -491,7 +550,7 @@ export class Logger {
     }
 
     private static formatDurationMs(ms: number | undefined): string {
-        if (ms === undefined || !Number.isFinite(ms)) { return '—'; }
+        if (ms === undefined || !Number.isFinite(ms)) { return '-'; }
         if (ms < 1000) { return `${Math.round(ms)}ms`; }
         return `${(ms / 1000).toFixed(1)}s`;
     }
@@ -560,7 +619,7 @@ export class Logger {
     }
 
     /**
-     * Builds summary: stats + list timeline + unit-test block + severity foldouts.
+     * Builds summary: stats + action table + unit-test block + severity foldouts.
      */
     private buildSummaryTimelineAndMergedLog(
         name: string,
@@ -587,23 +646,13 @@ export class Logger {
         out += '\n';
 
         if (completedActions.length > 0) {
-            out += '```text\n';
-            let timelineShown = 0;
-            for (const a of completedActions) {
-                const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
-                const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
-                const status = errCount > 0 ? '❌' : '✅';
-                const desc = toSingleLineText(a.description || a.name || '—');
-                const durationStr = Logger.formatDurationMs(durationMs);
-                const row = `${status} ${durationStr} ${errCount} — ${desc}\n`;
-                if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
-                out += row;
-                timelineShown++;
+            const remaining = byteLimit - Buffer.byteLength(out, 'utf8');
+            const actionTable = buildActionTimelineTableMarkdown(completedActions, remaining, '');
+            if (!actionTable.truncated) {
+                out += actionTable.markdown;
+            } else {
+                out += buildActionTimelineCodeblockMarkdown(completedActions, remaining, '');
             }
-            if (timelineShown < completedActions.length) {
-                out += `... and ${completedActions.length - timelineShown} more actions\n`;
-            }
-            out += '```\n\n';
         }
 
         if (testResults.length > 0) {
@@ -661,7 +710,7 @@ export class Logger {
             let timelineShown = 0;
             for (const a of completedActions) {
                 const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
-                const row = `${errCount > 0 ? '❌' : '✅'} ${Logger.formatDurationMs(a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined))} ${errCount} — ${toSingleLineText(a.description || a.name || '—')}\n`;
+                const row = `${errCount > 0 ? '❌' : '✅'} ${Logger.formatDurationMs(a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined))} ${errCount} - ${toSingleLineText(a.description || a.name || '-')}\n`;
                 if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
                 out += row;
                 timelineShown++;
@@ -725,8 +774,8 @@ export class Logger {
                 const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
                 const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
                 const status = errCount > 0 ? '❌' : '✅';
-                const desc = toSingleLineText(a.description || a.name || '—');
-                const row = `${status} ${Logger.formatDurationMs(durationMs)} ${errCount} — ${desc}\n`;
+                const desc = toSingleLineText(a.description || a.name || '-');
+                const row = `${status} ${Logger.formatDurationMs(durationMs)} ${errCount} - ${desc}\n`;
                 if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
                 out += row;
                 timelineShown++;
