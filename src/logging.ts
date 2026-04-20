@@ -262,6 +262,13 @@ function truncateStr(s: string, max: number): string {
     return s.length <= max ? s : s.slice(0, max) + '…';
 }
 
+function toSingleLineText(value: string): string {
+    return value
+        .replace(/\r?\n+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
 /** Paths to treat as Unity engine (omit from summary when using heuristic filter). */
 const UNITY_ENGINE_PATH_PREFIXES = [
     'Runtime/',
@@ -332,7 +339,7 @@ function formatLogEntryLine(e: UTP, maxMsgLen: number = TRUNCATE_MSG): string {
     const file = (e.file || (e as { fileName?: string }).fileName || '').replace(/\\/g, '/');
     const line = e.line ?? (e as { lineNumber?: number }).lineNumber;
     const hasLocation = file && (line !== undefined && line > 0);
-    const rawMsg = (e.message || '').trim();
+    const rawMsg = toSingleLineText(e.message || '');
     const { message: normalizedMsg, column } = hasLocation
         ? normalizeMessageForDisplay(rawMsg, file, line)
         : { message: rawMsg, column: undefined as number | undefined };
@@ -340,9 +347,9 @@ function formatLogEntryLine(e: UTP, maxMsgLen: number = TRUNCATE_MSG): string {
 
     if (hasLocation) {
         const loc = column !== undefined ? `${file}(${line},${column})` : `${file}(${line})`;
-        return `- ${loc}: ${msg}\n`;
+        return `${loc}: ${msg}\n`;
     }
-    return `- ${msg}\n`;
+    return `${msg}\n`;
 }
 
 export enum LogLevel {
@@ -580,22 +587,23 @@ export class Logger {
         out += '\n';
 
         if (completedActions.length > 0) {
+            out += '```text\n';
             let timelineShown = 0;
             for (const a of completedActions) {
                 const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
                 const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
                 const status = errCount > 0 ? '❌' : '✅';
-                const desc = (a.description || a.name || '—').trim();
+                const desc = toSingleLineText(a.description || a.name || '—');
                 const durationStr = Logger.formatDurationMs(durationMs);
-                const row = `- ${status} ${durationStr} ${errCount} — ${desc}\n`;
+                const row = `${status} ${durationStr} ${errCount} — ${desc}\n`;
                 if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
                 out += row;
                 timelineShown++;
             }
             if (timelineShown < completedActions.length) {
-                out += `- ... and ${completedActions.length - timelineShown} more actions\n`;
+                out += `... and ${completedActions.length - timelineShown} more actions\n`;
             }
-            out += `\n`;
+            out += '```\n\n';
         }
 
         if (testResults.length > 0) {
@@ -608,6 +616,7 @@ export class Logger {
             if (entries.length === 0) return;
             const openAttr = openByDefault ? ' open' : '';
             out += `<details${openAttr}><summary>${title} (${entries.length})</summary>\n\n`;
+            out += '```text\n';
             let shown = 0;
             let omitted = 0;
             for (const e of entries) {
@@ -620,9 +629,10 @@ export class Logger {
                 shown++;
             }
             if (omitted > 0) {
-                out += `- ... and ${omitted} more ${dropSuffix}\n`;
+                out += `... and ${omitted} more ${dropSuffix}\n`;
             }
-            out += `\n</details>\n\n`;
+            out += '```\n\n';
+            out += `</details>\n\n`;
         };
 
         appendFoldout('Error', bySeverity.errorCritical, '(see annotations).', true);
@@ -647,18 +657,20 @@ export class Logger {
 
         if (completedActions.length > 0) {
             out += `<details><summary>Build timeline (${completedActions.length} actions)</summary>\n\n`;
+            out += '```text\n';
             let timelineShown = 0;
             for (const a of completedActions) {
                 const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
-                const row = `- ${errCount > 0 ? '❌' : '✅'} ${Logger.formatDurationMs(a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined))} ${errCount} — ${(a.description || a.name || '—').trim()}\n`;
+                const row = `${errCount > 0 ? '❌' : '✅'} ${Logger.formatDurationMs(a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined))} ${errCount} — ${toSingleLineText(a.description || a.name || '—')}\n`;
                 if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
                 out += row;
                 timelineShown++;
             }
             if (timelineShown < completedActions.length) {
-                out += `- ... and ${completedActions.length - timelineShown} more actions\n`;
+                out += `... and ${completedActions.length - timelineShown} more actions\n`;
             }
-            out += `\n</details>\n\n`;
+            out += '```\n\n';
+            out += `</details>\n\n`;
         }
 
         if (testResults.length > 0) {
@@ -671,6 +683,7 @@ export class Logger {
             if (entries.length === 0) return;
             const openAttr = openByDefault ? ' open' : '';
             out += `<details${openAttr}><summary>${title} (${entries.length})</summary>\n\n`;
+            out += '```text\n';
             let shown = 0;
             let omitted = 0;
             for (const e of entries) {
@@ -682,8 +695,9 @@ export class Logger {
                 out += line;
                 shown++;
             }
-            if (omitted > 0) out += `- ... and ${omitted} more ${dropSuffix}\n`;
-            out += `\n</details>\n\n`;
+            if (omitted > 0) out += `... and ${omitted} more ${dropSuffix}\n`;
+            out += '```\n\n';
+            out += `</details>\n\n`;
         };
         appendFoldout('Error', bySeverity.errorCritical, '(see annotations).', true);
         appendFoldout('Warning', bySeverity.warning, '(truncated; see full log).');
@@ -705,30 +719,31 @@ export class Logger {
     ): string {
         let out = `## ${name} Summary\n\n`;
         if (completedActions.length > 0) {
+            out += '```text\n';
             let timelineShown = 0;
             for (const a of completedActions) {
                 const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
                 const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
                 const status = errCount > 0 ? '❌' : '✅';
-                const desc = (a.description || a.name || '—').trim();
-                const row = `- ${status} ${Logger.formatDurationMs(durationMs)} ${errCount} — ${desc}\n`;
+                const desc = toSingleLineText(a.description || a.name || '—');
+                const row = `${status} ${Logger.formatDurationMs(durationMs)} ${errCount} — ${desc}\n`;
                 if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
                 out += row;
                 timelineShown++;
             }
             if (timelineShown < completedActions.length) {
-                out += `- ... and ${completedActions.length - timelineShown} more actions\n`;
+                out += `... and ${completedActions.length - timelineShown} more actions\n`;
             }
-            out += `\n`;
+            out += '```\n\n';
         }
         if (testResults.length > 0) {
             const remaining = byteLimit - Buffer.byteLength(out, 'utf8');
             out += buildUnitTestJobSummaryMarkdown(testResults, remaining, '');
         }
-        out += `- Log entries: ${logCount}\n`;
-        out += `- Actions: ${completedActions.length}\n`;
+        out += `Log entries: ${logCount}\n`;
+        out += `Actions: ${completedActions.length}\n`;
         if (testResults.length > 0) {
-            out += `- Tests: ${testResults.length}\n`;
+            out += `Tests: ${testResults.length}\n`;
         }
         out += `\nSee annotations for details.\n`;
         return out;
