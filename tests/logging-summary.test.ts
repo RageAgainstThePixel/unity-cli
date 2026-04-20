@@ -1,5 +1,5 @@
 import { Severity } from '../src/utp';
-import { mergeLogEntriesPreferringSeverity, buildTestResultsTableMarkdown, utpToTestResultSummary } from '../src/logging';
+import { mergeLogEntriesPreferringSeverity, buildTestResultsTableMarkdown, buildUnitTestJobSummaryMarkdown, utpToTestResultSummary } from '../src/logging';
 
 describe('mergeLogEntriesPreferringSeverity', () => {
     it('keeps Error over Info when dedupe key matches', () => {
@@ -69,5 +69,45 @@ describe('buildTestResultsTableMarkdown', () => {
         ];
         const md = buildTestResultsTableMarkdown(rows, 1024 * 1024, '');
         expect(md).toMatch(/a\\\\b\\|c/);
+    });
+});
+
+describe('buildUnitTestJobSummaryMarkdown', () => {
+    it('renders aggregate counts and failure-first rows', () => {
+        const rows = [
+            utpToTestResultSummary({
+                type: 'TestStatus',
+                name: 'Pass.Test',
+                state: 1,
+                duration: 10,
+            } as any),
+            utpToTestResultSummary({
+                type: 'TestStatus',
+                name: 'Fail.Test',
+                state: 2,
+                duration: 20,
+                message: 'assert fail',
+                file: 'Assets/Tests/Fail.cs',
+                line: 42,
+            } as any),
+        ];
+        const md = buildUnitTestJobSummaryMarkdown(rows, 1024 * 1024, '');
+        expect(md).toContain('### Unit test results');
+        expect(md).toContain('**2** tests');
+        expect(md).toContain('Fail.Test (Assets/Tests/Fail.cs:42)');
+    });
+});
+
+describe('utpToTestResultSummary', () => {
+    it('preserves file and line when available', () => {
+        const summary = utpToTestResultSummary({
+            type: 'TestStatus',
+            name: 'A.Test',
+            state: 2,
+            file: 'Assets/A.cs',
+            line: 12,
+        } as any);
+        expect(summary.file).toBe('Assets/A.cs');
+        expect(summary.line).toBe(12);
     });
 });

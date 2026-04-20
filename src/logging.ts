@@ -1,8 +1,8 @@
-import * as fs from 'fs';
 import { UTP, Severity } from './utp';
+import { GitHubActionsLoggerProvider, GitHubAnnotationLevel } from './github-actions-ci';
+import { ILoggerProvider, LocalCliLoggerProvider, LoggerAnnotationOptions, MarkdownTarget } from './logger-provider';
 
 const TRUNCATE_MSG = 120;
-const SUMMARY_BYTE_LIMIT = 1024 * 1024;
 
 /** Severity order for display: Error first, then Warning, then Info. Undefined treats as Warning. */
 function severityRank(s: string | undefined): number {
@@ -120,6 +120,8 @@ export interface TestResultSummary {
     durationMs: number;
     description: string;
     message?: string;
+    file?: string;
+    line?: number;
 }
 
 /** Maps UTPTestStatus.state to display status (Unity/NUnit-style: 0 Inconclusive, 1 Passed, 2 Failed, 3 Skipped). */
@@ -146,6 +148,14 @@ export function utpToTestResultSummary(e: UTP): TestResultSummary {
     };
     if (msg !== '') {
         summary.message = msg;
+    }
+    const file = (e.file || (e as { fileName?: string }).fileName || '').trim();
+    const line = e.line ?? (e as { lineNumber?: number }).lineNumber;
+    if (file !== '') {
+        summary.file = file.replace(/\\/g, '/');
+    }
+    if (line !== undefined && line > 0) {
+        summary.line = line;
     }
     return summary;
 }
@@ -184,6 +194,67 @@ export function buildTestResultsTableMarkdown(testResults: TestResultSummary[], 
         out += `| … | … | … and ${testResults.length - shown} more |\n`;
     }
     out += `\n`;
+    return out;
+}
+
+function summarizeTestOutcomes(testResults: TestResultSummary[]): { passed: number; failed: number; skipped: number; inconclusive: number; totalDurationMs: number } {
+    let passed = 0;
+    let failed = 0;
+    let skipped = 0;
+    let inconclusive = 0;
+    let totalDurationMs = 0;
+    for (const t of testResults) {
+        totalDurationMs += t.durationMs;
+        switch (t.status) {
+            case '✅': passed++; break;
+            case '❌': failed++; break;
+            case '⏭️': skipped++; break;
+            default: inconclusive++; break;
+        }
+    }
+    return { passed, failed, skipped, inconclusive, totalDurationMs };
+}
+
+/**
+ * Rich unit-test markdown block used by workflow summary and stdout.
+ * Keeps byte-budget behavior and truncation hints.
+ */
+export function buildUnitTestJobSummaryMarkdown(testResults: TestResultSummary[], byteLimit: number, prefix?: string): string {
+    if (testResults.length === 0) return '';
+    const p = prefix ?? '';
+    let out = p + '### Unit test results\n\n';
+    const counts = summarizeTestOutcomes(testResults);
+    const durationStr = counts.totalDurationMs >= 1000
+        ? `${(counts.totalDurationMs / 1000).toFixed(1)}s`
+        : `${Math.round(counts.totalDurationMs)} ms`;
+    out += `**${testResults.length}** tests — **${counts.passed}** ✓, **${counts.failed}** ✗, **${counts.skipped}** skipped, **${counts.inconclusive}** inconclusive — **${durationStr}** total\n\n`;
+    out += '| Test | Result | Time | Message |\n';
+    out += '| --- | --- | --- | --- |\n';
+
+    const ordered = [...testResults].sort((a, b) => {
+        const aFail = a.status === '❌' ? 0 : 1;
+        const bFail = b.status === '❌' ? 0 : 1;
+        if (aFail !== bFail) return aFail - bFail;
+        return b.durationMs - a.durationMs;
+    });
+
+    let shown = 0;
+    for (const row of ordered) {
+        const durationText = row.durationMs >= 1000 ? `${(row.durationMs / 1000).toFixed(1)}s` : `${Math.round(row.durationMs)} ms`;
+        const loc = row.file && row.line ? ` (${row.file}:${row.line})` : '';
+        const rawName = `${row.description}${loc}`;
+        const name = escapeMarkdownTableCell(rawName.length > 90 ? `${rawName.slice(0, 87)}…` : rawName);
+        const msgRaw = (row.message ?? '').replace(/\r?\n/g, ' ').trim();
+        const msg = escapeMarkdownTableCell(msgRaw.length > 120 ? `${msgRaw.slice(0, 117)}…` : msgRaw);
+        const line = `| ${name} | ${escapeMarkdownTableCell(row.status)} | ${escapeMarkdownTableCell(durationText)} | ${msg} |\n`;
+        if (Buffer.byteLength(out + line, 'utf8') > byteLimit) break;
+        out += line;
+        shown++;
+    }
+    if (shown < ordered.length) {
+        out += `| … | … | … | … and ${ordered.length - shown} more |\n`;
+    }
+    out += '\n';
     return out;
 }
 
@@ -285,21 +356,15 @@ export enum LogLevel {
 
 export class Logger {
     public logLevel: LogLevel = LogLevel.INFO;
-    private readonly _ci: string | undefined;
+    private readonly _provider: ILoggerProvider;
     static readonly instance: Logger = new Logger();
 
     private constructor() {
+        this._provider = process.env.GITHUB_ACTIONS === 'true'
+            ? new GitHubActionsLoggerProvider()
+            : new LocalCliLoggerProvider();
         if (process.env.GITHUB_ACTIONS === 'true') {
-            this._ci = 'GITHUB_ACTIONS';
             this.logLevel = process.env.ACTIONS_STEP_DEBUG === 'true' ? LogLevel.DEBUG : LogLevel.CI;
-        }
-    }
-
-    private printLine(message: any, lineColor: string | undefined, optionalParams: any[] = []): void {
-        if (lineColor && lineColor.length > 0) {
-            process.stdout.write(`${lineColor}${message}\x1b[0m\n`, ...optionalParams);
-        } else {
-            process.stdout.write(`${message}\n`, ...optionalParams);
         }
     }
 
@@ -311,40 +376,7 @@ export class Logger {
      */
     public log(level: LogLevel, message: any, optionalParams: any[] = []): void {
         if (this.shouldLog(level)) {
-            switch (this._ci) {
-                case 'GITHUB_ACTIONS': {
-                    switch (level) {
-                        case LogLevel.DEBUG: {
-                            message.toString().split('\n').forEach((line: string) => {
-                                process.stdout.write(`::debug::${line}\n`, ...optionalParams);
-                            });
-                            break;
-                        }
-                        case LogLevel.CI:
-                        case LogLevel.INFO: {
-                            process.stdout.write(`${message}\n`, ...optionalParams);
-                            break;
-                        }
-                        default: {
-                            process.stdout.write(`::${level}::${message}\n`, ...optionalParams);
-                            break;
-                        }
-                    }
-                    break;
-                }
-                default: {
-                    const stringColor: string | undefined = {
-                        [LogLevel.DEBUG]: '\x1b[35m', // Purple
-                        [LogLevel.INFO]: undefined,   // No color / White
-                        [LogLevel.CI]: undefined,     // No color / White
-                        [LogLevel.UTP]: undefined,    // No color / White
-                        [LogLevel.WARN]: '\x1b[33m',  // Yellow
-                        [LogLevel.ERROR]: '\x1b[31m', // Red
-                    }[level] || undefined;            // Default to no color / White
-                    this.printLine(message, stringColor, optionalParams);
-                    break;
-                }
-            }
+            this._provider.log(level, message, optionalParams);
         }
     }
 
@@ -352,39 +384,18 @@ export class Logger {
      * Starts a log group. In CI environments that support grouping, this will create a collapsible group.
      */
     public startGroup(message: any, optionalParams: any[] = [], logLevel: LogLevel = LogLevel.INFO): void {
-        switch (this._ci) {
-            case 'GITHUB_ACTIONS': {
-                // if there is newline in message, only use the first line for group title
-                // then print the rest of the lines inside the group in cyan color
-                const firstLine: string = message.toString().split('\n')[0];
-                const restLines: string[] = message.toString().split('\n').slice(1);
-                process.stdout.write(`::group::${firstLine}\n`, ...optionalParams);
-                restLines.forEach(line => {
-                    this.printLine(line, '\x1b[36m', ...optionalParams);
-                });
-                break;
-            }
-            default: {
-                // No grouping in standard console
-                this.log(logLevel, message, optionalParams);
-                break;
-            }
+        if (this._provider.isCi) {
+            this._provider.startGroup(message, optionalParams);
+            return;
         }
+        this.log(logLevel, message, optionalParams);
     }
 
     /**
      * Ends a log group. In CI environments that support grouping, this will end the current group.
      */
     public endGroup(): void {
-        switch (this._ci) {
-            case 'GITHUB_ACTIONS': {
-                process.stdout.write(`::endgroup::\n`);
-                break;
-            }
-            default: {
-                break; // No grouping in standard console
-            }
-        }
+        this._provider.endGroup();
     }
 
     /**
@@ -424,60 +435,25 @@ export class Logger {
      * @param title The title of the annotation.
      */
     public annotate(logLevel: LogLevel, message: string, file?: string, line?: number, endLine?: number, column?: number, endColumn?: number, title?: string): void {
-        let annotation = '';
-
-        switch (this._ci) {
-            case 'GITHUB_ACTIONS': {
-                const level = {
-                    [LogLevel.CI]: 'notice',
-                    [LogLevel.INFO]: 'notice',
-                    [LogLevel.DEBUG]: 'notice',
-                    [LogLevel.UTP]: 'notice',
-                    [LogLevel.WARN]: 'warning',
-                    [LogLevel.ERROR]: 'error',
-                }[logLevel] ?? 'notice';
-
-                const parts: string[] = [];
-                const appendPart = (key: string, value?: string | number): void => {
-                    if (value === undefined || value === null) { return; }
-                    const stringValue = value.toString();
-                    if (stringValue.length === 0) { return; }
-                    parts.push(`${key}=${this.escapeGitHubCommandValue(stringValue)}`);
-                };
-
-                appendPart('file', file);
-                if (line !== undefined && line > 0) {
-                    appendPart('line', line);
-                }
-                if (endLine !== undefined && endLine > 0) {
-                    appendPart('endLine', endLine);
-                }
-                if (column !== undefined && column > 0) {
-                    appendPart('col', column);
-                }
-                if (endColumn !== undefined && endColumn > 0) {
-                    appendPart('endColumn', endColumn);
-                }
-                appendPart('title', title);
-
-                const metadata = parts.length > 0 ? ` ${parts.join(',')}` : '';
-                annotation = `::${level}${metadata}::${this.escapeGitHubCommandValue(message)}`;
-                break;
-            }
-        }
-
-        if (annotation.length > 0) {
-            process.stdout.write(`${annotation}\n`);
-        } else {
-            this.log(logLevel, message);
-        }
-    }
-
-    private escapeGitHubCommandValue(value: string): string {
-        return value
-            .replace(/%/g, '%25')
-            .replace(/\r/g, '%0D')
-            .replace(/\n/g, '%0A');
+        const level = {
+            [LogLevel.CI]: 'notice',
+            [LogLevel.INFO]: 'notice',
+            [LogLevel.DEBUG]: 'notice',
+            [LogLevel.UTP]: 'notice',
+            [LogLevel.WARN]: 'warning',
+            [LogLevel.ERROR]: 'error',
+        }[logLevel] ?? 'notice';
+        const options: LoggerAnnotationOptions = {};
+        if (file !== undefined && file !== '') { options.file = file; }
+        if (line !== undefined) { options.line = line; }
+        if (endLine !== undefined) { options.endLine = endLine; }
+        if (column !== undefined) { options.column = column; }
+        if (endColumn !== undefined) { options.endColumn = endColumn; }
+        if (title !== undefined && title !== '') { options.title = title; }
+        const backendLevel = level === 'error'
+            ? GitHubAnnotationLevel.Error
+            : (level === 'warning' ? GitHubAnnotationLevel.Warning : GitHubAnnotationLevel.Notice);
+        this._provider.annotate(backendLevel, message, options);
     }
 
     private shouldLog(level: LogLevel): boolean {
@@ -491,12 +467,7 @@ export class Logger {
      * @param message The string to mask.
      */
     public CI_mask(message: string): void {
-        switch (this._ci) {
-            case 'GITHUB_ACTIONS': {
-                process.stdout.write(`::add-mask::${message}\n`);
-                break;
-            }
-        }
+        this._provider.mask(message);
     }
 
     /**
@@ -505,31 +476,11 @@ export class Logger {
      * @param value The value of the environment variable.
      */
     public CI_setEnvironmentVariable(name: string, value: string): void {
-        switch (this._ci) {
-            case 'GITHUB_ACTIONS': {
-                // needs to be appended to the temporary file specified in the GITHUB_ENV environment variable
-                const githubEnv = process.env.GITHUB_ENV;
-                // echo "MY_ENV_VAR=myValue" >> $GITHUB_ENV
-                if (githubEnv) {
-                    fs.appendFileSync(githubEnv, `${name}=${value}\n`, { encoding: 'utf8' });
-                }
-                break;
-            }
-        }
+        this._provider.setEnvironmentVariable(name, value);
     }
 
     public CI_setOutput(name: string, value: string): void {
-        switch (this._ci) {
-            case 'GITHUB_ACTIONS': {
-                // needs to be appended to the temporary file specified in the GITHUB_OUTPUT environment variable
-                const githubOutput = process.env.GITHUB_OUTPUT;
-                // echo "myOutput=myValue" >> $GITHUB_OUTPUT
-                if (githubOutput) {
-                    fs.appendFileSync(githubOutput, `${name}=${value}\n`, { encoding: 'utf8' });
-                }
-                break;
-            }
-        }
+        this._provider.setOutput(name, value);
     }
 
     private static formatDurationMs(ms: number | undefined): string {
@@ -555,48 +506,54 @@ export class Logger {
         return rebuilt + footer;
     }
 
-    public CI_appendWorkflowSummary(name: string, telemetry: UTP[], options?: { projectPath?: string }) {
+    /**
+     * Returns the markdown byte limit for a given output target.
+     * Workflow summary may be backend constrained; stdout is intentionally uncapped.
+     */
+    public getMarkdownByteLimit(target: MarkdownTarget): number {
+        return this._provider.getMarkdownByteLimit(target);
+    }
+
+    public CI_appendWorkflowSummary(name: string, telemetry: UTP[], options?: { projectPath?: string; additionalLogEntries?: UTP[] }) {
         if (telemetry.length === 0) { return; }
-        switch (this._ci) {
-            case 'GITHUB_ACTIONS': {
-                const githubSummary = process.env.GITHUB_STEP_SUMMARY;
-                if (githubSummary) {
-                    const excludedTypes = new Set(['MemoryLeaks', 'MemoryLeak']);
-                    const filtered = telemetry.filter(entry => !excludedTypes.has(entry.type || ''));
-                    if (filtered.length === 0) { return; }
-
-                    const completedActions = filtered.filter(
-                        e => e.type === 'Action' && e.phase === 'End'
-                    );
-                    const testResults = collectTestResults(filtered);
-                    const merged = buildMergedLogList(filtered);
-                    const pathFiltered = filterMergedByPath(merged, options);
-                    const bySeverity = groupBySeverity(pathFiltered);
-                    const limit = SUMMARY_BYTE_LIMIT;
-
-                    const builders: (() => string)[] = [
-                        () => this.buildSummaryTimelineAndMergedLog(name, completedActions, bySeverity, testResults, limit),
-                        () => this.buildSummaryCollapsibleWithMergedLog(name, completedActions, bySeverity, testResults, limit),
-                        () => this.buildSummaryTimelineAndCounts(name, completedActions, pathFiltered.length, testResults, limit),
-                    ];
-                    let summary = '';
-                    for (const build of builders) {
-                        summary = build();
-                        if (Buffer.byteLength(summary, 'utf8') <= limit) { break; }
-                    }
-                    if (Buffer.byteLength(summary, 'utf8') > limit) {
-                        summary = Logger.truncateSummaryToByteLimit(summary, limit);
-                    }
-                    fs.appendFileSync(githubSummary, summary, { encoding: 'utf8' });
-                }
-                break;
-            }
+        if (this.getMarkdownByteLimit('workflow-summary') === Number.POSITIVE_INFINITY) {
+            return;
         }
+        const excludedTypes = new Set(['MemoryLeaks', 'MemoryLeak']);
+        const filtered = telemetry.filter(entry => !excludedTypes.has(entry.type || ''));
+        if (filtered.length === 0) { return; }
+
+        const completedActions = filtered.filter(
+            e => e.type === 'Action' && e.phase === 'End'
+        );
+        const testResults = collectTestResults(filtered);
+        const additional = options?.additionalLogEntries ?? [];
+        const merged = mergeLogEntriesPreferringSeverity([
+            ...buildMergedLogList(filtered),
+            ...additional.filter(e => e.type === 'LogEntry' || e.type === 'Compiler'),
+        ]);
+        const pathFiltered = filterMergedByPath(merged, options);
+        const bySeverity = groupBySeverity(pathFiltered);
+        const limit = this.getMarkdownByteLimit('workflow-summary');
+
+        const builders: (() => string)[] = [
+            () => this.buildSummaryTimelineAndMergedLog(name, completedActions, bySeverity, testResults, limit),
+            () => this.buildSummaryCollapsibleWithMergedLog(name, completedActions, bySeverity, testResults, limit),
+            () => this.buildSummaryTimelineAndCounts(name, completedActions, pathFiltered.length, testResults, limit),
+        ];
+        let summary = '';
+        for (const build of builders) {
+            summary = build();
+            if (Buffer.byteLength(summary, 'utf8') <= limit) { break; }
+        }
+        if (Buffer.byteLength(summary, 'utf8') > limit) {
+            summary = Logger.truncateSummaryToByteLimit(summary, limit);
+        }
+        this._provider.appendStepSummary(summary);
     }
 
     /**
-     * Builds summary: optional stats, build timeline table (only when actions exist), test results
-     * table (when present), then one <details> per severity (Error, Warning, Info).
+     * Builds summary: stats + list timeline + unit-test block + severity foldouts.
      */
     private buildSummaryTimelineAndMergedLog(
         name: string,
@@ -613,11 +570,16 @@ export class Logger {
         );
         const totalSec = totalDurationMs / 1000;
         const totalStr = totalSec >= 60 ? `${Math.round(totalSec / 60)}m ${Math.round(totalSec % 60)}s` : `${totalSec.toFixed(1)}s`;
-        out += `${bySeverity.errorCritical.length} log/compiler issues, ${completedActions.length} actions, total ${totalStr}\n\n`;
+        out += `Errors: ${bySeverity.errorCritical.length}\n`;
+        out += `Warnings: ${bySeverity.warning.length}\n`;
+        out += `Total duration: ${totalStr}\n`;
+        out += `Actions: ${completedActions.length}\n`;
+        if (testResults.length > 0) {
+            out += `Tests: ${testResults.length}\n`;
+        }
+        out += '\n';
 
         if (completedActions.length > 0) {
-            out += `| Status | Duration | Errors | Step |\n`;
-            out += `|--------|----------|--------|------|\n`;
             let timelineShown = 0;
             for (const a of completedActions) {
                 const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
@@ -625,20 +587,20 @@ export class Logger {
                 const status = errCount > 0 ? '❌' : '✅';
                 const desc = (a.description || a.name || '—').trim();
                 const durationStr = Logger.formatDurationMs(durationMs);
-                const row = `| ${status} | ${durationStr} | ${errCount} | ${desc} |\n`;
+                const row = `- ${status} ${durationStr} ${errCount} — ${desc}\n`;
                 if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
                 out += row;
                 timelineShown++;
             }
             if (timelineShown < completedActions.length) {
-                out += `| … | … | … | … and ${completedActions.length - timelineShown} more |\n`;
+                out += `- ... and ${completedActions.length - timelineShown} more actions\n`;
             }
             out += `\n`;
         }
 
         if (testResults.length > 0) {
             const remaining = byteLimit - Buffer.byteLength(out, 'utf8');
-            out += buildTestResultsTableMarkdown(testResults, remaining, '');
+            out += buildUnitTestJobSummaryMarkdown(testResults, remaining, '');
         }
 
         const limit = byteLimit;
@@ -685,25 +647,23 @@ export class Logger {
 
         if (completedActions.length > 0) {
             out += `<details><summary>Build timeline (${completedActions.length} actions)</summary>\n\n`;
-            out += `| Status | Duration | Errors | Step |\n`;
-            out += `|--------|----------|--------|------|\n`;
             let timelineShown = 0;
             for (const a of completedActions) {
                 const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
-                const row = `| ${errCount > 0 ? '❌' : '✅'} | ${Logger.formatDurationMs(a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined))} | ${errCount} | ${(a.description || a.name || '—').trim()} |\n`;
+                const row = `- ${errCount > 0 ? '❌' : '✅'} ${Logger.formatDurationMs(a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined))} ${errCount} — ${(a.description || a.name || '—').trim()}\n`;
                 if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
                 out += row;
                 timelineShown++;
             }
             if (timelineShown < completedActions.length) {
-                out += `| … | … | … | … and ${completedActions.length - timelineShown} more |\n`;
+                out += `- ... and ${completedActions.length - timelineShown} more actions\n`;
             }
             out += `\n</details>\n\n`;
         }
 
         if (testResults.length > 0) {
             const remaining = byteLimit - Buffer.byteLength(out, 'utf8');
-            out += buildTestResultsTableMarkdown(testResults, remaining, '');
+            out += buildUnitTestJobSummaryMarkdown(testResults, remaining, '');
         }
 
         const limit = byteLimit;
@@ -733,7 +693,7 @@ export class Logger {
     }
 
     /**
-     * Fallback: build timeline table (when actions exist) + test results table (when present) + counts table.
+     * Fallback: list timeline (when actions exist) + unit-test block (when present) + compact count lines.
      * Used when even collapsible summary would exceed 1 MB.
      */
     private buildSummaryTimelineAndCounts(
@@ -745,34 +705,30 @@ export class Logger {
     ): string {
         let out = `## ${name} Summary\n\n`;
         if (completedActions.length > 0) {
-            out += `| Status | Duration | Errors | Step |\n`;
-            out += `|--------|----------|--------|------|\n`;
             let timelineShown = 0;
             for (const a of completedActions) {
                 const durationMs = a.duration ?? (a.durationMicroseconds != null ? a.durationMicroseconds / 1000 : undefined);
                 const errCount = Array.isArray(a.errors) ? a.errors.length : 0;
                 const status = errCount > 0 ? '❌' : '✅';
                 const desc = (a.description || a.name || '—').trim();
-                const row = `| ${status} | ${Logger.formatDurationMs(durationMs)} | ${errCount} | ${desc} |\n`;
+                const row = `- ${status} ${Logger.formatDurationMs(durationMs)} ${errCount} — ${desc}\n`;
                 if (Buffer.byteLength(out + row, 'utf8') > byteLimit) break;
                 out += row;
                 timelineShown++;
             }
             if (timelineShown < completedActions.length) {
-                out += `| … | … | … | … and ${completedActions.length - timelineShown} more |\n`;
+                out += `- ... and ${completedActions.length - timelineShown} more actions\n`;
             }
             out += `\n`;
         }
         if (testResults.length > 0) {
             const remaining = byteLimit - Buffer.byteLength(out, 'utf8');
-            out += buildTestResultsTableMarkdown(testResults, remaining, '');
+            out += buildUnitTestJobSummaryMarkdown(testResults, remaining, '');
         }
-        out += `| Type | Count |\n`;
-        out += `|------|-------|\n`;
-        out += `| Log | ${logCount} |\n`;
-        out += `| Actions | ${completedActions.length} |\n`;
+        out += `- Log entries: ${logCount}\n`;
+        out += `- Actions: ${completedActions.length}\n`;
         if (testResults.length > 0) {
-            out += `| Tests | ${testResults.length} |\n`;
+            out += `- Tests: ${testResults.length}\n`;
         }
         out += `\nSee annotations for details.\n`;
         return out;
