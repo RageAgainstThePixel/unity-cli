@@ -44,7 +44,6 @@ runs:
         UNITY_PROJECT_PATH: ${{ inputs.unity-project-path }}
         BUILD_TARGET: ${{ inputs.build-target }}
         BUILD_ARGS: ${{ inputs.build-args }}
-      continue-on-error: true
       run: |
         bash "${GITHUB_WORKSPACE}/.github/actions/scripts/run-utp-tests.sh"
 

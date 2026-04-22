@@ -146,6 +146,33 @@ jobs:
       - name: Verify UTP JSON keys
         if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' }}
         run: node .github/scripts/scan-utp-artifacts.cjs "${GITHUB_WORKSPACE}/utp-artifacts"
+      - name: Guardrail hidden UTP failures
+        if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' }}
+        run: |
+          set -euo pipefail
+          failure_markers='One or more tests did not meet expectations|was expected to succeed but failed|produced UTP errors but was expected to succeed'
+          log_dir="${UNITY_PROJECT_PATH}/Builds/Logs"
+          artifacts_dir="${GITHUB_WORKSPACE}/utp-artifacts"
+
+          marker_found=0
+
+          if [ -d "$log_dir" ]; then
+            if rg -n --no-ignore -S "$failure_markers" "$log_dir"; then
+              echo "::error::Hidden UTP failure marker detected in ${log_dir}"
+              marker_found=1
+            fi
+          fi
+
+          if [ -d "$artifacts_dir" ]; then
+            if rg -n --no-ignore -S "$failure_markers" "$artifacts_dir"; then
+              echo "::error::Hidden UTP failure marker detected in ${artifacts_dir}"
+              marker_found=1
+            fi
+          fi
+
+          if [ "$marker_found" -ne 0 ]; then
+            exit 1
+          fi
       - name: Uninstall Editor
         if: ${{ matrix.unity-version != 'none' }}
         run: |
