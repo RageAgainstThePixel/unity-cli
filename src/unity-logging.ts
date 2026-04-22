@@ -156,6 +156,56 @@ interface PlainLogIssue {
     line?: number;
 }
 
+export interface NormalizedAnnotationPath {
+    absoluteFile?: string;
+    annotationFile?: string;
+}
+
+function normalizePathSlashes(filePath: string): string {
+    return path.normalize(filePath).replace(/\\/g, '/');
+}
+
+/**
+ * Normalizes a candidate issue file path for annotation and project-path checks.
+ * - absoluteFile: used for `isFileUnderProjectPath` gating.
+ * - annotationFile: project-relative path preferred for GitHub annotation rendering.
+ */
+export function normalizeAnnotationPath(filePath: string | undefined, projectPath: string | undefined): NormalizedAnnotationPath {
+    if (!filePath) {
+        return {};
+    }
+
+    const trimmed = filePath.trim();
+    if (!trimmed) {
+        return {};
+    }
+
+    const projectRootAbsolute = projectPath ? path.resolve(projectPath) : undefined;
+    const normalizedProject = projectRootAbsolute ? normalizePathSlashes(projectRootAbsolute) : undefined;
+    const isAbsolute = path.isAbsolute(trimmed);
+    const absoluteFile = normalizePathSlashes(isAbsolute
+        ? trimmed
+        : (projectRootAbsolute ? path.resolve(projectRootAbsolute, trimmed) : trimmed));
+
+    if (!normalizedProject) {
+        return { absoluteFile, annotationFile: normalizePathSlashes(trimmed) };
+    }
+
+    if (!isFileUnderProjectPath(absoluteFile, normalizedProject)) {
+        return { absoluteFile };
+    }
+
+    const relative = normalizePathSlashes(path.relative(normalizedProject, absoluteFile));
+    if (!relative || relative.startsWith('../')) {
+        return { absoluteFile };
+    }
+
+    return {
+        absoluteFile,
+        annotationFile: relative,
+    };
+}
+
 function parsePlainLogIssue(line: string): PlainLogIssue | undefined {
     const paren = line.match(/^(.+?)\((\d+)(?:,\d+)?\):\s*(warning|error)\b[:\s-]*(.*)$/i);
     if (paren && paren[1] && paren[2] && paren[3]) {
@@ -199,8 +249,8 @@ function parsePlainLogIssue(line: string): PlainLogIssue | undefined {
  * Exported for unit tests.
  */
 export function isFileUnderProjectPath(filePath: string, projectRoot: string): boolean {
-    const normFile = path.normalize(filePath).replace(/\\/g, '/');
-    const normRoot = path.normalize(projectRoot).replace(/\\/g, '/');
+    const normFile = normalizePathSlashes(filePath);
+    const normRoot = normalizePathSlashes(projectRoot);
     const base = normRoot.endsWith('/') ? normRoot : `${normRoot}/`;
     if (process.platform === 'win32') {
         const f = normFile.toLowerCase();
@@ -231,8 +281,11 @@ function parseStackFrames(stackTrace: string, projectPath: string | undefined): 
             lineNum = parseInt(plainMatch[2], 10);
         }
         const line = lineNum !== undefined && Number.isFinite(lineNum) ? lineNum : undefined;
-        if (file != null && line != null && line > 0 && projectPath != null && isFileUnderProjectPath(file, projectPath)) {
-            frames.push({ file, line, title: stackLine });
+        if (file != null && line != null && line > 0) {
+            const normalized = normalizeAnnotationPath(file, projectPath);
+            if (projectPath != null && normalized.absoluteFile && normalized.annotationFile) {
+                frames.push({ file: normalized.annotationFile, line, title: stackLine });
+            }
         }
     }
     return frames;
@@ -1114,6 +1167,12 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
     const actionTableRenderer = new ActionTableRenderer(process.stdout.isTTY === true && process.env.CI !== 'true');
     const utpLogPath = buildUtpLogPath(logPath);
     let telemetryFlushed = false;
+    const buildIssueKey = (file: string | undefined, lineNo: number | undefined, message: string): string => {
+        const normalized = normalizeAnnotationPath(file, projectPath);
+        const canonicalFile = (normalized.absoluteFile ?? normalizePathSlashes(file ?? '')).toLowerCase();
+        const canonicalLine = lineNo ?? 0;
+        return `${canonicalFile}\u0000${canonicalLine}\u0000${message}`;
+    };
 
     const renderActionTable = (): void => {
         const snapshot = actionAccumulator.snapshot();
@@ -1166,9 +1225,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                 telemetry.push(utp);
                 const utpMsg = (utp.message ?? '').trim();
                 if ((utp.type === 'LogEntry' || utp.type === 'Compiler') && utpMsg !== '') {
-                    const file = (utp.file ?? '').replace(/\\/g, '/');
-                    const lineNo = utp.line ?? 0;
-                    seenIssueKeys.add(`${file}\u0000${lineNo}\u0000${utpMsg}`);
+                    seenIssueKeys.add(buildIssueKey(utp.file, utp.line, utpMsg));
                 }
                 if (utp.type === 'TestStatus') {
                     const ts = utp as UTP & { name?: string; state?: number; description?: string };
@@ -1179,14 +1236,14 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                         testResults.push(result);
                     }
                     if ((ts.state === 2 || ts.state === 0) && ts.message && !annotationCommandPrefixRegex.test(ts.message)) {
-                        const file = utp.file ? utp.file.replace(/\\/g, '/') : undefined;
+                        const normalizedPath = normalizeAnnotationPath(utp.file, projectPath);
                         const lineNumber = utp.line;
                         const title = (ts.name ?? ts.description ?? 'Test failure').trim();
-                        if (projectPath && file && lineNumber && isFileUnderProjectPath(file, projectPath)) {
-                            const key = `${file}\u0000${lineNumber}\u0000${ts.message}`;
+                        if (normalizedPath.annotationFile && lineNumber) {
+                            const key = buildIssueKey(normalizedPath.annotationFile, lineNumber, ts.message);
                             if (!seenAnnotationKeys.has(key)) {
                                 seenAnnotationKeys.add(key);
-                                logger.annotate(ts.state === 2 ? LogLevel.ERROR : LogLevel.WARN, ts.message, file, lineNumber, undefined, undefined, undefined, title);
+                                logger.annotate(ts.state === 2 ? LogLevel.ERROR : LogLevel.WARN, ts.message, normalizedPath.annotationFile, lineNumber, undefined, undefined, undefined, title);
                             }
                         }
                     }
@@ -1201,14 +1258,14 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                         messageLevel = remappedLevel;
                     }
 
-                    const file = utp.file ? utp.file.replace(/\\/g, '/') : undefined;
+                    const normalizedPath = normalizeAnnotationPath(utp.file, projectPath);
                     const stacktrace = sanitizeStackTrace(utp.stackTrace);
                     const message = stacktrace == undefined ? utp.message : `${utp.message}\n${stacktrace}`;
 
                     if (!annotationCommandPrefixRegex.test(message)) {
                         // only annotate if the file is within the current project
-                        if (projectPath && file && isFileUnderProjectPath(file, projectPath)) {
-                            logger.annotate(LogLevel.ERROR, message, file, utp.line);
+                        if (normalizedPath.annotationFile) {
+                            logger.annotate(LogLevel.ERROR, message, normalizedPath.annotationFile, utp.line);
                             // Link stack trace to annotations: emit one annotation per frame (capped) for clickable stack in Checks
                             if (stacktrace && projectPath) {
                                 const frames = parseStackFrames(stacktrace, projectPath);
@@ -1241,9 +1298,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
         } else {
             const scan = parsePlainLogIssue(line);
             if (scan) {
-                const file = (scan.file ?? '').replace(/\\/g, '/');
-                const lineNo = scan.line ?? 0;
-                const key = `${file}\u0000${lineNo}\u0000${scan.message}`;
+                const key = buildIssueKey(scan.file, scan.line, scan.message);
                 if (!seenIssueKeys.has(key)) {
                     seenIssueKeys.add(key);
                     scannedLogEntries.push({
@@ -1255,12 +1310,13 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                     } as UTP);
                 }
                 if (!annotationCommandPrefixRegex.test(scan.message) && plainScanAnnotations < MAX_PLAIN_SCAN_ANNOTATIONS) {
-                    const annotationKey = `${file}\u0000${lineNo}\u0000${scan.message}`;
+                    const normalizedPath = normalizeAnnotationPath(scan.file, projectPath);
+                    const annotationKey = buildIssueKey(normalizedPath.annotationFile ?? scan.file, scan.line, scan.message);
                     if (!seenAnnotationKeys.has(annotationKey)) {
-                        if (projectPath && scan.file && scan.line && isFileUnderProjectPath(scan.file, projectPath)) {
+                        if (normalizedPath.annotationFile && scan.line) {
                             seenAnnotationKeys.add(annotationKey);
                             plainScanAnnotations++;
-                            logger.annotate(scan.severity === Severity.Warning ? LogLevel.WARN : LogLevel.ERROR, scan.message, scan.file, scan.line);
+                            logger.annotate(scan.severity === Severity.Warning ? LogLevel.WARN : LogLevel.ERROR, scan.message, normalizedPath.annotationFile, scan.line);
                         }
                     }
                 }

@@ -2,6 +2,7 @@ import {
     type ActionTableSnapshot,
     describeUtpForUtpLogLevel,
     formatActionTimelineTable,
+    normalizeAnnotationPath,
     sanitizeTelemetryJson,
     stringDisplayWidth
 } from '../src/unity-logging';
@@ -189,5 +190,16 @@ describe('describeUtpForUtpLogLevel', () => {
 
     it('returns undefined for an unknown type string', () => {
         expect(describeUtpForUtpLogLevel({ type: 'FutureUnityType', x: 1 } as any)).toBeUndefined();
+    });
+});
+
+describe('normalizeAnnotationPath edge cases', () => {
+    it('returns empty result for undefined file', () => {
+        expect(normalizeAnnotationPath(undefined, '/tmp/proj')).toEqual({});
+    });
+
+    it('keeps normalized relative path without project path', () => {
+        const out = normalizeAnnotationPath('Assets\\X.cs', undefined);
+        expect(out.annotationFile).toBe('Assets/X.cs');
     });
 });
