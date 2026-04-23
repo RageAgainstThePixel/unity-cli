@@ -43,7 +43,6 @@ jobs:
       - name: Setup Unity
         timeout-minutes: 30
         run: |
-          # Windows ARM64: install current prod Hub only (no pinned legacy build + upgrade; older CDN builds have no arm64 installer).
           if [ "${{ matrix.os }}" = "windows-11-arm" ]; then
             unity-cli hub-install
           else
@@ -54,6 +53,10 @@ jobs:
           if [ "${{ matrix.unity-version }}" != "none" ]; then
             unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-target }}" --json
           fi
+      - name: Unity Hub install diagnostics (windows-11-arm)
+        if: ${{ matrix.os == 'windows-11-arm' && !cancelled() && (success() || failure()) }}
+        shell: pwsh
+        run: ./.github/scripts/Diagnose-UnityHubWindowsArm.ps1
       - name: Verify UNITY_HUB_PATH and UNITY_EDITOR_PATH variables
         run: |
           echo "UNITY_HUB_PATH: ${UNITY_HUB_PATH}"
