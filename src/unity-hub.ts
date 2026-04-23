@@ -377,8 +377,10 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub${version
 
         switch (process.platform) {
             case 'win32': {
-                const url = `https://public-cdn.cloud.unity3d.com/hub/${version}/UnityHubSetup.exe`;
-                const downloadPath = path.join(GetTempDir(), 'UnityHubSetup.exe');
+                const winArch = process.arch === 'arm64' ? 'arm64' : 'x64';
+                const setupFileName = `UnityHubSetup-${winArch}.exe`;
+                const url = `https://public-cdn.cloud.unity3d.com/hub/${version}/${setupFileName}`;
+                const downloadPath = path.join(GetTempDir(), setupFileName);
                 await DownloadFile(url, downloadPath);
 
                 this.logger.info(`Running Unity Hub installer...`);
