@@ -47,11 +47,21 @@ export class UnityHub {
 
     constructor() {
         switch (process.platform) {
-            case 'win32':
-                this.executable = process.env.UNITY_HUB_PATH || 'C:\\Program Files\\Unity Hub\\Unity Hub.exe';
+            case 'win32': {
+                const hubPath = process.env.UNITY_HUB_PATH ?? undefined;
+                if (hubPath !== undefined && hubPath.length > 0) {
+                    this.executable = hubPath;
+                } else {
+                    const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+                    const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+                    const defaultExe = path.join(programFiles, 'Unity Hub', 'Unity Hub.exe');
+                    const x86Exe = path.join(programFilesX86, 'Unity Hub', 'Unity Hub.exe');
+                    this.executable = [defaultExe, x86Exe].find((p) => fs.existsSync(p)) ?? defaultExe;
+                }
                 this.rootDirectory = path.join(this.executable, '../');
                 this.editorFileExtension = '\\Editor\\Unity.exe';
                 break;
+            }
             case 'darwin':
                 this.executable = process.env.UNITY_HUB_PATH || '/Applications/Unity Hub.app/Contents/MacOS/Unity Hub';
                 this.rootDirectory = path.join(this.executable, '../../../');

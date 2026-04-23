@@ -53,10 +53,6 @@ jobs:
           if [ "${{ matrix.unity-version }}" != "none" ]; then
             unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-target }}" --json
           fi
-      - name: Unity Hub install diagnostics (windows-11-arm)
-        if: ${{ matrix.os == 'windows-11-arm' && !cancelled() && (success() || failure()) }}
-        shell: pwsh
-        run: ./.github/scripts/Diagnose-UnityHubWindowsArm.ps1
       - name: Verify UNITY_HUB_PATH and UNITY_EDITOR_PATH variables
         run: |
           echo "UNITY_HUB_PATH: ${UNITY_HUB_PATH}"
