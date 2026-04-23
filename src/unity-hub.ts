@@ -32,6 +32,9 @@ interface ReleaseInfo {
     unityVersion: UnityVersion;
 }
 
+/** First Unity Hub line with native Windows ARM64 installers on the public CDN. */
+const MIN_NATIVE_WINDOWS_ARM64_HUB_VERSION = coerce('3.17.0')!;
+
 export class UnityHub {
     /** The path to the Unity Hub executable. */
     public readonly executable: string;
@@ -313,7 +316,9 @@ export class UnityHub {
             if (!version) {
                 try {
                     versionToInstall = await this.getLatestHubVersion();
-                    this.logger.ci(`Latest Unity Hub version: ${versionToInstall.version}`);
+                    if (versionToInstall) {
+                        this.logger.ci(`Latest Unity Hub version: ${versionToInstall.version}`);
+                    }
                 } catch (error) {
                     this.logger.warn(`Failed to get latest Unity Hub version: ${error}`);
                 }
@@ -322,15 +327,22 @@ export class UnityHub {
             }
 
             if (versionToInstall === null ||
-                !versionToInstall &&
-                !valid(versionToInstall)) {
-                throw new Error(`Invalid Unity Hub version to install: ${versionToInstall}`);
+                 !versionToInstall || 
+                 !valid(versionToInstall)) {
+                if (version || process.platform !== 'linux') {
+                    throw new Error(`Invalid Unity Hub version to install: ${versionToInstall}`);
+                }
             }
 
-            const mustInstall = version || (versionToInstall && compare(installedVersion, versionToInstall) < 0);
+            const mustInstall =
+                Boolean(version) ||
+                (process.platform === 'linux' && !version) ||
+                (versionToInstall !== null && compare(installedVersion, versionToInstall) < 0);
 
             if (mustInstall) {
-                this.logger.info(`Updating Unity Hub from ${installedVersion.version} to ${versionToInstall.version}...`);
+                this.logger.info(
+                    `Updating Unity Hub from ${installedVersion.version} to ${versionToInstall?.version ?? 'latest'}...`
+                );
 
                 if (process.platform === 'darwin') {
                     await Exec('sudo', ['rm', '-rf', this.rootDirectory], { silent: true, showCommand: true });
@@ -377,6 +389,19 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub${version
 
         switch (process.platform) {
             case 'win32': {
+                if (process.arch === 'arm64' && version !== 'prod') {
+                    const pinned = coerce(version as string | SemVer);
+                    if (!pinned || !valid(pinned)) {
+                        throw new Error(`Invalid Unity Hub version: ${String(version)}`);
+                    }
+                    if (compare(pinned, MIN_NATIVE_WINDOWS_ARM64_HUB_VERSION) < 0) {
+                        throw new Error(
+                            `Unity Hub ${pinned.version} does not ship a native Windows ARM64 installer ` +
+                            `(minimum ${MIN_NATIVE_WINDOWS_ARM64_HUB_VERSION.version}). ` +
+                            'Install without --hub-version to use the latest Hub, or use Windows x64 for older Hub versions.'
+                        );
+                    }
+                }
                 const winArch = process.arch === 'arm64' ? 'arm64' : 'x64';
                 const setupFileName = `UnityHubSetup-${winArch}.exe`;
                 const url = `https://public-cdn.cloud.unity3d.com/hub/${version}/${setupFileName}`;
@@ -527,7 +552,7 @@ chmod -R 777 "$hubPath"`]);
         return version;
     }
 
-    private async getLatestHubVersion(): Promise<SemVer> {
+    private async getLatestHubVersion(): Promise<SemVer | null> {
         let url: string | undefined = undefined;
 
         switch (process.platform) {
@@ -538,8 +563,7 @@ chmod -R 777 "$hubPath"`]);
                 url = 'https://public-cdn.cloud.unity3d.com/hub/prod/latest-mac.yml';
                 break;
             case 'linux':
-                url = 'https://public-cdn.cloud.unity3d.com/hub/prod/latest-linux.yml';
-                break;
+                return null;
             default:
                 throw new Error(`Unsupported platform: ${process.platform}`);
         }
