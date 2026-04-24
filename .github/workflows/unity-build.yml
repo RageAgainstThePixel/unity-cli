@@ -166,15 +166,24 @@ jobs:
 
           marker_found=0
 
+          scan_markers() {
+            local target_dir="$1"
+            if command -v rg >/dev/null 2>&1; then
+              rg -n --no-ignore -S "$failure_markers" "$target_dir"
+            else
+              grep -RInE "$failure_markers" "$target_dir"
+            fi
+          }
+
           if [ -d "$log_dir" ]; then
-            if rg -n --no-ignore -S "$failure_markers" "$log_dir"; then
+            if scan_markers "$log_dir"; then
               echo "::error::Hidden UTP failure marker detected in ${log_dir}"
               marker_found=1
             fi
           fi
 
           if [ -d "$artifacts_dir" ]; then
-            if rg -n --no-ignore -S "$failure_markers" "$artifacts_dir"; then
+            if scan_markers "$artifacts_dir"; then
               echo "::error::Hidden UTP failure marker detected in ${artifacts_dir}"
               marker_found=1
             fi
