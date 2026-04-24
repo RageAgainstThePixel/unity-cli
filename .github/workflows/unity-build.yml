@@ -5,6 +5,10 @@ on:
       matrix:
         required: true
         type: string
+      utp-test-profile:
+        required: false
+        type: string
+        default: normal
     secrets:
       UNITY_USERNAME:
         required: true
@@ -146,6 +150,7 @@ jobs:
           unity-project-path: ${{ env.UNITY_PROJECT_PATH }}
           build-target: ${{ matrix.build-target }}
           build-args: ${{ matrix.build-args }}
+          test-profile: ${{ inputs.utp-test-profile }}
           artifact-name: ${{ steps.artifact-name.outputs.name }}
       - name: Verify UTP JSON keys
         if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' }}

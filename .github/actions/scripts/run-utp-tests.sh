@@ -24,10 +24,31 @@ fi
 IFS=',' read -ra tests <<< "$TESTS_INPUT"
 failures=0
 
+declare -A known_tests=(
+  [CompilerWarnings]=1
+  [CompilerErrors]=1
+  [BuildWarnings]=1
+  [BuildErrors]=1
+  [PlaymodeTestsErrors]=1
+  [EditmodeTestsErrors]=1
+  [EditmodeTestsPassing]=1
+  [EditmodeTestsSkipped]=1
+  [PlaymodeTestsPassing]=1
+  [PlaymodeTestsSkipped]=1
+  [EditmodeSuite]=1
+  [PlaymodeSuite]=1
+)
+
 effective_tests=0
+declare -a selected_tests=()
 for raw_test in "${tests[@]}"; do
   tname="$(echo "$raw_test" | xargs)"
   if [ -n "$tname" ] && [ "$tname" != "None" ]; then
+    if [ -z "${known_tests[$tname]+x}" ]; then
+      echo "::error::TESTS_INPUT includes unknown test selection '$tname'"
+      exit 1
+    fi
+    selected_tests+=("$tname")
     effective_tests=$((effective_tests + 1))
   fi
 done
@@ -74,6 +95,11 @@ expected_message_for() {
     *) echo "" ;;
   esac
 }
+
+echo "UTP preflight: selected ${effective_tests} scenario(s): ${selected_tests[*]}"
+for tname in "${selected_tests[@]}"; do
+  echo " - ${tname}: expected_status=$(expected_status_for "$tname") expected_message='$(expected_message_for "$tname")'"
+done
 
 mkdir -p "$GITHUB_WORKSPACE/utp-artifacts"
 

@@ -15,6 +15,14 @@ inputs:
     description: Artifact name for uploaded test artifacts (UTP logs, Unity Editor/Player logs, and test results XML; must be unique per matrix job).
     required: false
     default: unity-tests-batch-utp-logs
+  test-profile:
+    description: Predefined UTP scenario profile to run (normal|negative|all).
+    required: false
+    default: normal
+  tests-input:
+    description: Optional explicit comma-separated test list override. When provided, this takes precedence over test-profile.
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -23,7 +31,28 @@ runs:
       working-directory: ${{ inputs.unity-project-path }}
       run: |
         set -euo pipefail
-        tests_input="CompilerWarnings,CompilerErrors,BuildWarnings,BuildErrors,PlaymodeTestsErrors,EditmodeTestsErrors,EditmodeTestsPassing,EditmodeTestsSkipped,PlaymodeTestsPassing,PlaymodeTestsSkipped,EditmodeSuite,PlaymodeSuite"
+        tests_input="${{ inputs.tests-input }}"
+        test_profile="${{ inputs.test-profile }}"
+
+        if [ -z "$tests_input" ]; then
+          case "$test_profile" in
+            normal)
+              tests_input="CompilerWarnings,BuildWarnings,PlaymodeTestsPassing,PlaymodeTestsSkipped,EditmodeTestsPassing,EditmodeTestsSkipped"
+              ;;
+            negative)
+              tests_input="CompilerErrors,BuildErrors,PlaymodeTestsErrors,EditmodeTestsErrors,EditmodeSuite,PlaymodeSuite"
+              ;;
+            all)
+              tests_input="CompilerWarnings,CompilerErrors,BuildWarnings,BuildErrors,PlaymodeTestsErrors,EditmodeTestsErrors,EditmodeTestsPassing,EditmodeTestsSkipped,PlaymodeTestsPassing,PlaymodeTestsSkipped,EditmodeSuite,PlaymodeSuite"
+              ;;
+            *)
+              echo "::error::Unknown test-profile '$test_profile'. Expected one of: normal, negative, all."
+              exit 1
+              ;;
+          esac
+        fi
+
+        echo "Using UTP tests list: ${tests_input}"
         echo "TESTS_INPUT=$tests_input" >> $GITHUB_ENV
 
         needs_test_framework=false

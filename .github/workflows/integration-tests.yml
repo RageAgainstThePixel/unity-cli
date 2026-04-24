@@ -49,8 +49,20 @@ jobs:
     uses: ./.github/workflows/unity-build.yml
     with:
       matrix: ${{ toJSON(matrix.jobs.matrix) }}
+      utp-test-profile: normal
+  validate-negative-scenarios:
+    if: github.event.pull_request.draft == false
+    name: build negative-scenarios
+    permissions:
+      contents: read
+      checks: write
+    secrets: inherit
+    uses: ./.github/workflows/unity-build.yml
+    with:
+      matrix: '{"include":[{"os":"ubuntu-latest","unity-version":"6000.1","build-target":"StandaloneLinux64","name":"negative-scenarios / ubuntu-latest StandaloneLinux64"}]}'
+      utp-test-profile: negative
   timeline:
-    needs: [setup, validate]
+    needs: [setup, validate, validate-negative-scenarios]
     if: always()
     runs-on: ubuntu-latest
     permissions:
