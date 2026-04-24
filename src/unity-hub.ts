@@ -52,11 +52,18 @@ export class UnityHub {
                 if (hubPath !== undefined && hubPath.length > 0) {
                     this.executable = hubPath;
                 } else {
-                    const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
-                    const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
-                    const defaultExe = path.join(programFiles, 'Unity Hub', 'Unity Hub.exe');
-                    const x86Exe = path.join(programFilesX86, 'Unity Hub', 'Unity Hub.exe');
-                    this.executable = [defaultExe, x86Exe].find((p) => fs.existsSync(p)) ?? defaultExe;
+                    const pf64 = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Unity Hub', 'Unity Hub.exe');
+                    const pfx86 = path.join(
+                        process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)',
+                        'Unity Hub',
+                        'Unity Hub.exe'
+                    );
+                    // Windows ARM64 images install Hub under WOW64; x64 prefers 64-bit path when present.
+                    if (process.arch === 'arm64') {
+                        this.executable = pfx86;
+                    } else {
+                        this.executable = fs.existsSync(pf64) ? pf64 : fs.existsSync(pfx86) ? pfx86 : pf64;
+                    }
                 }
                 this.rootDirectory = path.join(this.executable, '../');
                 this.editorFileExtension = '\\Editor\\Unity.exe';
