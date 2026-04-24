@@ -50,7 +50,7 @@ program.command('activate-license')
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
-        Logger.instance.debug(JSON.stringify(options));
+        Logger.instance.debugOptions(options);
 
         const client = new LicensingClient();
         const licenseStr: string = options.license?.toString()?.trim();
@@ -79,6 +79,11 @@ program.command('activate-license')
             if (licenseType === LicenseType.professional && !options.serial) {
                 options.serial = await PromptForSecretInput('Serial: ');
             }
+
+            // Mask credentials in CI environments before any potential logging
+            Logger.instance.maskCredential(options.email);
+            Logger.instance.maskCredential(options.password);
+            Logger.instance.maskCredential(options.serial);
         }
 
         const token = await client.Activate({
@@ -106,7 +111,7 @@ program.command('return-license')
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
-        Logger.instance.debug(JSON.stringify(options));
+        Logger.instance.debugOptions(options);
 
         const client = new LicensingClient();
         const licenseStr: string = options.license?.toString()?.trim();
@@ -134,6 +139,9 @@ program.command('return-license')
                 Logger.instance.error('Token is required when returning a floating license. Use -t or --token to specify it.');
                 process.exit(1);
             }
+
+            // Mask token in CI environments before any potential logging
+            Logger.instance.maskCredential(token);
         }
 
         await client.Deactivate(licenseType, token);
@@ -220,7 +228,7 @@ program.command('hub-install')
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
-        Logger.instance.debug(JSON.stringify(options));
+        Logger.instance.debugOptions(options);
 
         if (options.autoUpdate === true && options.hubVersion) {
             Logger.instance.error('Cannot use --auto-update with --hub-version.');
@@ -252,7 +260,7 @@ program.command('hub')
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
-        Logger.instance.debug(JSON.stringify({ args, options }));
+        Logger.instance.debugOptions({ args, options });
 
         const unityHub = new UnityHub();
         const output = await unityHub.Exec(args, { silent: false, showCommand: Logger.instance.logLevel === LogLevel.DEBUG });
@@ -280,7 +288,7 @@ program.command('setup-unity')
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
-        Logger.instance.debug(JSON.stringify(options));
+        Logger.instance.debugOptions(options);
 
         let unityProject: UnityProject | undefined;
 
@@ -373,7 +381,7 @@ program.command('uninstall-unity')
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
-        Logger.instance.debug(JSON.stringify(options));
+        Logger.instance.debugOptions(options);
 
         let unityEditor: UnityEditor | undefined;
         const unityVersionStr = options.unityVersion?.toString()?.trim();
@@ -472,7 +480,7 @@ program.command('run')
             Logger.instance.logLevel = requestedLogLevel;
         }
 
-        Logger.instance.debug(JSON.stringify({ options, args }));
+        Logger.instance.debugOptions({ options, args });
 
         let unityEditor: UnityEditor | undefined;
         const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH || undefined;
@@ -540,7 +548,7 @@ program.command('list-project-templates')
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
-        Logger.instance.debug(JSON.stringify(options));
+        Logger.instance.debugOptions(options);
 
         const unityVersionStr = options.unityVersion?.toString()?.trim();
 
@@ -593,7 +601,7 @@ program.command('create-project')
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
-        Logger.instance.debug(JSON.stringify(options));
+        Logger.instance.debugOptions(options);
 
         const unityVersionStr = options.unityVersion?.toString()?.trim();
 
@@ -665,7 +673,7 @@ program.command('open-project')
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
-        Logger.instance.debug(JSON.stringify(options));
+        Logger.instance.debugOptions(options);
         const projectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || undefined;
         const unityProject = await UnityProject.GetProject(projectPath);
 
@@ -731,7 +739,7 @@ program.command('sign-package')
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
-        Logger.instance.debug(JSON.stringify(options));
+        Logger.instance.debugOptions(options);
 
         const packagePath = path.normalize(options.package?.toString()?.trim());
 
@@ -795,6 +803,11 @@ program.command('sign-package')
             Logger.instance.error('The organization ID is required. Use --organization to specify it.');
             process.exit(1);
         }
+
+        // Mask credentials in CI environments before any potential logging
+        Logger.instance.maskCredential(username);
+        Logger.instance.maskCredential(password);
+        Logger.instance.maskCredential(organization);
 
         // must use a unity editor 6000.3 or newer
         const unityVersion = new UnityVersion('6000.3');

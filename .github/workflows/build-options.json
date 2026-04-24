@@ -35,6 +35,10 @@
       "unity-version": "none"
     },
     {
+      "os": "windows-11-arm",
+      "unity-version": "none"
+    },
+    {
       "os": "windows-latest",
       "build-target": "StandaloneWindows64"
     },
