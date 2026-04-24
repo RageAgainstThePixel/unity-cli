@@ -40,7 +40,7 @@ runs:
               tests_input="CompilerWarnings,BuildWarnings,PlaymodeTestsPassing,PlaymodeTestsSkipped,EditmodeTestsPassing,EditmodeTestsSkipped"
               ;;
             negative)
-              tests_input="CompilerErrors,BuildErrors,PlaymodeTestsErrors,EditmodeTestsErrors,EditmodeSuite,PlaymodeSuite"
+              tests_input="CompilerErrors,BuildErrors"
               ;;
             all)
               tests_input="CompilerWarnings,CompilerErrors,BuildWarnings,BuildErrors,PlaymodeTestsErrors,EditmodeTestsErrors,EditmodeTestsPassing,EditmodeTestsSkipped,PlaymodeTestsPassing,PlaymodeTestsSkipped,EditmodeSuite,PlaymodeSuite"

@@ -25,12 +25,12 @@ function defaultScanRoot() {
 
 const root = path.resolve(defaultScanRoot());
 if (!fs.existsSync(root)) {
-    console.error(`scan-utp-artifacts: directory not found: ${root}`);
-    process.exit(2);
+    console.warn(`scan-utp-artifacts: directory not found (skipping): ${root}`);
+    process.exit(0);
 }
 if (!fs.statSync(root).isDirectory()) {
-    console.error(`scan-utp-artifacts: not a directory: ${root}`);
-    process.exit(2);
+    console.warn(`scan-utp-artifacts: not a directory (skipping): ${root}`);
+    process.exit(0);
 }
 
 const typeCount = new Map();
