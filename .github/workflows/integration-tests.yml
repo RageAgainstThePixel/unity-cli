@@ -10,6 +10,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  utp-batch-contract:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: UTP batch assertion helpers (contract)
+        run: bash tests/run-utp-tests-contract.sh
   setup:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest

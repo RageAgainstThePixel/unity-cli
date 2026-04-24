@@ -154,6 +154,7 @@ jobs:
         if: ${{ steps.verify-project-path.outputs.RUN_BUILD == 'true' }}
         run: |
           set -euo pipefail
+          # Keep this alternation in sync with hard failures from .github/actions/scripts/run-utp-tests.sh
           failure_markers='One or more tests did not meet expectations|was expected to succeed but failed|produced UTP errors but was expected to succeed'
           log_dir="${UNITY_PROJECT_PATH}/Builds/Logs"
           artifacts_dir="${GITHUB_WORKSPACE}/utp-artifacts"

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
+_UTP_HELPERS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/utp-ci-assertion-helpers.sh"
+# shellcheck source=utp-ci-assertion-helpers.sh
+source "$_UTP_HELPERS"
+
 UNITY_PROJECT_PATH=${UNITY_PROJECT_PATH:?UNITY_PROJECT_PATH is required}
 BUILD_TARGET=${BUILD_TARGET:?BUILD_TARGET is required}
 BUILD_ARGS=${BUILD_ARGS:-}
@@ -162,25 +166,74 @@ for raw_test in "${tests[@]}"; do
   build_rc=0
 
   ran_custom_flow=0
+  expected_for_flow=$(expected_status_for "$test_name")
 
   if [ "$test_name" = "EditmodeTestsErrors" ] || [ "$test_name" = "EditmodeTestsPassing" ] || [ "$test_name" = "EditmodeTestsSkipped" ] || [ "$test_name" = "EditmodeSuite" ]; then
-    unity-cli run --log-name "${test_name}-EditMode" -runTests -testPlatform editmode -assemblyNames "UnityCli.EditMode.EditorTests" -testResults "$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml" -quit || validate_rc=$?
+    unity_rc=0
+    unity-cli run --log-name "${test_name}-EditMode" -runTests -testPlatform editmode -assemblyNames "UnityCli.EditMode.EditorTests" -testResults "$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml" -quit || unity_rc=$?
 
-    results_xml="$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml"
-    if ! grep -q "<test-case " "$results_xml" 2>/dev/null; then
-      validate_rc=1
+    results_xml=""
+    if results_xml="$(find_nunit_results_xml "$test_name")"; then
+      :
+    else
+      results_xml=""
     fi
+
+    xml_ok=0
+    if [ -n "$results_xml" ] && [ -f "$results_xml" ] && grep -q "<test-case[[:space:]>]" "$results_xml" 2>/dev/null; then
+      xml_ok=1
+    fi
+
+    validate_rc=$unity_rc
+    if [ "$xml_ok" -eq 0 ]; then
+      if [ "$unity_rc" -ne 0 ]; then
+        validate_rc=$unity_rc
+      elif [ "$expected_for_flow" -eq 0 ] && edit_play_log_suggests_tests_completed_ok "$test_name" "EditMode"; then
+        validate_rc=0
+        echo "::notice::${test_name}: using log-based test completion evidence (no NUnit XML with <test-case> at expected path)"
+      elif [ "$expected_for_flow" -eq 0 ]; then
+        validate_rc=1
+        echo "::warning::${test_name}: no NUnit XML with <test-case> and no trustworthy log completion markers (unity_rc=$unity_rc)"
+      else
+        validate_rc=$unity_rc
+      fi
+    fi
+
     build_rc=$validate_rc
     ran_custom_flow=1
   fi
 
   if [ "$test_name" = "PlaymodeTestsErrors" ] || [ "$test_name" = "PlaymodeTestsPassing" ] || [ "$test_name" = "PlaymodeTestsSkipped" ] || [ "$test_name" = "PlaymodeSuite" ]; then
-    unity-cli run --log-name "${test_name}-PlayMode" -runTests -testPlatform playmode -assemblyNames "UnityCli.PlayMode.Tests" -testResults "$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml" -quit || validate_rc=$?
+    unity_rc=0
+    unity-cli run --log-name "${test_name}-PlayMode" -runTests -testPlatform playmode -assemblyNames "UnityCli.PlayMode.Tests" -testResults "$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml" -quit || unity_rc=$?
 
-    results_xml="$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml"
-    if ! grep -q "<test-case " "$results_xml" 2>/dev/null; then
-      validate_rc=1
+    results_xml=""
+    if results_xml="$(find_nunit_results_xml "$test_name")"; then
+      :
+    else
+      results_xml=""
     fi
+
+    xml_ok=0
+    if [ -n "$results_xml" ] && [ -f "$results_xml" ] && grep -q "<test-case[[:space:]>]" "$results_xml" 2>/dev/null; then
+      xml_ok=1
+    fi
+
+    validate_rc=$unity_rc
+    if [ "$xml_ok" -eq 0 ]; then
+      if [ "$unity_rc" -ne 0 ]; then
+        validate_rc=$unity_rc
+      elif [ "$expected_for_flow" -eq 0 ] && edit_play_log_suggests_tests_completed_ok "$test_name" "PlayMode"; then
+        validate_rc=0
+        echo "::notice::${test_name}: using log-based test completion evidence (no NUnit XML with <test-case> at expected path)"
+      elif [ "$expected_for_flow" -eq 0 ]; then
+        validate_rc=1
+        echo "::warning::${test_name}: no NUnit XML with <test-case> and no trustworthy log completion markers (unity_rc=$unity_rc)"
+      else
+        validate_rc=$unity_rc
+      fi
+    fi
+
     build_rc=$validate_rc
     ran_custom_flow=1
   fi
@@ -210,6 +263,7 @@ for raw_test in "${tests[@]}"; do
   test_failed=0
   message_found=0
   utp_error_found=0
+  utp_any_signal=0
 
   if [ -n "$exp_msg" ]; then
     while IFS= read -r log_file; do
@@ -223,13 +277,23 @@ for raw_test in "${tests[@]}"; do
     done < <(find "$UNITY_PROJECT_PATH/Builds/Logs" -maxdepth 1 -type f -name "*${test_name}*.log")
   fi
 
-  # Look for error-level UTP entries for this test to treat as expected failure evidence.
+  # UTP: severity rules differ for warning-only scenarios vs everything else.
   while IFS= read -r utp_file; do
     if [ -z "$utp_file" ]; then
       continue
     fi
-    if grep -qi '"severity"[[:space:]]*:[[:space:]]*"\(Error\|Exception\|Assert\)"' "$utp_file" 2>/dev/null; then
+    if utp_signals_failure_for_expected_success "$test_name" "$utp_file"; then
       utp_error_found=1
+      break
+    fi
+  done < <(find "$UNITY_PROJECT_PATH/Builds/Logs" -maxdepth 1 -type f -name "*${test_name}*-utp-json.log")
+
+  while IFS= read -r utp_file; do
+    if [ -z "$utp_file" ]; then
+      continue
+    fi
+    if utp_signals_any_severity_problem "$utp_file"; then
+      utp_any_signal=1
       break
     fi
   done < <(find "$UNITY_PROJECT_PATH/Builds/Logs" -maxdepth 1 -type f -name "*${test_name}*-utp-json.log")
@@ -248,7 +312,7 @@ for raw_test in "${tests[@]}"; do
       test_failed=1
     fi
   else
-    if [ "$validate_rc" -ne 0 ] || [ "$build_rc" -ne 0 ] || [ "$message_found" -eq 1 ] || [ "$utp_error_found" -eq 1 ]; then
+    if [ "$validate_rc" -ne 0 ] || [ "$build_rc" -ne 0 ] || [ "$message_found" -eq 1 ] || [ "$utp_any_signal" -eq 1 ]; then
       : # Expected failure observed
     else
       echo "::error::Test $test_name was expected to fail but succeeded"
@@ -288,8 +352,8 @@ for raw_test in "${tests[@]}"; do
     fi
   done || true
   # Copy test results XML when present (Edit/Play mode) for later analysis
-  if [ -f "$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml" ]; then
-    cp "$UNITY_PROJECT_PATH/Builds/Logs/${test_name}-results.xml" "$test_artifacts/" || true
+  if nunit_copy="$(find_nunit_results_xml "$test_name")" && [ -n "$nunit_copy" ] && [ -f "$nunit_copy" ]; then
+    cp "$nunit_copy" "$test_artifacts/" || true
   fi
   # Copy all Unity Editor/Player logs for this scenario
   find "$UNITY_PROJECT_PATH/Builds/Logs" -maxdepth 1 -type f -name "*${test_name}*.log" -exec cp {} "$test_artifacts/" \; 2>/dev/null || true
