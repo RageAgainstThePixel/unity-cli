@@ -185,6 +185,8 @@ jobs:
           fi
       - name: Uninstall Editor
         if: ${{ matrix.unity-version != 'none' }}
+        timeout-minutes: 5
+        continue-on-error: true
         run: |
           if [ -z "${UNITY_EDITOR_PATH}" ]; then
             echo "UNITY_EDITOR_PATH is not set, skipping uninstall"
