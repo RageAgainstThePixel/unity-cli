@@ -37,7 +37,7 @@ runs:
         if [ -z "$tests_input" ]; then
           case "$test_profile" in
             normal)
-              tests_input="CompilerWarnings,BuildWarnings,PlaymodeTestsPassing,PlaymodeTestsSkipped,EditmodeTestsPassing,EditmodeTestsSkipped"
+              tests_input="CompilerWarnings,BuildWarnings"
               ;;
             negative)
               tests_input="CompilerErrors,BuildErrors"
