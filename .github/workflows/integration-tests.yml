@@ -13,6 +13,8 @@ jobs:
   utp-batch-contract:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
       - name: UTP batch assertion helpers (contract)
