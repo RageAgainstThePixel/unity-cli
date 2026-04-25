@@ -1,6 +1,6 @@
 {
   "name": "@rage-against-the-pixel/unity-cli",
-  "version": "1.8.3",
+  "version": "1.9.0",
   "description": "A command line utility for the Unity Game Engine.",
   "author": "RageAgainstThePixel",
   "license": "MIT",
@@ -44,6 +44,8 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "tests": "jest --roots tests",
+    "test:utp-batch-contract": "bash tests/run-utp-tests-contract.sh",
+    "scan-utp-artifacts": "node .github/scripts/scan-utp-artifacts.cjs",
     "link": "npm link",
     "unlink": "npm unlink @rage-against-the-pixel/unity-cli"
   },
