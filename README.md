@@ -92,7 +92,13 @@ unity-cli --help
 
 ### Install all tools
 
-`install-all-tools` runs Unity Hub installation and managed UPM CLI installation together (the same work as `hub-install` and `upm-install` in parallel). Use `unity-cli install-all-tools --help` for `--hub-version`, `--upm-version`, `--auto-update`, `--json`, and `--verbose`.
+`install-all-tools`: Install the Unity Hub and the Unity Package Manager cli (pack/sign). Runs `hub-install` and `upm-install` in parallel. Use `unity-cli install-all-tools --help` for all options.
+
+- `--verbose`: Enable verbose logging.
+- `--auto-update`: If any tools are installed, they're automatically updated to the latest versions. Cannot be used with `--hub-version` or `--upm-version`.
+- `--hub-version <version>`: Specify to install a specific version of Unity Hub. Cannot be used with `--auto-update`.
+- `--upm-version <version>`: upm cli release tag (e.g. `v9.27.0`). Defaults to latest from Unity CDN. Cannot be used with `--auto-update`.
+- `--json`: Print hub path, UPM release tag, and resolved UPM CLI path as JSON.
 
 ```bash
 unity-cli install-all-tools --auto-update
@@ -118,7 +124,7 @@ unity-cli license-version
 - `-s`, `--serial`: License serial number. Required when activating a professional license.
 - `-c`, `--config`: Path to the configuration file, raw JSON, or base64 encoded JSON string. Required when activating a floating license.
 - `--json`: Prints the last line of output as JSON string.
-- `--verbose`: Enable verbose output.
+- `--verbose`: Enable verbose logging.
 
 ```bash
 unity-cli activate-license --license personal --email <your-email> --password <your-password>
@@ -130,7 +136,7 @@ unity-cli activate-license --license personal --email <your-email> --password <y
 
 - `-l`, `--license`: License type (personal, professional, floating)
 - `-t`, `--token`: Floating license token. Required when returning a floating license.
-- `--verbose`: Enable verbose output.
+- `--verbose`: Enable verbose logging.
 
 ```bash
 unity-cli return-license --license personal
@@ -138,7 +144,7 @@ unity-cli return-license --license personal
 
 #### License Context
 
-`license-context`: Prints the current license context information.
+`license-context`: Print the current license context information.
 
 ```bash
 unity-cli license-context
@@ -172,7 +178,9 @@ unity-cli hub-version
 
 #### Hub Path
 
-`hub-path`: Print the Unity Hub executable path.
+`hub-path`: Print the path to the Unity Hub executable.
+
+- `--json`: Prints the last line of output as JSON string.
 
 ```bash
 unity-cli hub-path
@@ -196,12 +204,12 @@ unity-cli package-manager-logs
 
 #### Unity Hub Install
 
-`hub-install [options]`: Install or update the Unity Hub
+`hub-install [options]`: Install or update the Unity Hub.
 
 - `--auto-update`: Automatically updates the Unity Hub if it is already installed. Cannot be used with `--hub-version`.
 - `--hub-version`: Specify to install a specific version of Unity Hub. Cannot be used with `--auto-update`.
-- `--verbose`: Enable verbose output.
-- `--json`: Output installation information in JSON format.
+- `--verbose`: Enable verbose logging.
+- `--json`: Prints the last line of output as JSON string.
 
 ```bash
 unity-cli hub-install
@@ -209,9 +217,9 @@ unity-cli hub-install
 
 #### Run Unity Hub Commands
 
-`hub [options] <args...>`: Run Unity Hub command line arguments (passes args directly to the hub executable).
+`hub [options] <args...>`: Run commands directly to the Unity Hub. (You need not to pass `--headless` or `--` to this command).
 
-- `--verbose`: Enable verbose output.
+- `--verbose`: Enable verbose logging.
 - `--json`: Prints the last line of output as a json string, which contains the operation results.
 - `<args...>`: Arguments to pass directly to the Unity Hub executable.
 
@@ -270,8 +278,8 @@ unity-cli uninstall-unity --unity-version 6000
 - `--unity-editor <unityEditor>` The path to the Unity Editor executable. If unspecified, `--unity-project` or the `UNITY_EDITOR_PATH` environment variable must be set.
 - `--unity-project <unityProject>` The path to a Unity project. If unspecified, the `UNITY_PROJECT_PATH` environment variable will be used, otherwise no project will be specified.
 - `--log-name <logName>` The name of the log file.
-- `--log-level <logLevel>` Override the logger verbosity (`debug`, `info`, `minimal`, `warning`, `error`). Defaults to `info`.
-- `--verbose` Enable verbose logging. (Deprecated, use `--log-level <value>` instead)
+- `--log-level <logLevel>` Override the logger verbosity (debug, info, minimal, warning, error). Defaults to info.
+- `--verbose` Enable verbose logging. Deprecated, use `--log-level` instead.
 - `<args...>` Arguments to pass directly to the Unity Editor executable.
 
 > [!NOTE]
@@ -290,10 +298,8 @@ unity-cli run --unity-project <path-to-project> -quit -batchmode -executeMethod 
 
 `list-project-templates [options]`: List available Unity project templates for an editor.
 
-- `-e`, `--unity-editor <unityEditor>` The path to the Unity Editor executable. If unspecified, `-u`, `--unity-version` or the `UNITY_EDITOR_PATH` environment variable must be set.
 - `-u`, `--unity-version <unityVersion>` The Unity version to get (e.g. `2020.3.1f1`, `2021.x`, `2022.1.*`, `6000`). If unspecified, then `--unity-editor` must be specified.
-- `-c`, `--changeset <changeset>` The Unity changeset to get (e.g. `1234567890ab`).
-- `-a`, `--arch <arch>` The Unity architecture to get (e.g. `x86_64`, `arm64`). Defaults to the architecture of the current process.
+- `-e`, `--unity-editor <unityEditor>` The path to the Unity Editor executable. If unspecified, `-u`, `--unity-version` or the `UNITY_EDITOR_PATH` environment variable must be set.
 - `--verbose` Enable verbose logging.
 - `--json` Prints the last line of output as JSON string.
 
@@ -305,7 +311,7 @@ unity-cli list-project-templates --unity-version 6000
 
 #### Create Unity Project
 
-`create-project [options]`: Create a new Unity project from a template.
+`create-project [options]`: Create a new Unity project.
 
 - `-n`, `--name <projectName>` The name of the new Unity project. If unspecified, the project will be created in the specified path or the current working directory.
 - `-p`, `--path <projectPath>` The path to create the new Unity project. If unspecified, the current working directory will be used.
@@ -356,12 +362,12 @@ unity-cli editor-logs
 
 #### Install Unity Package Manager
 
-`upm-install [options]`: Download and install the Unity Package Manager cli (pack/sign) under `~/.unity-cli/upm`.
+`upm-install [options]`: Download and install the Unity Package Manager cli (pack/sign).
 
 - `--auto-update`: Automatically updates the upm cli if it is already installed and a newer release is available. Cannot be used with `--version`.
 - `--version <version>`: Install a specific upm cli release tag (for example `v9.27.0`). Defaults to the latest release from the Unity CDN.
 - `--json`: Print version and managed paths as JSON.
-- `--verbose`: Enable verbose output.
+- `--verbose`: Enable verbose logging.
 
 ```bash
 unity-cli upm-install --auto-update
@@ -382,8 +388,8 @@ unity-cli upm-version
 `upm-pack [options]`: Sign and pack a Unity package.
 
 - `--source <path>`: An absolute or relative path to the root folder of the custom package to pack. This is the folder that contains the package manifest file (package.json). (optional; defaults to the current working directory).
-- `--destination <path>`: The output path where UPM CLI places the signed tarball. If you specify a folder that doesn’t exist, UPM CLI creates it. Note: If you omit this parameter, UPM CLI places the file in the current working directory.
-- `--verbose`: Enable verbose output.
+- `--destination <path>`: The output path for the signed tarball. If you specify a folder that doesn’t exist, it will be created for you. Note: If you omit this parameter, the tarball will be placed in the current working directory.
+- `--verbose`: Enable verbose logging.
 
 > [!NOTE]
 > Set `UNITY_ORGANIZATION_ID` or `UNITY_ORG_ID`, `UPM_SERVICE_ACCOUNT_KEY_ID`, and `UPM_SERVICE_ACCOUNT_KEY_SECRET`, or leave them unset in an interactive terminal to be prompted securely.
@@ -395,9 +401,9 @@ unity-cli upm-pack --source <path-to-package-folder> --destination <output-path>
 #### Deprecated Sign Package Command
 
 > [!WARNING]
-> **Deprecated:** `sign-package` is deprecated and may be removed in a future release. Use `unity-cli upm-pack --source <path-to-package-folder> --destination <output-path>` with organization and service account credentials from environment variables (or secure prompts), as for `upm-pack` above.
+> **Deprecated:** The `sign-package` command is deprecated. Use `unity-cli upm-pack --source <path-to-package-folder> --destination <output-path>` with `UNITY_ORGANIZATION_ID` or `UNITY_ORG_ID`, `UPM_SERVICE_ACCOUNT_KEY_ID`, and `UPM_SERVICE_ACCOUNT_KEY_SECRET` (or secure prompts).
 
-`sign-package [options]`: Sign a Unity package using Unity Editor 6000.3+ batch mode (`-upmPack`).
+`sign-package [options]`: [Deprecated] Sign a Unity package using Unity Editor 6000.3+ batch mode (`-upmPack`). Use `unity-cli upm-pack` with organization and service account credentials for new workflows.
 
 - `--package <package>` Required. The fully qualified path to the folder that contains the package.json file for the package you want to sign. Note: Don't include package.json in this parameter value.
 - `--output <output>` Optional. The output directory where you want to save the signed tarball file (.tgz). If unspecified, the package contents will be updated in place with the signed .attestation.p7m file.

@@ -24,7 +24,7 @@ updateNotifier({ pkg }).notify();
 const program = new Command();
 
 program.name('unity-cli')
-    .description('A command line utility for the Unity Game Engine.')
+    .description('A powerful all-in-one command line utility for the Unity Game Engine.')
     .version(pkg.version);
 
 program.command('install-all-tools')
@@ -110,7 +110,7 @@ program.command('install-all-tools')
 program.commandsGroup('Auth:');
 
 program.command('license-version')
-    .description('Print the version of the Unity License Client.')
+    .description('Print the Unity License Client version.')
     .action(async () => {
         const client = new LicensingClient();
         await client.Version();
@@ -185,7 +185,7 @@ program.command('activate-license')
 program.command('return-license')
     .description('Return a Unity license.')
     .option('-l, --license <license>', 'License type (personal, professional, floating)')
-    .option('-t, --token <token>', 'Token received when acquiring a floating license lease. Required when returning a floating license.')
+    .option('-t, --token <token>', 'Floating license token. Required when returning a floating license.')
     .option('--verbose', 'Enable verbose logging.')
     .action(async (options) => {
         if (options.verbose) {
@@ -230,7 +230,7 @@ program.command('return-license')
     });
 
 program.command('license-context')
-    .description('Display the context information of the Unity Licensing Client.')
+    .description('Print the current license context information.')
     .action(async () => {
         const client = new LicensingClient();
         await client.Context();
@@ -245,7 +245,7 @@ program.command('licensing-client-logs')
     });
 
 program.command('licensing-audit-logs')
-    .description('Prints the path to the Unity Licensing Client audit log file.')
+    .description('Prints the path to the Unity Licensing Client audit log.')
     .action(async () => {
         process.stdout.write(`${LicensingClient.ClientAuditLogPath()}\n`);
         process.exit(0);
@@ -254,7 +254,7 @@ program.command('licensing-audit-logs')
 program.commandsGroup('Unity Hub:');
 
 program.command('hub-version')
-    .description('Print the version of the Unity Hub.')
+    .description('Print the Unity Hub version.')
     .action(async () => {
         const unityHub = new UnityHub();
         try {
@@ -299,7 +299,7 @@ program.command('package-manager-logs')
     });
 
 program.command('hub-install')
-    .description('Install the Unity Hub.')
+    .description('Install or update the Unity Hub.')
     .option('--verbose', 'Enable verbose logging.')
     .option('--auto-update', 'Automatically updates the Unity Hub if it is already installed. Cannot be used with --hub-version.')
     .option('--hub-version <version>', 'Specify to install a specific version of Unity Hub. Cannot be used with --auto-update.')
@@ -354,7 +354,7 @@ program.command('hub')
     });
 
 program.command('setup-unity')
-    .description('Sets up the environment for the specified project and finds or installs the Unity Editor version for it.')
+    .description('Find or install the Unity Editor for a project or specific version.')
     .option('-p, --unity-project <unityProject>', 'The path to a Unity project or "none" to skip project detection.')
     .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000). If specified, it will override the version read from the project.')
     .option('-c, --changeset <changeset>', 'The Unity changeset to get (e.g. 1234567890ab).')
@@ -451,7 +451,7 @@ program.command('setup-unity')
     });
 
 program.command('uninstall-unity')
-    .description('Uninstall the specified Unity Editor version.')
+    .description('Uninstall a Unity Editor version.')
     .option('-e, --unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, -u, --unity-version or the UNITY_EDITOR_PATH environment variable must be set.')
     .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000). If unspecified, then --unity-editor must be specified.')
     .option('-c, --changeset <changeset>', 'The Unity changeset to get (e.g. 1234567890ab).')
@@ -506,11 +506,11 @@ program.command('uninstall-unity')
 program.commandsGroup('Unity Editor:');
 
 program.command('run')
-    .description('Run command line args directly to the Unity Editor.')
+    .description('Run Unity Editor command line arguments (passes args directly to the editor).')
     .option('--unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, --unity-project or the UNITY_EDITOR_PATH environment variable must be set.')
     .option('--unity-project <unityProject>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable will be used, otherwise no project will be specified.')
     .option('--log-name <logName>', 'The name of the log file.')
-    .option('--log-level <logLevel>', 'Set the logging level (debug, info, minimal, warning, error). Default is info.')
+    .option('--log-level <logLevel>', 'Override the logger verbosity (debug, info, minimal, warning, error). Defaults to info.')
     .option('--verbose', 'Enable verbose logging. Deprecated, use --log-level instead.')
     .allowUnknownOption(true)
     .argument('<args...>', 'Arguments to pass to the Unity Editor executable.')
@@ -619,9 +619,9 @@ program.command('run')
     });
 
 program.command('list-project-templates')
-    .description('List all available project templates for the given Unity editor.')
+    .description('List available Unity project templates for an editor.')
     .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000). If unspecified, then --unity-editor must be specified.')
-    .option('-e, --unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, the UNITY_EDITOR_PATH environment variable must be set.')
+    .option('-e, --unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, -u, --unity-version or the UNITY_EDITOR_PATH environment variable must be set.')
     .option('--verbose', 'Enable verbose logging.')
     .option('--json', 'Prints the last line of output as JSON string.')
     .action(async (options) => {
@@ -632,9 +632,10 @@ program.command('list-project-templates')
         Logger.instance.debugOptions(options);
 
         const unityVersionStr = options.unityVersion?.toString()?.trim();
+        const editorFromEnv = process.env.UNITY_EDITOR_PATH?.trim();
 
-        if (!unityVersionStr && !options.unityEditor) {
-            Logger.instance.error('You must specify a Unity version or editor path with -u, --unity-version, -e, --unity-editor.');
+        if (!unityVersionStr && !options.unityEditor?.toString()?.trim() && !editorFromEnv) {
+            Logger.instance.error('You must specify a Unity version or editor path with -u, --unity-version, -e, --unity-editor, or set UNITY_EDITOR_PATH.');
             process.exit(1);
         }
 
@@ -644,7 +645,7 @@ program.command('list-project-templates')
             const unityVersion = new UnityVersion(unityVersionStr);
             unityEditor = await new UnityHub().GetEditor(unityVersion);
         } else {
-            const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH;
+            const editorPath = options.unityEditor?.toString()?.trim() || editorFromEnv;
 
             if (!editorPath || editorPath.length === 0) {
                 throw new Error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR_PATH environment variable.');
@@ -685,9 +686,10 @@ program.command('create-project')
         Logger.instance.debugOptions(options);
 
         const unityVersionStr = options.unityVersion?.toString()?.trim();
+        const editorFromEnv = process.env.UNITY_EDITOR_PATH?.trim();
 
-        if (!unityVersionStr && !options.unityEditor) {
-            Logger.instance.error('You must specify a Unity version or editor path with -u, --unity-version, -e, --unity-editor.');
+        if (!unityVersionStr && !options.unityEditor?.toString()?.trim() && !editorFromEnv) {
+            Logger.instance.error('You must specify a Unity version or editor path with -u, --unity-version, -e, --unity-editor, or set UNITY_EDITOR_PATH.');
             process.exit(1);
         }
 
@@ -697,7 +699,7 @@ program.command('create-project')
             const unityVersion = new UnityVersion(unityVersionStr);
             unityEditor = await new UnityHub().GetEditor(unityVersion);
         } else {
-            const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH;
+            const editorPath = options.unityEditor?.toString()?.trim() || editorFromEnv;
 
             if (!editorPath || editorPath.length === 0) {
                 Logger.instance.error('The Unity Editor path was not specified. Use -e or --unity-editor to specify it, or set the UNITY_EDITOR_PATH environment variable.');
@@ -812,9 +814,9 @@ program.commandsGroup("Unity Package Manager:");
 program.command('upm-install')
     .description('Download and install the Unity Package Manager cli (pack/sign).')
     .option('--verbose', 'Enable verbose logging.')
-    .option('--auto-update', 'Automatically updates the upm cli if a newer release is available. Cannot be used with --version.')
-    .option('--version <version>', 'upm cli release tag (e.g. v9.27.0). Defaults to latest from Unity CDN.')
-    .option('--json', 'Print UPM release tag, CLI path, and managed install root as JSON.')
+    .option('--auto-update', 'Automatically updates the upm cli if it is already installed and a newer release is available. Cannot be used with --version.')
+    .option('--version <version>', 'Install a specific upm cli release tag (for example v9.27.0). Defaults to the latest release from the Unity CDN.')
+    .option('--json', 'Print version and managed paths as JSON.')
     .action(async (options) => {
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
@@ -872,7 +874,7 @@ program.command('upm-install')
     });
 
 program.command('upm-version')
-    .description('Print the managed upm cli version.')
+    .description('Print the Unity Package Manager cli version.')
     .action(async () => {
         try {
             const upmCli = new UpmCli();
@@ -892,9 +894,9 @@ interface UpmPackCliOptions {
 }
 
 program.command('upm-pack')
-    .description('Pack a Unity package (bundled UPM CLI `pack` command).')
+    .description('Sign and pack a Unity package.')
     .option('--source <path>', 'An absolute or relative path to the root folder of the custom package to pack. This is the folder that contains the package manifest file (package.json). (optional; defaults to the current working directory).')
-    .option('--destination <path>', 'The output path where UPM CLI places the signed tarball. If you specify a folder that doesn\'t exist, UPM CLI creates it. Note: If you omit this parameter, UPM CLI places the file in the current working directory.')
+    .option('--destination <path>', 'The output path for the signed tarball. If you specify a folder that doesn\'t exist, it will be created for you. Note: If you omit this parameter, the tarball will be placed in the current working directory.')
     .option('--verbose', 'Enable verbose logging.')
     .action(async (options: UpmPackCliOptions) => {
         if (options.verbose) {
@@ -983,7 +985,7 @@ program.command('upm-pack')
     });
 
 program.command('sign-package')
-    .description('[Deprecated] Sign a Unity package using Unity Editor 6000.3+ batch mode (-upmPack). Prefer `unity-cli upm-pack` for new workflows.')
+    .description('[Deprecated] Sign a Unity package using Unity Editor 6000.3+ batch mode (-upmPack). Use unity-cli upm-pack with organization and service account credentials for new workflows.')
     .option('--package <package>', 'Required. The fully qualified path to the folder that contains the package.json file for the package you want to sign. Note: Don\'t include package.json in this parameter value.')
     .option('--output <output>', 'Optional. The output directory where you want to save the signed tarball file (.tgz). If unspecified, the package contents will be updated in place with the signed .attestation.p7m file.')
     .option('--email <email>', 'Email associated with the Unity account. If unspecified, the UNITY_USERNAME environment variable will be used.')
@@ -991,7 +993,7 @@ program.command('sign-package')
     .option('--organization <organization>', 'The Organization ID you copied from the Unity Cloud Dashboard. If unspecified, the UNITY_ORGANIZATION_ID environment variable will be used.')
     .option('--verbose', 'Enable verbose logging.')
     .action(async (options) => {
-        Logger.instance.warn('The sign-package command is deprecated. Use `unity-cli upm-pack` instead.');
+        Logger.instance.warn('The sign-package command is deprecated. Use unity-cli upm-pack --source <path-to-package-folder> --destination <output-path> with UNITY_ORGANIZATION_ID or UNITY_ORG_ID, UPM_SERVICE_ACCOUNT_KEY_ID, and UPM_SERVICE_ACCOUNT_KEY_SECRET (or secure prompts).');
 
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
