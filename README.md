@@ -360,7 +360,7 @@ unity-cli editor-logs
 
 - `--auto-update`: Automatically updates the upm cli if it is already installed and a newer release is available. Cannot be used with `--version`.
 - `--version <version>`: Install a specific upm cli release tag (for example `v9.27.0`). Defaults to the latest release from the Unity CDN.
-- `--json`: Print UPM version and managed paths as JSON.
+- `--json`: Print version and managed paths as JSON.
 - `--verbose`: Enable verbose output.
 
 ```bash
@@ -369,7 +369,7 @@ unity-cli upm-install --auto-update
 
 #### UPM Version
 
-`upm-version`: Print the Unity Package Manager version.
+`upm-version`: Print the Unity Package Manager cli version.
 
 ```bash
 unity-cli upm-version
