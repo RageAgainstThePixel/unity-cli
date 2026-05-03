@@ -1,0 +1,16 @@
+[
+  {
+    "type": "MemoryLeaks",
+    "version": 2,
+    "phase": "Immediate",
+    "time": 1776560249323,
+    "processId": 11224,
+    "allocatedMemory": 11431386,
+    "memoryLabels": [
+      { "Default": 22013 },
+      { "Permanent": 16136 },
+      { "Thread": 1084656 },
+      { "GfxDevice": 36008 }
+    ]
+  }
+]

@@ -1,0 +1,47 @@
+[
+  {
+    "type": "TestStatus",
+    "version": 2,
+    "phase": "Immediate",
+    "time": 1000,
+    "processId": 1,
+    "name": "EditMode.Foo.Passes",
+    "state": 1,
+    "duration": 12,
+    "description": "Passing test"
+  },
+  {
+    "type": "TestStatus",
+    "version": 2,
+    "phase": "Immediate",
+    "time": 1001,
+    "processId": 1,
+    "name": "EditMode.Foo.Fails",
+    "state": 2,
+    "durationMicroseconds": 5000000,
+    "message": "Expected 1 Was 2",
+    "description": "Failing test"
+  },
+  {
+    "type": "TestStatus",
+    "version": 2,
+    "phase": "Immediate",
+    "time": 1002,
+    "processId": 1,
+    "name": "EditMode.Foo.Skipped",
+    "state": 3,
+    "duration": 0,
+    "description": "Skipped test"
+  },
+  {
+    "type": "TestStatus",
+    "version": 2,
+    "phase": "Immediate",
+    "time": 1003,
+    "processId": 1,
+    "name": "EditMode.Foo.Inconclusive",
+    "state": 0,
+    "duration": 5,
+    "description": "Inconclusive"
+  }
+]
