@@ -906,6 +906,9 @@ program.command('upm-pack')
         Logger.instance.debugOptions({ options });
 
         try {
+            const upm = new UpmCli();
+            await upm.PromptInstallOrUpdateWhenInteractive();
+
             let serviceAccountKeyId = process.env.UPM_SERVICE_ACCOUNT_KEY_ID?.trim();
 
             if (!serviceAccountKeyId) {
@@ -957,8 +960,6 @@ program.command('upm-pack')
                 (s): s is string => typeof s === 'string' && s.trim().length > 0
             );
 
-            const upm = new UpmCli();
-            await upm.PromptInstallOrUpdateWhenInteractive();
             const packOptions: UpmPackOptions = {
                 organizationId: orgId,
             };

@@ -375,44 +375,77 @@ export class UpmCli {
     }
 
     /**
-     * When running in an interactive terminal, may prompt to install a missing managed UPM CLI or update to the latest.
+     * When running in an interactive terminal, may prompt to install a missing UPM CLI or update to the latest CDN release.
+     * When not interactive, logs a warning if the running binary is older than the CDN latest (no install).
+     * Compares the running binary ({@link Version}) to {@link GetLatestReleaseTag} (including when {@code UPM_CLI_PATH} overrides the managed install).
      * Call before {@link GetExecutablePath} / {@link Exec} for Hub-style optional install/update (e.g. pack).
      */
     public async PromptInstallOrUpdateWhenInteractive(): Promise<void> {
-        if (this.executableOverrideIsUsable()) {
-            return;
-        }
-        let exe = this.ResolveManagedPrimaryPath();
-        if (exe && isInteractiveTerminalSession()) {
-            const currentVersion = this.GetInstalledReleaseTag();
-            if (currentVersion) {
-                try {
-                    const latestVersion = await this.GetLatestReleaseTag();
-                    if (this.IsUpdateAvailable(latestVersion)) {
-                        const shouldUpdate = await PromptYesNo(
-                            `A newer upm cli version is available (${currentVersion} -> ${latestVersion}). Install it now?`,
-                            true
-                        );
-                        if (shouldUpdate) {
-                            await this.Install({
-                                version: latestVersion,
-                                skipIfInstalled: false,
-                            });
-                        }
-                    }
-                } catch (error) {
-                    this.logger.debug(`Failed to check for upm cli updates: ${error}`);
+        const overrideUsable = this.executableOverrideIsUsable();
+        const managedExe = this.ResolveManagedPrimaryPath();
+        const hasExecutable = overrideUsable || managedExe !== undefined;
+
+        if (!hasExecutable) {
+            if (isInteractiveTerminalSession()) {
+                const install = await PromptYesNo(
+                    'The upm cli is not installed. Download and install it now?',
+                    true
+                );
+                if (install) {
+                    await this.Install({ skipIfInstalled: false });
                 }
             }
+            return;
         }
-        if (!exe && isInteractiveTerminalSession()) {
-            const install = await PromptYesNo(
-                'The upm cli is not installed. Download and install it now?',
-                true
-            );
-            if (install) {
-                await this.Install({ skipIfInstalled: false });
+
+        try {
+            const latestTag = await this.GetLatestReleaseTag();
+            const latestSem = UpmCli.parseVerifiedSemVerFromLine(latestTag);
+            if (!latestSem) {
+                return;
             }
+
+            const installedSem = await this.Version();
+            if (compare(latestSem, installedSem) <= 0) {
+                return;
+            }
+
+            const usingOverride = overrideUsable;
+
+            if (!isInteractiveTerminalSession()) {
+                if (usingOverride) {
+                    this.logger.warn(
+                        `The upm cli (UPM_CLI_PATH) reports ${installedSem.version}, but ${latestTag} is available on the CDN. This run still uses UPM_CLI_PATH; update that binary or unset it and run unity-cli upm-install to use the managed release.`,
+                    );
+                } else {
+                    this.logger.warn(
+                        `The upm cli (${installedSem.version}) is older than the latest release (${latestTag}). Run unity-cli upm-install or unity-cli upm-install --auto-update to update.`,
+                    );
+                }
+                return;
+            }
+
+            const prompt = usingOverride
+                ? `Your upm cli (UPM_CLI_PATH) reports ${installedSem.version}, but ${latestTag} is available. Install the latest to the managed location now? This run will keep using UPM_CLI_PATH until you unset it or point it at the new binary.`
+                : `A newer upm cli version is available (${installedSem.version} -> ${latestTag}). Install it now?`;
+
+            const shouldUpdate = await PromptYesNo(prompt, !usingOverride);
+            if (!shouldUpdate) {
+                return;
+            }
+
+            await this.Install({
+                version: latestTag,
+                skipIfInstalled: false,
+            });
+
+            if (usingOverride) {
+                this.logger.warn(
+                    `Installed upm cli ${latestTag} under ${this.managedRoot}. Unset UPM_CLI_PATH (or update it) so subsequent commands use the new install.`,
+                );
+            }
+        } catch (error) {
+            this.logger.debug(`Failed to check for upm cli updates: ${error}`);
         }
     }
 
