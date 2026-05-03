@@ -98,7 +98,7 @@ unity-cli --help
 - `--auto-update`: If any tools are installed, they're automatically updated to the latest versions. Cannot be used with `--hub-version` or `--upm-version`.
 - `--hub-version <version>`: Specify to install a specific version of Unity Hub. Cannot be used with `--auto-update`.
 - `--upm-version <version>`: Specify to install a specific version of the Unity Package Manager cli. Cannot be used with `--auto-update`.
-- `--json`: Print hub path, UPM cli version, and resolved UPM CLI path as JSON.
+- `--json`: Print hub path, UPM CLI version, and resolved UPM CLI path as JSON.
 
 ```bash
 unity-cli install-all-tools --auto-update

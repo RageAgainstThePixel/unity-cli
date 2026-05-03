@@ -33,7 +33,7 @@ program.command('install-all-tools')
     .option('--auto-update', 'If any tools are installed, they\'re automatically updated to the latest versions. Cannot be used with --hub-version or --upm-version.')
     .option('--hub-version <version>', 'Specify to install a specific version of Unity Hub. Cannot be used with --auto-update.')
     .option('--upm-version <version>', 'Specify to install a specific version of the Unity Package Manager cli. Cannot be used with --auto-update.')
-    .option('--json', 'Print hub path, UPM cli version, and resolved UPM CLI path as JSON.')
+    .option('--json', 'Print hub path, UPM CLI version, and resolved UPM CLI path as JSON.')
     .action(async (options) => {
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
