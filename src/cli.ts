@@ -32,8 +32,8 @@ program.command('install-all-tools')
     .option('--verbose', 'Enable verbose logging.')
     .option('--auto-update', 'If any tools are installed, they\'re automatically updated to the latest versions. Cannot be used with --hub-version or --upm-version.')
     .option('--hub-version <version>', 'Specify to install a specific version of Unity Hub. Cannot be used with --auto-update.')
-    .option('--upm-version <version>', 'upm cli release tag (e.g. v9.27.0). Defaults to latest from Unity CDN. Cannot be used with --auto-update.')
-    .option('--json', 'Print hub path, UPM release tag, and resolved UPM CLI path as JSON.')
+    .option('--upm-version <version>', 'Specify to install a specific version of the Unity Package Manager cli. Cannot be used with --auto-update.')
+    .option('--json', 'Print hub path, UPM cli version, and resolved UPM CLI path as JSON.')
     .action(async (options) => {
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
@@ -815,7 +815,7 @@ program.command('upm-install')
     .description('Download and install the Unity Package Manager cli (pack/sign).')
     .option('--verbose', 'Enable verbose logging.')
     .option('--auto-update', 'Automatically updates the upm cli if it is already installed and a newer release is available. Cannot be used with --version.')
-    .option('--version <version>', 'Install a specific upm cli release tag (for example v9.27.0). Defaults to the latest release from the Unity CDN.')
+    .option('--version <version>', 'Specify to install a specific version of the Unity Package Manager cli. Cannot be used with --auto-update.')
     .option('--json', 'Print version and managed paths as JSON.')
     .action(async (options) => {
         if (options.verbose) {

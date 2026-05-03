@@ -97,8 +97,8 @@ unity-cli --help
 - `--verbose`: Enable verbose logging.
 - `--auto-update`: If any tools are installed, they're automatically updated to the latest versions. Cannot be used with `--hub-version` or `--upm-version`.
 - `--hub-version <version>`: Specify to install a specific version of Unity Hub. Cannot be used with `--auto-update`.
-- `--upm-version <version>`: upm cli release tag (e.g. `v9.27.0`). Defaults to latest from Unity CDN. Cannot be used with `--auto-update`.
-- `--json`: Print hub path, UPM release tag, and resolved UPM CLI path as JSON.
+- `--upm-version <version>`: Specify to install a specific version of the Unity Package Manager cli. Cannot be used with `--auto-update`.
+- `--json`: Print hub path, UPM cli version, and resolved UPM CLI path as JSON.
 
 ```bash
 unity-cli install-all-tools --auto-update
@@ -365,7 +365,7 @@ unity-cli editor-logs
 `upm-install [options]`: Download and install the Unity Package Manager cli (pack/sign).
 
 - `--auto-update`: Automatically updates the upm cli if it is already installed and a newer release is available. Cannot be used with `--version`.
-- `--version <version>`: Install a specific upm cli release tag (for example `v9.27.0`). Defaults to the latest release from the Unity CDN.
+- `--version <version>`: Specify to install a specific version of the Unity Package Manager cli. Cannot be used with `--auto-update`.
 - `--json`: Print version and managed paths as JSON.
 - `--verbose`: Enable verbose logging.
 
