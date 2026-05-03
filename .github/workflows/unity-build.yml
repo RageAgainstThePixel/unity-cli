@@ -58,6 +58,13 @@ jobs:
             unity-cli hub-install --auto-update
           fi
           unity-cli hub-version
+          unity-cli upm-install --json
+          UPM_VER=$(unity-cli upm-version | tr -d '\n\r')
+          echo "UPM CLI version: ${UPM_VER}"
+          if ! [[ "${UPM_VER}" =~ ^v[0-9] ]]; then
+            echo "::error::upm-version expected a v-prefixed release (e.g. v9.0.0); got: ${UPM_VER}"
+            exit 1
+          fi
           if [ "${{ matrix.unity-version }}" != "none" ]; then
             unity-cli setup-unity --unity-version "${{ matrix.unity-version }}" --build-targets "${{ matrix.build-target }}" --json
           fi
