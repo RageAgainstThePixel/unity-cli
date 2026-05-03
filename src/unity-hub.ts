@@ -18,8 +18,9 @@ import {
     DownloadFile,
     Exec,
     ExecOptions,
-    ReadFileContents,
     GetTempDir,
+    HttpsGetText,
+    ReadFileContents,
 } from './utilities';
 import {
     UnityReleasesClient,
@@ -585,8 +586,7 @@ chmod -R 777 "$hubPath"`]);
                 throw new Error(`Unsupported platform: ${process.platform}`);
         }
 
-        const response = await fetch(url);
-        const data = await response.text();
+        const data = await HttpsGetText(url);
         const parsed = yaml.parse(data);
         const version = coerce(parsed.version);
 

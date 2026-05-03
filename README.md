@@ -4,36 +4,45 @@
 
 A powerful command line utility for the Unity Game Engine. Automate Unity project setup, editor installation, license management, building, and more—ideal for CI/CD pipelines and developer workflows.
 
+> [!IMPORTANT]
+> The documented commands can download, install, or run software from Unity (Hub, Editor, Package Manager CLI, licensing tools, and similar binaries from Unity CDNs or services). That use is covered by Unity’s [Terms of Service](https://unity.com/legal/terms-of-service), the [Unity Editor Software Additional Terms](https://unity.com/legal/terms-of-service/software), and any other [Additional Terms](https://unity.com/legal/additional-terms) that apply to the offerings you use. Keep your Unity account, seats, and subscriptions in order, and read the agreements that actually bind you before relying on automation in CI or production. The full legal index is at [Unity Legal](https://unity.com/legal).
+>
+> Unity, Unity Hub, Unity Editor, and related names and logos are trademarks and other intellectual property of Unity Technologies Inc. and its affiliates. This project is independent and not affiliated with Unity. Names are used here only to describe what the commands talk to. If you ship Unity marks, artwork, or binaries, use Unity’s guidance, including their [IP policy](https://unity.com/legal/ip-policy-takedown-requests).
+
 ## Table of Contents
 
 - [Features](#features)
 - [Installation](#installation)
 - [Usage](#usage)
   - [Common Commands](#common-commands)
-    - [Auth](#auth)
-      - [License Version](#license-version)
-      - [Activate License](#activate-license)
-      - [Return License](#return-license)
-      - [License Context](#license-context)
-      - [Licensing Client Logs](#licensing-client-logs)
-      - [Licensing Audit Logs](#licensing-audit-logs)
-    - [Unity Hub](#unity-hub)
-      - [Hub Version](#hub-version)
-      - [Hub Path](#hub-path)
-      - [Hub Logs](#hub-logs)
-      - [Package Manager Logs](#package-manager-logs)
-      - [Unity Hub Install](#unity-hub-install)
-      - [Run Unity Hub Commands](#run-unity-hub-commands)
-      - [Setup Unity Editor](#setup-unity-editor)
-      - [Uninstall Unity Editor](#uninstall-unity-editor)
-    - [Unity Editor](#unity-editor)
-      - [Run Unity Editor Commands](#run-unity-editor-commands)
-      - [List Project Templates](#list-project-templates)
-      - [Create Unity Project](#create-unity-project)
-      - [Open Unity Project](#open-unity-project)
-      - [Unity Editor Logs](#unity-editor-logs)
-    - [Unity Package Manager](#unity-package-manager)
-      - [Sign a Unity Package](#sign-a-unity-package)
+  - [Install all tools](#install-all-tools)
+  - [Auth](#auth)
+    - [License Version](#license-version)
+    - [Activate License](#activate-license)
+    - [Return License](#return-license)
+    - [License Context](#license-context)
+    - [Licensing Client Logs](#licensing-client-logs)
+    - [Licensing Audit Logs](#licensing-audit-logs)
+  - [Unity Hub](#unity-hub)
+    - [Hub Version](#hub-version)
+    - [Hub Path](#hub-path)
+    - [Hub Logs](#hub-logs)
+    - [Package Manager Logs](#package-manager-logs)
+    - [Unity Hub Install](#unity-hub-install)
+    - [Run Unity Hub Commands](#run-unity-hub-commands)
+    - [Setup Unity Editor](#setup-unity-editor)
+    - [Uninstall Unity Editor](#uninstall-unity-editor)
+  - [Unity Editor](#unity-editor)
+    - [Run Unity Editor Commands](#run-unity-editor-commands)
+    - [List Project Templates](#list-project-templates)
+    - [Create Unity Project](#create-unity-project)
+    - [Open Unity Project](#open-unity-project)
+    - [Unity Editor Logs](#unity-editor-logs)
+  - [Unity Package Manager](#unity-package-manager)
+    - [Install UPM CLI](#install-upm-cli)
+    - [UPM Version](#upm-version)
+    - [Pack a Unity Package](#pack-a-unity-package)
+    - [Deprecated Sign Package Command](#deprecated-sign-package-command)
 - [Logging](#logging)
   - [Local cli](#local-cli)
   - [Github Actions](#github-actions)
@@ -79,6 +88,14 @@ With options always using double dashes (`--option`) and arguments passed direct
 
 ```bash
 unity-cli --help
+```
+
+### Install all tools
+
+`install-all-tools` runs Unity Hub installation and managed UPM CLI installation together (the same work as `hub-install` and `upm-install` in parallel). Use `unity-cli install-all-tools --help` for `--hub-version`, `--upm-version`, `--auto-update`, `--json`, and `--verbose`.
+
+```bash
+unity-cli install-all-tools --auto-update
 ```
 
 #### Auth
@@ -337,14 +354,51 @@ unity-cli editor-logs
 
 #### Unity Package Manager
 
-##### Sign a Unity Package
+##### Install Unity Package Manager cli
+
+`upm-install [options]`: Download and install the Unity Package Manager cli (pack/sign) under `~/.unity-cli/upm`. Use `unity-cli upm-pack ...` to pack packages.
+
+- `--auto-update`: Automatically updates the upm cli if it is already installed and a newer release is available. Cannot be used with `--version`.
+- `--version <version>`: Install a specific upm cli release tag (for example `v9.27.0`). Defaults to the latest release from the Unity CDN.
+- `--json`: Print UPM version and managed paths as JSON.
+- `--verbose`: Enable verbose output.
+
+```bash
+unity-cli upm-install --auto-update
+```
+
+##### UPM Version
+
+`upm-version`: Print the Unity Package Manager version.
+
+```bash
+unity-cli upm-version
+```
+
+##### Pack a Unity Package
+
+`upm-pack [options] [directory]`: Sign and pack a Unity package.
+
+- `--organization-id <id>`: The organization ID associated with the package. Optional when `UNITY_ORGANIZATION_ID` or `UNITY_ORG_ID` is set. If none are set, you'll be prompted securely.
+- `--destination <path>`: The output path for the packed package.
+- `--service-account-key-id <id>`: Service account key id. Required. If omitted, `UPM_SERVICE_ACCOUNT_KEY_ID` is used. If still missing, you'll be prompted securely.
+- `--service-account-key-secret <secret>`: Service account key secret. Required. If omitted, `UPM_SERVICE_ACCOUNT_KEY_SECRET` is used. If still missing, you'll be prompted securely.
+- `--verbose`: Enable verbose output.
+- `--json`: Prints the last line of output as a json string, which contains the operation results.
+- `[directory]`: Path to the Unity package folder to pack (optional; defaults to the current working directory).
+
+```bash
+unity-cli upm-pack <path-to-package-folder> --organization-id <your-organization-id> --destination <output-path>
+```
+
+##### Deprecated Sign Package Command
 
 > [!WARNING]
-> This command feature is in beta and may change in future releases.
+> **Deprecated:** `sign-package` is deprecated and may be removed in a future release. Use `unity-cli upm-pack <path-to-package-folder> --organization-id <your-organization-id> --destination <output-path>` instead.
 
-`sign-package [options]`: Sign a Unity package for distribution.
+`sign-package [options]`: Sign a Unity package using Unity Editor 6000.3+ batch mode (`-upmPack`).
 
-- `--package <package>` Required. The fully qualified path to the folder that contains the package.json file for the package you want to sign. Note: Don’t include package.json in this parameter value.
+- `--package <package>` Required. The fully qualified path to the folder that contains the package.json file for the package you want to sign. Note: Don't include package.json in this parameter value.
 - `--output <output>` Optional. The output directory where you want to save the signed tarball file (.tgz). If unspecified, the package contents will be updated in place with the signed .attestation.p7m file.
 - `--email <email>` Email associated with the Unity account. If unspecified, the `UNITY_USERNAME` environment variable will be used.
 - `--password <password>` The password of the Unity account. If unspecified, the `UNITY_PASSWORD` environment variable will be used.

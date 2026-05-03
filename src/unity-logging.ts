@@ -1,7 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { LogLevel, Logger } from './logging';
-import { Delay, WaitForFileToBeUnlocked } from './utilities';
+import {
+    Delay,
+    isStdoutTTY,
+    WaitForFileToBeUnlocked
+} from './utilities';
 import {
     Phase,
     Severity,
@@ -958,7 +962,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
     const telemetry: UTP[] = [];
     const logger = Logger.instance;
     const actionAccumulator = new ActionTelemetryAccumulator();
-    const actionTableRenderer = new ActionTableRenderer(process.stdout.isTTY === true && process.env.CI !== 'true');
+    const actionTableRenderer = new ActionTableRenderer(isStdoutTTY());
     const utpLogPath = buildUtpLogPath(logPath);
     let telemetryFlushed = false;
 

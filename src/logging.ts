@@ -262,7 +262,8 @@ export class Logger {
         'config',
         'organization',
         'username',
-        'servicesConfig'
+        'servicesConfig',
+        'serviceaccountkey',
     ];
 
     /**

@@ -1,6 +1,6 @@
 {
   "name": "@rage-against-the-pixel/unity-cli",
-  "version": "1.8.3",
+  "version": "2.0.0",
   "description": "A command line utility for the Unity Game Engine.",
   "author": "RageAgainstThePixel",
   "license": "MIT",
@@ -12,6 +12,9 @@
     "url": "https://github.com/RageAgainstThePixel/unity-cli/issues"
   },
   "homepage": "https://github.com/RageAgainstThePixel/unity-cli#readme",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "keywords": [
     "unity-cli",
     "unity",
@@ -56,7 +59,7 @@
     "source-map-support": "^0.5.21",
     "tar": "^7.5.13",
     "update-notifier": "^7.3.1",
-    "yaml": "^2.8.3"
+    "yaml": "^2.8.4"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
