@@ -336,9 +336,10 @@ export async function extractZipNative(
                 'param([Parameter(Mandatory=$true)][string]$ZipPath,[Parameter(Mandatory=$true)][string]$DestPath)\n' +
                 '$ErrorActionPreference = "Stop"\n' +
                 'Expand-Archive -LiteralPath $ZipPath -DestinationPath $DestPath -Force\n';
-            const scriptPath = path.join(GetTempDir(), `unity-cli-expand-zip-${Date.now()}.ps1`);
-            await fs.promises.writeFile(scriptPath, scriptBody, 'utf8');
+            const tmpDir = await fs.promises.mkdtemp(path.join(GetTempDir(), 'unity-cli-expand-zip-'));
+            const scriptPath = path.join(tmpDir, 'Expand-Archive.ps1');
             try {
+                await fs.promises.writeFile(scriptPath, scriptBody, 'utf8');
                 await Exec('powershell.exe', [
                     '-NoProfile',
                     '-NonInteractive',
@@ -351,7 +352,7 @@ export async function extractZipNative(
                     showCommand: show,
                 });
             } finally {
-                await fs.promises.unlink(scriptPath).catch(() => undefined);
+                await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
             }
         }
     } else {
