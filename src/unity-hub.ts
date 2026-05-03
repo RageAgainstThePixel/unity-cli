@@ -677,8 +677,9 @@ chmod -R 777 "$hubPath"`]);
         if (!editorPath) {
             try {
                 installDir = await this.installUnity(unityVersion, modules);
-            } catch (error: Error | any) {
-                if (retryErrorMessages.some(msg => error.message.includes(msg))) {
+            } catch (error: unknown) {
+                const errMessage = error instanceof Error ? error.message : String(error);
+                if (retryErrorMessages.some((msg) => errMessage.includes(msg))) {
                     if (editorPath) {
                         await DeleteDirectory(editorPath);
                     }
@@ -726,8 +727,9 @@ chmod -R 777 "$hubPath"`]);
                     this.logger.info(`  > ${module}`);
                 }
             }
-        } catch (error: Error | any) {
-            if (error.message.includes(`No modules found`)) {
+        } catch (error: unknown) {
+            const errMessage = error instanceof Error ? error.message : String(error);
+            if (errMessage.includes(`No modules found`)) {
                 await DeleteDirectory(editorPath);
                 await this.GetEditor(unityVersion, modules);
             } else {
@@ -972,10 +974,16 @@ done
             // Filter to stable 'f' releases only unless the user explicitly asked for a pre-release
             const isExplicitPrerelease = /[abcpx]$/.test(unityVersion.version) || /[abcpx]/.test(unityVersion.version);
             const releases: ReleaseInfo[] = (data.results || [])
-                .filter(release => isExplicitPrerelease || release.version.includes('f'))
+                .filter((release) => {
+                    const v = release.version;
+                    if (v == null || v === '') {
+                        return false;
+                    }
+                    return isExplicitPrerelease || v.includes('f');
+                })
                 .map(release => ({
                     unityRelease: release,
-                    unityVersion: new UnityVersion(release.version, release.shortRevision, unityVersion.architecture)
+                    unityVersion: new UnityVersion(release.version!, release.shortRevision, unityVersion.architecture)
                 }));
 
             if (releases.length === 0) {
