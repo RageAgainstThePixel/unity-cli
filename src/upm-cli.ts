@@ -38,8 +38,6 @@ export interface UpmPackOptions {
     destination?: string;
     /** Folder containing `package.json` to pack; when omitted the child process cwd applies. */
     packageDirectory?: string;
-    /** When true, passes high log levels to the UPM CLI (`--log-level` / `--console-log-level`). */
-    verboseUnityCli?: boolean;
 }
 
 /**
@@ -112,7 +110,19 @@ export class UpmCli {
     }
 
     private getVersionInstallDir(version: string): string {
-        return path.join(this.managedRoot, version);
+        const t = version.trim();
+        this.validateVersionFormat(t);
+        if (t.includes('..') || path.normalize(t) !== t) {
+            throw new Error(`Invalid upm cli release tag for path use: ${version}`);
+        }
+        const dir = path.join(this.managedRoot, t);
+        const resolvedDir = path.resolve(dir);
+        const resolvedRoot = path.resolve(this.managedRoot);
+        const rootPrefix = resolvedRoot.endsWith(path.sep) ? resolvedRoot : `${resolvedRoot}${path.sep}`;
+        if (resolvedDir !== resolvedRoot && !resolvedDir.startsWith(rootPrefix)) {
+            throw new Error('Resolved UPM install directory left managed root.');
+        }
+        return dir;
     }
 
     private getCurrentVersionFilePath(): string {
@@ -173,6 +183,19 @@ export class UpmCli {
     private getExecutablePathOverride(): string | undefined {
         const p = process.env.UPM_CLI_PATH?.trim();
         return p && p.length > 0 ? path.normalize(p) : undefined;
+    }
+
+    private executableOverrideIsUsable(): boolean {
+        const p = this.getExecutablePathOverride();
+        if (!p) {
+            return false;
+        }
+        try {
+            fs.accessSync(p, fs.constants.R_OK | fs.constants.X_OK);
+            return true;
+        } catch {
+            return false;
+        }
     }
 
     /**
@@ -271,7 +294,6 @@ export class UpmCli {
         }
 
         version = version.trim();
-        this.validateVersionFormat(version);
 
         const installDir = this.getVersionInstallDir(version);
         const markerPath = path.join(installDir, '.unity-cli-upm-installed');
@@ -279,7 +301,8 @@ export class UpmCli {
         if (options?.skipIfInstalled !== false && fs.existsSync(markerPath)) {
             try {
                 this.findPrimaryExecutable(installDir);
-                await fs.promises.writeFile(this.getCurrentVersionFilePath(), `${version}\n`, 'utf8');
+                const recordedTag = path.basename(installDir);
+                await fs.promises.writeFile(this.getCurrentVersionFilePath(), `${recordedTag}\n`, 'utf8');
                 return version;
             } catch {
                 // reinstall
@@ -293,8 +316,9 @@ export class UpmCli {
         const checksumUrl = `${baseReleaseUrl}/${zipName}.sha256`;
 
         const tempRoot = path.join(GetTempDir(), `unity-cli-upm-${Date.now()}`);
-        const zipPath = path.join(tempRoot, zipName);
-        const checksumPath = path.join(tempRoot, `${zipName}.sha256`);
+        const resolvedTempRoot = path.resolve(tempRoot);
+        const zipPath = path.join(resolvedTempRoot, zipName);
+        const checksumPath = path.join(resolvedTempRoot, `${zipName}.sha256`);
 
         try {
             this.logger.info(`Installing upm cli ${version} (${platform})...`);
@@ -315,6 +339,9 @@ export class UpmCli {
             await DeleteDirectory(installDir);
             await fs.promises.mkdir(installDir, { recursive: true });
             await extractZipNative(zipPath, installDir, {
+                zipUnder: resolvedTempRoot,
+                destUnder: path.resolve(this.managedRoot),
+            }, {
                 silent: false,
                 showCommand: this.logger.logLevel === LogLevel.DEBUG
             });
@@ -338,7 +365,8 @@ export class UpmCli {
             }
 
             await fs.promises.writeFile(markerPath, `${new Date().toISOString()}\n`, 'utf8');
-            await fs.promises.writeFile(this.getCurrentVersionFilePath(), `${version}\n`, 'utf8');
+            const recordedTag = path.basename(installDir);
+            await fs.promises.writeFile(this.getCurrentVersionFilePath(), `${recordedTag}\n`, 'utf8');
 
             return version;
         } finally {
@@ -351,6 +379,9 @@ export class UpmCli {
      * Call before {@link GetExecutablePath} / {@link Exec} for Hub-style optional install/update (e.g. pack).
      */
     public async PromptInstallOrUpdateWhenInteractive(): Promise<void> {
+        if (this.executableOverrideIsUsable()) {
+            return;
+        }
         let exe = this.ResolveManagedPrimaryPath();
         if (exe && isInteractiveTerminalSession()) {
             const currentVersion = this.GetInstalledReleaseTag();
@@ -426,22 +457,30 @@ export class UpmCli {
      */
     public async Pack(options: UpmPackOptions, execOptions?: ExecOptions): Promise<string> {
         const orgId = options.organizationId.trim();
+
         if (!orgId) {
             throw new Error('UpmCli.Pack requires a non-empty organizationId.');
         }
+
         const args: string[] = [];
-        if (options.verboseUnityCli === true) {
+
+        if (this.logger.logLevel === LogLevel.DEBUG) {
             args.push('--log-level', '5', '--console-log-level', '5');
         }
+
         args.push('pack', '--organization-id', orgId);
         const dest = options.destination?.trim();
+
         if (dest && dest.length > 0) {
             args.push('--destination', dest);
         }
+
         const dir = options.packageDirectory?.trim();
+
         if (dir && dir.length > 0) {
             args.push(dir);
         }
+
         return this.Exec(args, execOptions);
     }
 }

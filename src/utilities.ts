@@ -285,14 +285,37 @@ export async function Exec(command: string, args: string[], options: ExecOptions
 }
 
 /**
+ * Confines archive extraction paths before spawning tools (mitigates CodeQL `js/shell-command-constructed-from-input`).
+ * Both paths must resolve under the given roots (e.g. temp download dir and managed UPM root).
+ */
+export interface ZipExtractPathTrust {
+    /** Directory tree that must contain `zipPath` (e.g. resolved temp root for this download). */
+    zipUnder: string;
+    /** Directory tree that must contain `destDir` (e.g. managed `~/.unity-cli/upm`). */
+    destUnder: string;
+}
+
+function assertResolvedPathUnderRoot(candidate: string, root: string, label: string): void {
+    const resolved = path.resolve(candidate);
+    const resolvedRoot = path.resolve(root);
+    const prefix = resolvedRoot.endsWith(path.sep) ? resolvedRoot : `${resolvedRoot}${path.sep}`;
+    if (resolved !== resolvedRoot && !resolved.startsWith(prefix)) {
+        throw new Error(`${label}: path is outside permitted root (${root}): ${candidate}`);
+    }
+}
+
+/**
  * Extracts a zip archive using only OS tools (`tar` or PowerShell on Windows, `unzip` on macOS/Linux).
  * Does not use a Node unzip library.
  */
 export async function extractZipNative(
     zipPath: string,
     destDir: string,
+    pathTrust: ZipExtractPathTrust,
     execOptions?: ExecOptions
 ): Promise<void> {
+    assertResolvedPathUnderRoot(zipPath, pathTrust.zipUnder, 'extractZipNative zipPath');
+    assertResolvedPathUnderRoot(destDir, pathTrust.destUnder, 'extractZipNative destDir');
     await fs.promises.mkdir(destDir, { recursive: true });
     const silent = execOptions?.silent ?? true;
     const show = execOptions?.showCommand ?? false;
@@ -309,18 +332,27 @@ export async function extractZipNative(
                 showCommand: show
             });
         } catch {
-            const ps =
-                `Expand-Archive -LiteralPath '${zipPath.replace(/'/g, "''")}' ` +
-                `-DestinationPath '${destDir.replace(/'/g, "''")}' -Force`;
-            await Exec('powershell.exe', [
-                '-NoProfile',
-                '-NonInteractive',
-                '-Command',
-                ps
-            ], {
-                silent,
-                showCommand: show,
-            });
+            const scriptBody =
+                'param([Parameter(Mandatory=$true)][string]$ZipPath,[Parameter(Mandatory=$true)][string]$DestPath)\n' +
+                '$ErrorActionPreference = "Stop"\n' +
+                'Expand-Archive -LiteralPath $ZipPath -DestinationPath $DestPath -Force\n';
+            const scriptPath = path.join(GetTempDir(), `unity-cli-expand-zip-${Date.now()}.ps1`);
+            await fs.promises.writeFile(scriptPath, scriptBody, 'utf8');
+            try {
+                await Exec('powershell.exe', [
+                    '-NoProfile',
+                    '-NonInteractive',
+                    '-File',
+                    scriptPath,
+                    zipPath,
+                    destDir,
+                ], {
+                    silent,
+                    showCommand: show,
+                });
+            } finally {
+                await fs.promises.unlink(scriptPath).catch(() => undefined);
+            }
         }
     } else {
         await Exec('unzip', [
@@ -381,19 +413,27 @@ export async function DownloadFile(url: string, downloadPath: string): Promise<v
     logger.ci(`Downloading from ${url} to ${downloadPath}...`);
     await fs.promises.mkdir(path.dirname(downloadPath), { recursive: true });
     await new Promise<void>((resolve, reject) => {
-        const file = fs.createWriteStream(downloadPath, { mode: 0o755 });
         https.get(url, (response) => {
             if (response.statusCode !== 200) {
-                reject(new Error(`GET ${url} failed: HTTP ${response.statusCode}`));
                 response.resume();
+                reject(new Error(`GET ${url} failed: HTTP ${response.statusCode}`));
                 return;
             }
+            const file = fs.createWriteStream(downloadPath, { mode: 0o755 });
+            const fail = (err: Error) => {
+                file.destroy();
+                void fs.promises.unlink(downloadPath).catch(() => undefined);
+                reject(err);
+            };
+            response.once('error', fail);
+            file.once('error', fail);
             response.pipe(file);
             file.on('finish', () => {
                 file.close(() => resolve());
             });
         }).on('error', (error) => {
-            fs.unlink(downloadPath, () => reject(error));
+            void fs.promises.unlink(downloadPath).catch(() => undefined);
+            reject(error);
         });
     });
 

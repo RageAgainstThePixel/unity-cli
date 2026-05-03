@@ -30,9 +30,9 @@ program.name('unity-cli')
 program.command('install-all-tools')
     .description('Install the Unity Hub and the Unity Package Manager cli (pack/sign). Runs hub-install and upm-install in parallel.')
     .option('--verbose', 'Enable verbose logging.')
-    .option('--auto-update', 'Automatically updates the Unity Hub if it is already installed. Cannot be used with --hub-version.')
+    .option('--auto-update', 'If any tools are installed, they\'re automatically updated to the latest versions. Cannot be used with --hub-version or --upm-version.')
     .option('--hub-version <version>', 'Specify to install a specific version of Unity Hub. Cannot be used with --auto-update.')
-    .option('--upm-version <version>', 'upm cli release tag (e.g. v9.27.0). Defaults to latest from Unity CDN.')
+    .option('--upm-version <version>', 'upm cli release tag (e.g. v9.27.0). Defaults to latest from Unity CDN. Cannot be used with --auto-update.')
     .option('--json', 'Print hub path, UPM release tag, and resolved UPM CLI path as JSON.')
     .action(async (options) => {
         if (options.verbose) {
@@ -46,13 +46,33 @@ program.command('install-all-tools')
             process.exit(1);
         }
 
+        if (options.autoUpdate === true && options.upmVersion) {
+            Logger.instance.error('Cannot use --auto-update with --upm-version.');
+            process.exit(1);
+        }
+
         try {
             const unityHub = new UnityHub();
             const upm = new UpmCli();
+            let upmRequestedVersion = options.upmVersion?.toString()?.trim();
+            if (options.autoUpdate === true) {
+                const currentVersion = upm.GetInstalledReleaseTag();
+                const latestVersion = await upm.GetLatestReleaseTag();
+                if (currentVersion && !upm.IsUpdateAvailable(latestVersion)) {
+                    Logger.instance.info(`Upm cli is already up to date (${currentVersion}).`);
+                    upmRequestedVersion = currentVersion;
+                } else {
+                    if (currentVersion) {
+                        Logger.instance.info(`Updating upm cli ${currentVersion} -> ${latestVersion}...`);
+                    }
+                    upmRequestedVersion = latestVersion;
+                }
+            }
+
             const [hubPath, upmVer] = await Promise.all([
                 unityHub.Install(options.autoUpdate === true, options.hubVersion),
                 upm.Install({
-                    version: options.upmVersion?.toString()?.trim(),
+                    version: upmRequestedVersion,
                     skipIfInstalled: true
                 }),
             ]);
@@ -61,7 +81,12 @@ program.command('install-all-tools')
             try {
                 await upm.Version(upmVer);
                 upmCliPath = upm.executable;
-            } catch {
+            } catch (verifyError) {
+                Logger.instance.warn(`Upm cli version check failed after install: ${verifyError}`);
+                if (process.env.CI === 'true') {
+                    Logger.instance.error('Failing in CI because the installed UPM CLI did not match the expected release.');
+                    process.exit(1);
+                }
                 upmCliPath = upm.ResolveManagedPrimaryPath();
             }
 
@@ -861,50 +886,47 @@ program.command('upm-version')
     });
 
 interface UpmPackCliOptions {
-    organizationId?: string;
+    source?: string;
     destination?: string;
-    serviceAccountKeyId?: string;
-    serviceAccountKeySecret?: string;
     verbose?: boolean;
-    json?: boolean;
 }
 
 program.command('upm-pack')
     .description('Pack a Unity package (bundled UPM CLI `pack` command).')
-    .option('--organization-id <id>', 'The organization ID associated with the package')
-    .option('--destination <path>', 'The output path for the packed package')
-    .option('--service-account-key-id <id>', 'Service account key id (UPM_SERVICE_ACCOUNT_KEY_ID). If omitted, env var or secure prompt is used.')
-    .option('--service-account-key-secret <secret>', 'Service account key secret (UPM_SERVICE_ACCOUNT_KEY_SECRET). If omitted, env var or secure prompt is used.')
+    .option('--source <path>', 'An absolute or relative path to the root folder of the custom package to pack. This is the folder that contains the package manifest file (package.json). (optional; defaults to the current working directory).')
+    .option('--destination <path>', 'The output path where UPM CLI places the signed tarball. If you specify a folder that doesn\'t exist, UPM CLI creates it. Note: If you omit this parameter, UPM CLI places the file in the current working directory.')
     .option('--verbose', 'Enable verbose logging.')
-    .option('--json', 'Prints the last line of output as a json string, which contains the operation results.')
-    .argument('[directory]', 'Path to the Unity package folder to pack')
-    .action(async (directory: string | undefined, options: UpmPackCliOptions) => {
+    .action(async (options: UpmPackCliOptions) => {
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
-        Logger.instance.debugOptions({ directory, options });
+        Logger.instance.debugOptions({ options });
 
         try {
-            let serviceAccountKeyId = options.serviceAccountKeyId?.toString()?.trim() || process.env.UPM_SERVICE_ACCOUNT_KEY_ID;
+            let serviceAccountKeyId = process.env.UPM_SERVICE_ACCOUNT_KEY_ID?.trim();
 
-            if (!serviceAccountKeyId || serviceAccountKeyId.length === 0) {
-                serviceAccountKeyId = await PromptForSecretInput('UPM_SERVICE_ACCOUNT_KEY_ID: ');
+            if (!serviceAccountKeyId) {
+                serviceAccountKeyId = (await PromptForSecretInput('UPM_SERVICE_ACCOUNT_KEY_ID: ')).trim();
             }
 
-            if (!serviceAccountKeyId || serviceAccountKeyId.length === 0) {
-                Logger.instance.error('UPM_SERVICE_ACCOUNT_KEY_ID is required. Set the environment variable or enter a value when prompted.');
+            if (!serviceAccountKeyId) {
+                Logger.instance.error(
+                    'UPM_SERVICE_ACCOUNT_KEY_ID is required. Set the environment variable or enter a value when prompted.'
+                );
                 process.exit(1);
             }
 
-            let serviceAccountKeySecret = options.serviceAccountKeySecret?.toString()?.trim() || process.env.UPM_SERVICE_ACCOUNT_KEY_SECRET;
+            let serviceAccountKeySecret = process.env.UPM_SERVICE_ACCOUNT_KEY_SECRET?.trim();
 
-            if (!serviceAccountKeySecret || serviceAccountKeySecret.length === 0) {
-                serviceAccountKeySecret = await PromptForSecretInput('UPM_SERVICE_ACCOUNT_KEY_SECRET: ');
+            if (!serviceAccountKeySecret) {
+                serviceAccountKeySecret = (await PromptForSecretInput('UPM_SERVICE_ACCOUNT_KEY_SECRET: ')).trim();
             }
 
-            if (!serviceAccountKeySecret || serviceAccountKeySecret.length === 0) {
-                Logger.instance.error('UPM_SERVICE_ACCOUNT_KEY_SECRET is required. Set the environment variable or enter a value when prompted.');
+            if (!serviceAccountKeySecret) {
+                Logger.instance.error(
+                    'UPM_SERVICE_ACCOUNT_KEY_SECRET is required. Set the environment variable or enter a value when prompted.'
+                );
                 process.exit(1);
             }
 
@@ -913,18 +935,17 @@ program.command('upm-pack')
             process.env.UPM_SERVICE_ACCOUNT_KEY_SECRET = serviceAccountKeySecret;
             Logger.instance.maskCredential(serviceAccountKeySecret);
 
-            let orgId =
-                options.organizationId?.toString()?.trim() ||
-                process.env.UNITY_ORGANIZATION_ID?.trim() ||
-                process.env.UNITY_ORG_ID?.trim();
+            let orgId = process.env.UNITY_ORGANIZATION_ID?.trim() || process.env.UNITY_ORG_ID?.trim();
             const dest = options.destination?.toString()?.trim();
 
-            if (!orgId || orgId.length === 0) {
-                orgId = await PromptForSecretInput('Organization ID (UNITY_ORGANIZATION_ID / UNITY_ORG_ID): ');
+            if (!orgId) {
+                orgId = (await PromptForSecretInput('UNITY_ORGANIZATION_ID: ')).trim();
             }
 
-            if (!orgId || orgId.length === 0) {
-                Logger.instance.error('Organization ID is required. Provide --organization-id or set UNITY_ORGANIZATION_ID / UNITY_ORG_ID.');
+            if (!orgId) {
+                Logger.instance.error(
+                    'Organization ID is required. Set UNITY_ORGANIZATION_ID or UNITY_ORG_ID, or enter a value when prompted.'
+                );
                 process.exit(1);
             }
 
@@ -939,25 +960,20 @@ program.command('upm-pack')
             const packOptions: UpmPackOptions = {
                 organizationId: orgId,
             };
+
             if (dest) {
                 packOptions.destination = dest;
             }
-            const packageDir = directory?.toString()?.trim();
-            if (packageDir) {
-                packOptions.packageDirectory = packageDir;
-            }
-            if (options.verbose === true) {
-                packOptions.verboseUnityCli = true;
-            }
-            const output = await upm.Pack(packOptions, {
+
+            const sourceArg = options.source?.toString()?.trim();
+            packOptions.packageDirectory =
+                sourceArg && sourceArg.length > 0 ? path.resolve(sourceArg) : process.cwd();
+
+            await upm.Pack(packOptions, {
                 silent: false,
                 showCommand: Logger.instance.logLevel === LogLevel.DEBUG,
                 redactLiterals,
             });
-
-            if (options.json) {
-                process.stdout.write(`\n${JSON.stringify({ output })}\n`);
-            }
 
             process.exit(0);
         } catch (error) {

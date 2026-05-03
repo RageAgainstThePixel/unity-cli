@@ -39,7 +39,7 @@ A powerful command line utility for the Unity Game Engine. Automate Unity projec
     - [Open Unity Project](#open-unity-project)
     - [Unity Editor Logs](#unity-editor-logs)
   - [Unity Package Manager](#unity-package-manager)
-    - [Install UPM CLI](#install-upm-cli)
+    - [Install Unity Package Manager](#install-unity-package-manager)
     - [UPM Version](#upm-version)
     - [Pack a Unity Package](#pack-a-unity-package)
     - [Deprecated Sign Package Command](#deprecated-sign-package-command)
@@ -98,9 +98,9 @@ unity-cli --help
 unity-cli install-all-tools --auto-update
 ```
 
-#### Auth
+### Auth
 
-##### License Version
+#### License Version
 
 `license-version`: Print the Unity License Client version.
 
@@ -136,7 +136,7 @@ unity-cli activate-license --license personal --email <your-email> --password <y
 unity-cli return-license --license personal
 ```
 
-##### License Context
+#### License Context
 
 `license-context`: Prints the current license context information.
 
@@ -144,7 +144,7 @@ unity-cli return-license --license personal
 unity-cli license-context
 ```
 
-##### Licensing Client Logs
+#### Licensing Client Logs
 
 `licensing-client-logs`: Prints the path to the Unity Licensing Client log file.
 
@@ -152,7 +152,7 @@ unity-cli license-context
 unity-cli licensing-client-logs
 ```
 
-##### Licensing Audit Logs
+#### Licensing Audit Logs
 
 `licensing-audit-logs`: Prints the path to the Unity Licensing Client audit log.
 
@@ -160,9 +160,9 @@ unity-cli licensing-client-logs
 unity-cli licensing-audit-logs
 ```
 
-#### Unity Hub
+### Unity Hub
 
-##### Hub Version
+#### Hub Version
 
 `hub-version`: Print the Unity Hub version.
 
@@ -170,7 +170,7 @@ unity-cli licensing-audit-logs
 unity-cli hub-version
 ```
 
-##### Hub Path
+#### Hub Path
 
 `hub-path`: Print the Unity Hub executable path.
 
@@ -178,7 +178,7 @@ unity-cli hub-version
 unity-cli hub-path
 ```
 
-##### Hub Logs
+#### Hub Logs
 
 `hub-logs`: Prints the path to the Unity Hub log file.
 
@@ -186,7 +186,7 @@ unity-cli hub-path
 unity-cli hub-logs
 ```
 
-##### Package Manager Logs
+#### Package Manager Logs
 
 `package-manager-logs`: Prints the path to the Unity Package Manager log file.
 
@@ -194,7 +194,7 @@ unity-cli hub-logs
 unity-cli package-manager-logs
 ```
 
-##### Unity Hub Install
+#### Unity Hub Install
 
 `hub-install [options]`: Install or update the Unity Hub
 
@@ -207,7 +207,7 @@ unity-cli package-manager-logs
 unity-cli hub-install
 ```
 
-##### Run Unity Hub Commands
+#### Run Unity Hub Commands
 
 `hub [options] <args...>`: Run Unity Hub command line arguments (passes args directly to the hub executable).
 
@@ -227,7 +227,7 @@ Gets a list of installed editors:
 unity-cli hub editors --installed
 ```
 
-##### Setup Unity Editor
+#### Setup Unity Editor
 
 `setup-unity [options]`: Find or install the Unity Editor for a project or specific version.
 
@@ -247,7 +247,7 @@ Installs the latest Unity 6 version with Android and iOS modules:
 unity-cli setup-unity --unity-version 6000 --modules android,ios
 ```
 
-##### Uninstall Unity Editor
+#### Uninstall Unity Editor
 
 `uninstall-unity [options]`: Uninstall a Unity Editor version.
 
@@ -261,9 +261,9 @@ unity-cli setup-unity --unity-version 6000 --modules android,ios
 unity-cli uninstall-unity --unity-version 6000
 ```
 
-#### Unity Editor
+### Unity Editor
 
-##### Run Unity Editor Commands
+#### Run Unity Editor Commands
 
 `run [options] <args...>`: Run Unity Editor command line arguments (passes args directly to the editor).
 
@@ -283,7 +283,7 @@ unity-cli uninstall-unity --unity-version 6000
 unity-cli run --unity-project <path-to-project> -quit -batchmode -executeMethod StartCommandLineBuild
 ```
 
-##### List Project Templates
+#### List Project Templates
 
 > [!NOTE]
 > Regex patterns are supported for the `--template` option. For example, to create a 3D project with either the standard or cross-platform template, you can use `com.unity.template.3d(-cross-platform)?`.
@@ -303,7 +303,7 @@ Lists available project templates for Unity 6:
 unity-cli list-project-templates --unity-version 6000
 ```
 
-##### Create Unity Project
+#### Create Unity Project
 
 `create-project [options]`: Create a new Unity project from a template.
 
@@ -322,7 +322,7 @@ Creates a new Unity project named "MyGame" using the latest version of Unity 6 a
 unity-cli create-project --name "MyGame" --template com.unity.template.3d(-cross-platform)? --unity-version 6000
 ```
 
-##### Open Unity Project
+#### Open Unity Project
 
 `open-project [options]`: Open a Unity project in the Unity Editor.
 
@@ -344,7 +344,7 @@ unity-cli open-project --unity-project <path-to-project> --unity-version 6000 --
 unity-cli open-project
 ```
 
-##### Unity Editor Logs
+#### Unity Editor Logs
 
 `editor-logs`: Prints the path to the Unity Editor log files.
 
@@ -352,11 +352,11 @@ unity-cli open-project
 unity-cli editor-logs
 ```
 
-#### Unity Package Manager
+### Unity Package Manager
 
-##### Install Unity Package Manager cli
+#### Install Unity Package Manager
 
-`upm-install [options]`: Download and install the Unity Package Manager cli (pack/sign) under `~/.unity-cli/upm`. Use `unity-cli upm-pack ...` to pack packages.
+`upm-install [options]`: Download and install the Unity Package Manager cli (pack/sign) under `~/.unity-cli/upm`.
 
 - `--auto-update`: Automatically updates the upm cli if it is already installed and a newer release is available. Cannot be used with `--version`.
 - `--version <version>`: Install a specific upm cli release tag (for example `v9.27.0`). Defaults to the latest release from the Unity CDN.
@@ -367,7 +367,7 @@ unity-cli editor-logs
 unity-cli upm-install --auto-update
 ```
 
-##### UPM Version
+#### UPM Version
 
 `upm-version`: Print the Unity Package Manager version.
 
@@ -375,26 +375,27 @@ unity-cli upm-install --auto-update
 unity-cli upm-version
 ```
 
-##### Pack a Unity Package
+#### Pack a Unity Package
 
-`upm-pack [options] [directory]`: Sign and pack a Unity package.
+**Prerequisites:** In the [Unity Cloud Dashboard](https://cloud.unity.com/), create a **service account** on the organization you use for signing. When you assign **organization** access, open **Manage organization roles**, set the **Package Manager** role to **Package Manager Package Signer**, and save. Put the generated key id and secret in `UPM_SERVICE_ACCOUNT_KEY_ID` and `UPM_SERVICE_ACCOUNT_KEY_SECRET` (or your CI secret store). Copy **Organization ID** from **Administration** → **Settings** in that same org. If you have multiple orgs, switch to the correct one in the dashboard before creating keys or copying the id.
 
-- `--organization-id <id>`: The organization ID associated with the package. Optional when `UNITY_ORGANIZATION_ID` or `UNITY_ORG_ID` is set. If none are set, you'll be prompted securely.
-- `--destination <path>`: The output path for the packed package.
-- `--service-account-key-id <id>`: Service account key id. Required. If omitted, `UPM_SERVICE_ACCOUNT_KEY_ID` is used. If still missing, you'll be prompted securely.
-- `--service-account-key-secret <secret>`: Service account key secret. Required. If omitted, `UPM_SERVICE_ACCOUNT_KEY_SECRET` is used. If still missing, you'll be prompted securely.
+`upm-pack [options]`: Sign and pack a Unity package.
+
+- `--source <path>`: An absolute or relative path to the root folder of the custom package to pack. This is the folder that contains the package manifest file (package.json). (optional; defaults to the current working directory).
+- `--destination <path>`: The output path where UPM CLI places the signed tarball. If you specify a folder that doesn’t exist, UPM CLI creates it. Note: If you omit this parameter, UPM CLI places the file in the current working directory.
 - `--verbose`: Enable verbose output.
-- `--json`: Prints the last line of output as a json string, which contains the operation results.
-- `[directory]`: Path to the Unity package folder to pack (optional; defaults to the current working directory).
+
+> [!NOTE]
+> Set `UNITY_ORGANIZATION_ID` or `UNITY_ORG_ID`, `UPM_SERVICE_ACCOUNT_KEY_ID`, and `UPM_SERVICE_ACCOUNT_KEY_SECRET`, or leave them unset in an interactive terminal to be prompted securely.
 
 ```bash
-unity-cli upm-pack <path-to-package-folder> --organization-id <your-organization-id> --destination <output-path>
+unity-cli upm-pack --source <path-to-package-folder> --destination <output-path>
 ```
 
-##### Deprecated Sign Package Command
+#### Deprecated Sign Package Command
 
 > [!WARNING]
-> **Deprecated:** `sign-package` is deprecated and may be removed in a future release. Use `unity-cli upm-pack <path-to-package-folder> --organization-id <your-organization-id> --destination <output-path>` instead.
+> **Deprecated:** `sign-package` is deprecated and may be removed in a future release. Use `unity-cli upm-pack --source <path-to-package-folder> --destination <output-path>` with organization and service account credentials from environment variables (or secure prompts), as for `upm-pack` above.
 
 `sign-package [options]`: Sign a Unity package using Unity Editor 6000.3+ batch mode (`-upmPack`).
 
