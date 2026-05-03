@@ -10,9 +10,17 @@ describe('logger providers', () => {
         delete process.env.GITHUB_ENV;
         delete process.env.GITHUB_OUTPUT;
         delete process.env.GITHUB_STEP_SUMMARY;
+        delete process.env.UNITY_CLI_WORKFLOW_SUMMARY;
     });
 
-    it('github provider enforces 1MB workflow summary limit and uncapped stdout', () => {
+    it('github provider disables workflow summary limit unless UNITY_CLI_WORKFLOW_SUMMARY is set', () => {
+        const provider = new GitHubActionsLoggerProvider();
+        expect(provider.getMarkdownByteLimit('workflow-summary')).toBe(Number.POSITIVE_INFINITY);
+        expect(provider.getMarkdownByteLimit('stdout')).toBe(Number.POSITIVE_INFINITY);
+    });
+
+    it('github provider enforces 1MB workflow summary limit when UNITY_CLI_WORKFLOW_SUMMARY is truthy', () => {
+        process.env.UNITY_CLI_WORKFLOW_SUMMARY = 'true';
         const provider = new GitHubActionsLoggerProvider();
         expect(provider.getMarkdownByteLimit('workflow-summary')).toBe(1024 * 1024);
         expect(provider.getMarkdownByteLimit('stdout')).toBe(Number.POSITIVE_INFINITY);

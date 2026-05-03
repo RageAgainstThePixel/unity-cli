@@ -29,6 +29,7 @@ jobs:
         shell: bash
     env:
       UNITY_PROJECT_PATH: '' # Create Unity Project step will set this if needed
+      UNITY_CLI_WORKFLOW_SUMMARY: 'true' # opt-in: append rich markdown to GITHUB_STEP_SUMMARY from unity-cli log parsing
     steps:
       - name: Free Disk Space
         if: ${{ matrix.os == 'ubuntu-latest' && (matrix.unity-version != '2018' && matrix.unity-version != '2017.4.40f1') }}

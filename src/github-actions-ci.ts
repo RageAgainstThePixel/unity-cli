@@ -12,6 +12,12 @@ export enum GitHubAnnotationLevel {
     Error = 'error',
 }
 
+/** When set to 1/true/yes/on (case-insensitive), unity-cli may append to `GITHUB_STEP_SUMMARY`. Default: off. */
+export function isUnityCliWorkflowSummaryEnabled(): boolean {
+    const v = process.env.UNITY_CLI_WORKFLOW_SUMMARY?.trim().toLowerCase();
+    return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+
 export class GitHubActionsLoggerProvider implements ILoggerProvider {
     public readonly isCi = process.env.GITHUB_ACTIONS === 'true';
 
@@ -87,7 +93,7 @@ export class GitHubActionsLoggerProvider implements ILoggerProvider {
     }
 
     public getMarkdownByteLimit(target: MarkdownTarget): number {
-        if (target === 'workflow-summary') {
+        if (target === 'workflow-summary' && isUnityCliWorkflowSummaryEnabled()) {
             return 1024 * 1024;
         }
         return Number.POSITIVE_INFINITY;

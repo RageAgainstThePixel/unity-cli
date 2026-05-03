@@ -429,7 +429,8 @@ When `GITHUB_ACTIONS=true`, the logger emits GitHub workflow commands automatica
 - Defaults to `info` level; add `--verbose` (or temporarily set `ACTIONS_STEP_DEBUG=true`) to surface `debug` lines.
 - `Logger.annotate(...)` escapes `%`, `\r`, and `\n`, then includes `file`, `line`, `endLine`, `col`, `endColumn`, and `title` metadata so annotations are clickable in the Checks UI.
 - `startGroup`/`endGroup` become `::group::` / `::endgroup::` blocks.
-- Helper methods (`CI_mask`, `CI_setEnvironmentVariable`, `CI_setOutput`, `CI_appendWorkflowSummary`) write to the corresponding GitHub-provided files, so secrets stay masked and workflow outputs update automatically.
+- `CI_mask`, `CI_setEnvironmentVariable`, and `CI_setOutput` write to the corresponding GitHub-provided files when those features are configured.
+- **Job summary (`GITHUB_STEP_SUMMARY`) is opt-in:** set `UNITY_CLI_WORKFLOW_SUMMARY` to `1`, `true`, `yes`, or `on` (case-insensitive) so `CI_appendWorkflowSummary` can append the rich markdown block from Unity log / UTP parsing. If unset, summary output is skipped (annotations and stdout behavior are unchanged).
 
 The same command line you run locally therefore produces colorized console output on your machine and rich annotations once it runs inside Actions.
 
