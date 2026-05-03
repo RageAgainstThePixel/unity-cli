@@ -1,0 +1,16 @@
+[
+  {
+    "success": true,
+    "type": "PlayerBuildInfo",
+    "version": 2,
+    "phase": "Immediate",
+    "time": 1776554398641,
+    "processId": 14606,
+    "steps": [
+      { "description": "Preprocess Player", "duration": 473 },
+      { "description": "Prepare For Build", "duration": 2023 },
+      { "description": "Postprocess built player", "duration": 559541 }
+    ],
+    "duration": 743780
+  }
+]

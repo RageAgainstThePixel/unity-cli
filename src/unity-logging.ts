@@ -1,7 +1,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { LogLevel, Logger } from './logging';
-import { Delay, WaitForFileToBeUnlocked } from './utilities';
+import {
+    LogLevel,
+    Logger,
+    buildUnitTestJobSummaryMarkdown,
+    TestResultSummary,
+    utpToTestResultSummary
+} from './logging';
+import {
+    Delay,
+    isStdoutTTY,
+    WaitForFileToBeUnlocked
+} from './utilities';
 import {
     Phase,
     Severity,
@@ -9,8 +19,9 @@ import {
     UTPBase,
     UTPMemoryLeak,
     UTPPlayerBuildInfo,
+    UTPTestStatus,
     normalizeTelemetryEntry
-} from './utp/utp';
+} from './utp';
 
 /**
  * Result of the tailLogFile function containing cleanup resources.
@@ -24,8 +35,8 @@ export interface LogTailResult {
     telemetry: UTP[];
 }
 
-// Detects GitHub-style annotation markers to avoid emitting duplicates
-const githubAnnotationPrefixRegex = /\n::[a-z]+::/i;
+// Detects workflow command markers to avoid emitting duplicate annotations
+const annotationCommandPrefixRegex = /\n::[a-z]+::/i;
 // Matches ANSI escape sequences (CSI and single-character)
 const ansiEscapeSequenceRegex = /\u001b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
 
@@ -82,14 +93,206 @@ export function sanitizeTelemetryJson(raw: string | undefined): string | undefin
     return sanitized;
 }
 
+/** Builds the warning when a `##utp:` payload includes unrecognized root properties. Exported for tests. */
+export function formatUtpUnrecognizedTopLevelPropertiesMessage(
+    unknownTopLevelKeys: string[],
+    fullTelemetryLine: string
+): string {
+    return `UTP entry contains unrecognized top-level properties: ${unknownTopLevelKeys.join(', ')}\nFull line: ${fullTelemetryLine}`;
+}
+
+/**
+ * Single-line debug text for `--log-level UTP` for telemetry types that do not use the action / memory / player-build tables.
+ * Returns `undefined` when the type should fall back to unknown-type handling (warn + raw JSON).
+ */
+export function describeUtpForUtpLogLevel(utp: UTP): string | undefined {
+    switch (utp.type) {
+        case 'Compiler':
+        case 'LogEntry': {
+            const u = utp as UTPBase;
+            const loc = u.file != null && u.line != null ? `${u.file}:${u.line}` : (u.file ?? '');
+            const sev = u.severity != null ? String(u.severity) : '';
+            const msg = (u.message ?? '');
+            return `[UTP] ${utp.type} ${sev} ${loc} ${msg}`.replace(/\s+/gu, ' ').trim();
+        }
+        case 'TestStatus': {
+            const u = utp as UTPTestStatus;
+            const name = (u.name ?? u.description ?? '—').trim();
+            const dur = u.duration ?? (u.durationMicroseconds != null ? u.durationMicroseconds / 1000 : 0);
+            const msg = (u.message ?? '');
+            return `[UTP] TestStatus state=${u.state ?? '?'} durMs=${dur} ${name} ${msg}`.replace(/\s+/gu, ' ').trim();
+        }
+        case 'TestPlan':
+        case 'ScreenSettings':
+        case 'PlayerSettings':
+        case 'BuildSettings':
+        case 'PlayerSystemInfo':
+        case 'QualitySettings':
+            return `[UTP] ${utp.type} ${JSON.stringify(utp)}`;
+        default:
+            return undefined;
+    }
+}
+
 function sanitizeStackTrace(raw: string | undefined): string | undefined {
     if (!raw) { return undefined; }
     const sanitized = raw
-        .replace(githubAnnotationPrefixRegex, '')
+        .replace(annotationCommandPrefixRegex, '')
         .replace(ansiEscapeSequenceRegex, '')
         .trim();
     if (sanitized === '') { return undefined; }
     return sanitized;
+}
+
+interface StackFrame {
+    file: string;
+    line: number;
+    title: string;
+}
+
+const MAX_STACK_FRAME_ANNOTATIONS = 5;
+const MAX_PLAIN_SCAN_ANNOTATIONS = 100;
+
+interface PlainLogIssue {
+    severity: Severity.Error | Severity.Warning;
+    message: string;
+    file?: string;
+    line?: number;
+}
+
+export interface NormalizedAnnotationPath {
+    absoluteFile?: string;
+    annotationFile?: string;
+}
+
+function normalizePathSlashes(filePath: string): string {
+    return path.normalize(filePath).replace(/\\/g, '/');
+}
+
+/**
+ * Normalizes a candidate issue file path for annotation and project-path checks.
+ * - absoluteFile: used for `isFileUnderProjectPath` gating.
+ * - annotationFile: project-relative path preferred for GitHub annotation rendering.
+ */
+export function normalizeAnnotationPath(filePath: string | undefined, projectPath: string | undefined): NormalizedAnnotationPath {
+    if (!filePath) {
+        return {};
+    }
+
+    const trimmed = filePath.trim();
+    if (!trimmed) {
+        return {};
+    }
+
+    const projectRootAbsolute = projectPath ? path.resolve(projectPath) : undefined;
+    const normalizedProject = projectRootAbsolute ? normalizePathSlashes(projectRootAbsolute) : undefined;
+    const isAbsolute = path.isAbsolute(trimmed);
+    const absoluteFile = normalizePathSlashes(isAbsolute
+        ? trimmed
+        : (projectRootAbsolute ? path.resolve(projectRootAbsolute, trimmed) : trimmed));
+
+    if (!normalizedProject) {
+        return { absoluteFile, annotationFile: normalizePathSlashes(trimmed) };
+    }
+
+    if (!isFileUnderProjectPath(absoluteFile, normalizedProject)) {
+        return { absoluteFile };
+    }
+
+    const relative = normalizePathSlashes(path.relative(normalizedProject, absoluteFile));
+    if (!relative || relative.startsWith('../')) {
+        return { absoluteFile };
+    }
+
+    return {
+        absoluteFile,
+        annotationFile: relative,
+    };
+}
+
+function parsePlainLogIssue(line: string): PlainLogIssue | undefined {
+    const paren = line.match(/^(.+?)\((\d+)(?:,\d+)?\):\s*(warning|error)\b[:\s-]*(.*)$/i);
+    if (paren && paren[1] && paren[2] && paren[3]) {
+        const severity = paren[3].toLowerCase() === 'warning' ? Severity.Warning : Severity.Error;
+        const file = paren[1].trim().replace(/\\/g, '/');
+        const lineNum = parseInt(paren[2], 10);
+        const remainder = (paren[4] ?? '').trim();
+        const message = remainder.length > 0 ? remainder : line.trim();
+        const issue: PlainLogIssue = { severity, file, message };
+        if (Number.isFinite(lineNum)) {
+            issue.line = lineNum;
+        }
+        return issue;
+    }
+
+    const colon = line.match(/^(.+?):(\d+):\s*(warning|error)\b[:\s-]*(.*)$/i);
+    if (colon && colon[1] && colon[2] && colon[3]) {
+        const severity = colon[3].toLowerCase() === 'warning' ? Severity.Warning : Severity.Error;
+        const file = colon[1].trim().replace(/\\/g, '/');
+        const lineNum = parseInt(colon[2], 10);
+        const remainder = (colon[4] ?? '').trim();
+        const message = remainder.length > 0 ? remainder : line.trim();
+        const issue: PlainLogIssue = { severity, file, message };
+        if (Number.isFinite(lineNum)) {
+            issue.line = lineNum;
+        }
+        return issue;
+    }
+
+    const generic = line.match(/\b(error|warning)\b[:\s-]+(.+)/i);
+    if (generic && generic[1] && generic[2]) {
+        const severity = generic[1].toLowerCase() === 'warning' ? Severity.Warning : Severity.Error;
+        return { severity, message: generic[2].trim() };
+    }
+
+    return undefined;
+}
+
+/**
+ * True if filePath is the project root or under it. Normalizes separators; on Windows compares case-insensitively.
+ * Exported for unit tests.
+ */
+export function isFileUnderProjectPath(filePath: string, projectRoot: string): boolean {
+    const normFile = normalizePathSlashes(filePath);
+    const normRoot = normalizePathSlashes(projectRoot);
+    const base = normRoot.endsWith('/') ? normRoot : `${normRoot}/`;
+    if (process.platform === 'win32') {
+        const f = normFile.toLowerCase();
+        const r = normRoot.toLowerCase();
+        const b = base.toLowerCase();
+        return f === r || f.startsWith(b);
+    }
+    return normFile === normRoot || normFile.startsWith(base);
+}
+
+function parseStackFrames(stackTrace: string, projectPath: string | undefined): StackFrame[] {
+    const frames: StackFrame[] = [];
+    const lines = stackTrace.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    for (const stackLine of lines) {
+        const inMatch = stackLine.match(/\s+in\s+([^\s]+):(\d+)\s*$/);
+        const parenMatch = stackLine.match(/\(([^)]+):(\d+)\)\s*$/);
+        const plainMatch = stackLine.match(/^(.+):(\d+)\s*$/);
+        let file: string | undefined;
+        let lineNum: number | undefined;
+        if (inMatch && inMatch[1] != null && inMatch[2] != null) {
+            file = inMatch[1].replace(/\\/g, '/');
+            lineNum = parseInt(inMatch[2], 10);
+        } else if (parenMatch && parenMatch[1] != null && parenMatch[2] != null) {
+            file = parenMatch[1].replace(/\\/g, '/');
+            lineNum = parseInt(parenMatch[2], 10);
+        } else if (plainMatch && plainMatch[1] != null && plainMatch[2] != null) {
+            file = plainMatch[1].replace(/\\/g, '/');
+            lineNum = parseInt(plainMatch[2], 10);
+        }
+        const line = lineNum !== undefined && Number.isFinite(lineNum) ? lineNum : undefined;
+        if (file != null && line != null && line > 0) {
+            const normalized = normalizeAnnotationPath(file, projectPath);
+            if (projectPath != null && normalized.absoluteFile && normalized.annotationFile) {
+                frames.push({ file: normalized.annotationFile, line, title: stackLine });
+            }
+        }
+    }
+    return frames;
 }
 
 const MIN_DESCRIPTION_COLUMN_WIDTH = 16;
@@ -956,11 +1159,24 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
     const logPollingInterval = 250;
     let pendingPartialLine = '';
     const telemetry: UTP[] = [];
+    const testResults: TestResultSummary[] = [];
+    const scannedLogEntries: UTP[] = [];
+    const seenIssueKeys = new Set<string>();
+    const seenAnnotationKeys = new Set<string>();
+    let plainScanAnnotations = 0;
+    /** Dedupe stdout test table rows when Unity emits duplicate TestStatus lines (key: name + state + description). */
+    const seenTestStatusKeys = new Set<string>();
     const logger = Logger.instance;
     const actionAccumulator = new ActionTelemetryAccumulator();
-    const actionTableRenderer = new ActionTableRenderer(process.stdout.isTTY === true && process.env.CI !== 'true');
+    const actionTableRenderer = new ActionTableRenderer(isStdoutTTY());
     const utpLogPath = buildUtpLogPath(logPath);
     let telemetryFlushed = false;
+    const buildIssueKey = (file: string | undefined, lineNo: number | undefined, message: string): string => {
+        const normalized = normalizeAnnotationPath(file, projectPath);
+        const canonicalFile = (normalized.absoluteFile ?? normalizePathSlashes(file ?? '')).toLowerCase();
+        const canonicalLine = lineNo ?? 0;
+        return `${canonicalFile}\u0000${canonicalLine}\u0000${message}`;
+    };
 
     const renderActionTable = (): void => {
         const snapshot = actionAccumulator.snapshot();
@@ -973,6 +1189,17 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
         if (telemetryFlushed) { return; }
         telemetryFlushed = true;
         await writeUtpTelemetryLog(utpLogPath, telemetry, logger);
+        const parsed = path.parse(logPath);
+        Logger.instance.CI_appendWorkflowSummary(
+            parsed.name,
+            telemetry,
+            projectPath != null && projectPath !== '' ? { projectPath, additionalLogEntries: scannedLogEntries } : { additionalLogEntries: scannedLogEntries }
+        );
+        if (testResults.length > 0) {
+            const limit = logger.getMarkdownByteLimit('stdout');
+            const summary = buildUnitTestJobSummaryMarkdown(testResults, limit, '\n');
+            process.stdout.write(summary);
+        }
     };
 
     const writeStdoutThenTableContent = (content: string, restoreTable: boolean = true): void => {
@@ -995,8 +1222,36 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                 if (!sanitizedJson) { return; }
 
                 const utpJson = JSON.parse(sanitizedJson);
-                const utp = normalizeTelemetryEntry(utpJson);
+                const { utp, unknownTopLevelKeys } = normalizeTelemetryEntry(utpJson);
+                if (unknownTopLevelKeys.length > 0) {
+                    logger.warn(formatUtpUnrecognizedTopLevelPropertiesMessage(unknownTopLevelKeys, line));
+                }
                 telemetry.push(utp);
+                const utpMsg = (utp.message ?? '').trim();
+                if ((utp.type === 'LogEntry' || utp.type === 'Compiler') && utpMsg !== '') {
+                    seenIssueKeys.add(buildIssueKey(utp.file, utp.line, utpMsg));
+                }
+                if (utp.type === 'TestStatus') {
+                    const ts = utp as UTP & { name?: string; state?: number; description?: string };
+                    const dedupeKey = `${ts.name ?? ''}\u0000${ts.state ?? ''}\u0000${ts.description ?? ''}`;
+                    if (!seenTestStatusKeys.has(dedupeKey)) {
+                        seenTestStatusKeys.add(dedupeKey);
+                        const result = utpToTestResultSummary(utp);
+                        testResults.push(result);
+                    }
+                    if ((ts.state === 2 || ts.state === 0) && ts.message && !annotationCommandPrefixRegex.test(ts.message)) {
+                        const normalizedPath = normalizeAnnotationPath(utp.file, projectPath);
+                        const lineNumber = utp.line;
+                        const title = (ts.name ?? ts.description ?? 'Test failure').trim();
+                        if (normalizedPath.annotationFile && lineNumber) {
+                            const key = buildIssueKey(normalizedPath.annotationFile, lineNumber, ts.message);
+                            if (!seenAnnotationKeys.has(key)) {
+                                seenAnnotationKeys.add(key);
+                                logger.annotate(ts.state === 2 ? LogLevel.ERROR : LogLevel.WARN, ts.message, normalizedPath.annotationFile, lineNumber, undefined, undefined, undefined, title);
+                            }
+                        }
+                    }
+                }
 
                 if (utp.message && 'severity' in utp &&
                     (utp.severity === Severity.Error || utp.severity === Severity.Exception || utp.severity === Severity.Assert)) {
@@ -1007,14 +1262,22 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                         messageLevel = remappedLevel;
                     }
 
-                    const file = utp.file ? utp.file.replace(/\\/g, '/') : undefined;
+                    const normalizedPath = normalizeAnnotationPath(utp.file, projectPath);
                     const stacktrace = sanitizeStackTrace(utp.stackTrace);
                     const message = stacktrace == undefined ? utp.message : `${utp.message}\n${stacktrace}`;
 
-                    if (!githubAnnotationPrefixRegex.test(message)) {
+                    if (!annotationCommandPrefixRegex.test(message)) {
                         // only annotate if the file is within the current project
-                        if (projectPath && file && file.startsWith(projectPath)) {
-                            logger.annotate(LogLevel.ERROR, message, file, utp.line);
+                        if (normalizedPath.annotationFile) {
+                            logger.annotate(LogLevel.ERROR, message, normalizedPath.annotationFile, utp.line);
+                            // Link stack trace to annotations: emit one annotation per frame (capped) for clickable stack in Checks
+                            if (stacktrace && projectPath) {
+                                const frames = parseStackFrames(stacktrace, projectPath);
+                                const toEmit = frames.slice(0, MAX_STACK_FRAME_ANNOTATIONS);
+                                for (const frame of toEmit) {
+                                    logger.annotate(LogLevel.ERROR, frame.title, frame.file, frame.line, undefined, undefined, undefined, 'Stack frame');
+                                }
+                            }
                         } else {
                             switch (messageLevel) {
                                 case LogLevel.WARN:
@@ -1037,6 +1300,31 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                 logger.warn(`Failed to parse telemetry JSON: ${error} -- raw: ${jsonPart}`);
             }
         } else {
+            const scan = parsePlainLogIssue(line);
+            if (scan) {
+                const key = buildIssueKey(scan.file, scan.line, scan.message);
+                if (!seenIssueKeys.has(key)) {
+                    seenIssueKeys.add(key);
+                    scannedLogEntries.push({
+                        type: 'Compiler',
+                        severity: scan.severity,
+                        message: scan.message,
+                        file: scan.file,
+                        line: scan.line,
+                    } as UTP);
+                }
+                if (!annotationCommandPrefixRegex.test(scan.message) && plainScanAnnotations < MAX_PLAIN_SCAN_ANNOTATIONS) {
+                    const normalizedPath = normalizeAnnotationPath(scan.file, projectPath);
+                    const annotationKey = buildIssueKey(normalizedPath.annotationFile ?? scan.file, scan.line, scan.message);
+                    if (!seenAnnotationKeys.has(annotationKey)) {
+                        if (normalizedPath.annotationFile && scan.line) {
+                            seenAnnotationKeys.add(annotationKey);
+                            plainScanAnnotations++;
+                            logger.annotate(scan.severity === Severity.Warning ? LogLevel.WARN : LogLevel.ERROR, scan.message, normalizedPath.annotationFile, scan.line);
+                        }
+                    }
+                }
+            }
             if (Logger.instance.logLevel !== LogLevel.UTP) {
                 process.stdout.write(`${line}\n`);
             }
@@ -1057,6 +1345,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                 break;
             }
             case 'MemoryLeaks':
+            case 'MemoryLeak':
                 logger.debug(formatMemoryLeakTable(utp as UTPMemoryLeak));
                 break;
             case 'PlayerBuildInfo': {
@@ -1069,11 +1358,16 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
 
                 break;
             }
-            default:
+            default: {
+                const desc = describeUtpForUtpLogLevel(utp);
+                if (desc !== undefined) {
+                    logger.debug(desc);
+                    break;
+                }
                 logger.warn(`UTP entry has unknown type: ${utp.type ?? 'undefined'}`);
-                // Print raw JSON for unhandled UTP types
                 writeStdoutThenTableContent(`${JSON.stringify(utp)}\n`);
                 break;
+            }
         }
     }
 

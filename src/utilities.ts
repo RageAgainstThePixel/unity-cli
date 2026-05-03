@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -68,9 +69,87 @@ export async function PromptForSecretInput(prompt: string): Promise<string> {
     });
 }
 
+/**
+ * Prompts for y/n. Empty input uses `defaultYes` (Y/n vs y/N suffix).
+ */
+export async function PromptYesNo(prompt: string, defaultYes: boolean): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+        const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout,
+        });
+        const hint = defaultYes ? ' [Y/n]: ' : ' [y/N]: ';
+        rl.question(`${prompt}${hint}`, (input) => {
+            rl.close();
+            const a = input.trim().toLowerCase();
+            if (a.length === 0) {
+                resolve(defaultYes);
+                return;
+            }
+            resolve(a === 'y' || a === 'yes');
+        });
+    });
+}
+
+/**
+ * True when stdin and stdout are TTYs and the process is not running under CI.
+ * Use before interactive prompts (readline).
+ */
+export function isInteractiveTerminalSession(): boolean {
+    return (
+        process.stdin.isTTY === true &&
+        process.stdout.isTTY === true &&
+        process.env.CI !== 'true'
+    );
+}
+
+/**
+ * True when {@link process.stdout} is a TTY and the process is not running under CI.
+ * Use for terminal-only output (e.g. live tables, ANSI) that does not read from stdin.
+ * This is not the same as {@link isInteractiveTerminalSession} (which also requires a TTY on stdin for prompts).
+ */
+export function isStdoutTTY(): boolean {
+    return process.stdout.isTTY === true && process.env.CI !== 'true';
+}
+
 export type ExecOptions = {
     silent?: boolean;
     showCommand?: boolean;
+    /**
+     * Substrings replaced with `*****` in streamed lines, captured output, and the logged command line.
+     * Only values with length >= 4 are applied (avoids noisy replacements). Longer literals are applied first.
+     */
+    redactLiterals?: readonly string[];
+}
+
+/** Dedupes, trims, drops short values, longest-first (so one secret cannot leak via another). */
+export function orderedRedactionSecrets(literals: readonly string[] | undefined): string[] {
+    if (!literals || literals.length === 0) {
+        return [];
+    }
+    const seen = new Set<string>();
+    for (const raw of literals) {
+        const s = raw.trim();
+        if (s.length >= 4) {
+            seen.add(s);
+        }
+    }
+    return [...seen].sort((a, b) => b.length - a.length);
+}
+
+/** Replaces each configured literal with `*****` everywhere it appears in `text`. */
+export function redactSensitiveLiterals(text: string, literals: readonly string[] | undefined): string {
+    const secrets = orderedRedactionSecrets(literals);
+    if (secrets.length === 0 || text.length === 0) {
+        return text;
+    }
+    let result = text;
+    for (const sec of secrets) {
+        if (result.includes(sec)) {
+            result = result.split(sec).join('*****');
+        }
+    }
+    return result;
 }
 
 /**
@@ -88,9 +167,12 @@ export async function Exec(command: string, args: string[], options: ExecOptions
     const isDebug = logger.logLevel === LogLevel.DEBUG;
     const isSilent = isDebug ? false : options.silent ? options.silent : false;
     const mustShowCommand = isDebug ? true : options.showCommand ? options.showCommand : false;
+    const redactionSecrets = orderedRedactionSecrets(options.redactLiterals);
+    const redact = (text: string): string =>
+        redactionSecrets.length === 0 ? text : redactSensitiveLiterals(text, redactionSecrets);
 
     if (mustShowCommand) {
-        const commandStr = `\x1b[34m${command} ${args.join(' ')}\x1b[0m`;
+        const commandStr = redact(`\x1b[34m${command} ${args.join(' ')}\x1b[0m`);
 
         if (isSilent) {
             logger.info(commandStr);
@@ -138,10 +220,11 @@ export async function Exec(command: string, args: string[], options: ExecOptions
                     }
 
                     for (const line of lines) {
-                        output += `${line}\n`;
+                        const safeLine = redact(line);
+                        output += `${safeLine}\n`;
 
                         if (!isSilent) {
-                            process.stdout.write(`${line}\n`);
+                            process.stdout.write(`${safeLine}\n`);
                         }
                     }
                 } catch (error: any) {
@@ -168,10 +251,11 @@ export async function Exec(command: string, args: string[], options: ExecOptions
                             .filter(line => line.length > 0); // filter out empty lines
 
                         for (const line of lines) {
-                            output += `${line}\n`;
+                            const safeLine = redact(line);
+                            output += `${safeLine}\n`;
 
                             if (!isSilent) {
-                                process.stdout.write(`${line}\n`);
+                                process.stdout.write(`${safeLine}\n`);
                             }
                         }
                     }
@@ -192,7 +276,8 @@ export async function Exec(command: string, args: string[], options: ExecOptions
         }
 
         if (exitCode !== 0) {
-            throw new Error(`${command} failed with exit code ${exitCode}\n${output}`);
+            const tail = isSilent && output.length > 0 ? `\n${output}` : '';
+            throw new Error(`${command} failed with exit code ${exitCode}${tail}`);
         }
     }
 
@@ -200,7 +285,127 @@ export async function Exec(command: string, args: string[], options: ExecOptions
 }
 
 /**
+ * Confines archive extraction paths before spawning tools (mitigates CodeQL `js/shell-command-constructed-from-input`).
+ * Both paths must resolve under the given roots (e.g. temp download dir and managed UPM root).
+ */
+export interface ZipExtractPathTrust {
+    /** Directory tree that must contain `zipPath` (e.g. resolved temp root for this download). */
+    zipUnder: string;
+    /** Directory tree that must contain `destDir` (e.g. managed `~/.unity-cli/upm`). */
+    destUnder: string;
+}
+
+function assertResolvedPathUnderRoot(candidate: string, root: string, label: string): void {
+    const resolved = path.resolve(candidate);
+    const resolvedRoot = path.resolve(root);
+    const prefix = resolvedRoot.endsWith(path.sep) ? resolvedRoot : `${resolvedRoot}${path.sep}`;
+    if (resolved !== resolvedRoot && !resolved.startsWith(prefix)) {
+        throw new Error(`${label}: path is outside permitted root (${root}): ${candidate}`);
+    }
+}
+
+/**
+ * Extracts a zip archive using only OS tools (`tar` or PowerShell on Windows, `unzip` on macOS/Linux).
+ * Does not use a Node unzip library.
+ */
+export async function extractZipNative(
+    zipPath: string,
+    destDir: string,
+    pathTrust: ZipExtractPathTrust,
+    execOptions?: ExecOptions
+): Promise<void> {
+    assertResolvedPathUnderRoot(zipPath, pathTrust.zipUnder, 'extractZipNative zipPath');
+    assertResolvedPathUnderRoot(destDir, pathTrust.destUnder, 'extractZipNative destDir');
+    await fs.promises.mkdir(destDir, { recursive: true });
+    const silent = execOptions?.silent ?? true;
+    const show = execOptions?.showCommand ?? false;
+
+    if (process.platform === 'win32') {
+        try {
+            await Exec('tar', [
+                '-xf',
+                zipPath,
+                '-C',
+                destDir
+            ], {
+                silent,
+                showCommand: show
+            });
+        } catch {
+            const scriptBody =
+                'param([Parameter(Mandatory=$true)][string]$ZipPath,[Parameter(Mandatory=$true)][string]$DestPath)\n' +
+                '$ErrorActionPreference = "Stop"\n' +
+                'Expand-Archive -LiteralPath $ZipPath -DestinationPath $DestPath -Force\n';
+            const tmpDir = await fs.promises.mkdtemp(path.join(GetTempDir(), 'unity-cli-expand-zip-'));
+            const scriptPath = path.join(tmpDir, 'Expand-Archive.ps1');
+            try {
+                await fs.promises.writeFile(scriptPath, scriptBody, 'utf8');
+                await Exec('powershell.exe', [
+                    '-NoProfile',
+                    '-NonInteractive',
+                    '-File',
+                    scriptPath,
+                    zipPath,
+                    destDir,
+                ], {
+                    silent,
+                    showCommand: show,
+                });
+            } finally {
+                await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+            }
+        }
+    } else {
+        await Exec('unzip', [
+            '-o',
+            '-q',
+            zipPath,
+            '-d',
+            destDir
+        ], {
+            silent,
+            showCommand: show
+        });
+    }
+}
+
+/**
+ * GET an HTTPS URL and return the response body as UTF-8 text (trimmed).
+ * @throws If the response status is not 200 or the request fails.
+ */
+export async function HttpsGetText(url: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+        https.get(url, (response) => {
+            if (response.statusCode !== 200) {
+                reject(new Error(`GET ${url} failed: HTTP ${response.statusCode}`));
+                response.resume();
+                return;
+            }
+            const chunks: Buffer[] = [];
+            response.on('data', (c: Buffer) => chunks.push(c));
+            response.on('end', () => resolve(Buffer.concat(chunks).toString('utf8').trim()));
+        }).on('error', reject);
+    });
+}
+
+/**
+ * Computes the SHA-256 digest of a file as a lowercase hex string.
+ */
+export async function Sha256FileHex(filePath: string): Promise<string> {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    return new Promise((resolve, reject) => {
+        stream.on('data', (chunk: string | Buffer) => {
+            hash.update(chunk);
+        });
+        stream.on('end', () => resolve(hash.digest('hex')));
+        stream.on('error', reject);
+    });
+}
+
+/**
  * Downloads a file from a URL to a specified path.
+ * Requires HTTP status 200 before writing. Verifies the file is readable after download.
  * @param url The URL to download from.
  * @param downloadPath The path to save the downloaded file.
  * @throws An error if the download fails or the file is not accessible after download.
@@ -209,20 +414,32 @@ export async function DownloadFile(url: string, downloadPath: string): Promise<v
     logger.ci(`Downloading from ${url} to ${downloadPath}...`);
     await fs.promises.mkdir(path.dirname(downloadPath), { recursive: true });
     await new Promise<void>((resolve, reject) => {
-        const file = fs.createWriteStream(downloadPath, { mode: 0o755 });
         https.get(url, (response) => {
+            if (response.statusCode !== 200) {
+                response.resume();
+                reject(new Error(`GET ${url} failed: HTTP ${response.statusCode}`));
+                return;
+            }
+            const file = fs.createWriteStream(downloadPath, { mode: 0o755 });
+            const fail = (err: Error) => {
+                file.destroy();
+                void fs.promises.unlink(downloadPath).catch(() => undefined);
+                reject(err);
+            };
+            response.once('error', fail);
+            file.once('error', fail);
             response.pipe(file);
             file.on('finish', () => {
-                file.close();
-                resolve();
+                file.close(() => resolve());
             });
         }).on('error', (error) => {
-            fs.unlink(downloadPath, () => reject(`Download failed: ${error}`));
+            void fs.promises.unlink(downloadPath).catch(() => undefined);
+            reject(error);
         });
     });
-    // make sure the file is closed and accessible
+
     await new Promise((r) => setTimeout(r, 100));
-    await fs.promises.access(downloadPath, fs.constants.R_OK | fs.constants.X_OK);
+    await fs.promises.access(downloadPath, fs.constants.R_OK);
 }
 
 /**

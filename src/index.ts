@@ -8,3 +8,4 @@ export * from './unity-project';
 export * from './unity-version';
 export * from './utilities';
 export * from './unity-logging';
+export * from './upm-cli';
