@@ -116,6 +116,10 @@ export type ExecOptions = {
     silent?: boolean;
     showCommand?: boolean;
     /**
+     * Merged on top of `process.env` for the child process. When omitted, the child inherits the current environment (default `spawn` behavior).
+     */
+    env?: NodeJS.ProcessEnv;
+    /**
      * Substrings replaced with `*****` in streamed lines, captured output, and the logged command line.
      * Only values with length >= 4 are applied (avoids noisy replacements). Longer literals are applied first.
      */
@@ -187,9 +191,14 @@ export async function Exec(command: string, args: string[], options: ExecOptions
 
     try {
         exitCode = await new Promise<number>((resolve, reject) => {
+            const spawnEnv =
+                options.env !== undefined && Object.keys(options.env).length > 0
+                    ? { ...process.env, ...options.env }
+                    : undefined;
             const child = spawn(command, args, {
                 shell: false,
                 stdio: ['ignore', 'pipe', 'pipe'],
+                ...(spawnEnv !== undefined ? { env: spawnEnv } : {}),
             });
             const sigintHandler = () => child.kill('SIGINT');
             const sigtermHandler = () => child.kill('SIGTERM');
