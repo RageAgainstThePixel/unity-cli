@@ -314,6 +314,21 @@ function assertResolvedPathUnderRoot(candidate: string, root: string, label: str
 }
 
 /**
+ * Git's MSYS tar on Windows treats "D:\path" as a remote host named "D" ("Cannot connect to D: resolve failed").
+ * Use a /drive/... style path so tar opens local files correctly.
+ */
+export function pathForWindowsMsysTar(absPath: string): string {
+    const normalized = path.resolve(absPath);
+    const m = /^([A-Za-z]):[/\\](.*)$/.exec(normalized);
+
+    if (m?.[1] != null && m[2] != null) {
+        return `/${m[1].toLowerCase()}/${m[2].replace(/\\/g, '/')}`;
+    }
+
+    return normalized.replace(/\\/g, '/');
+}
+
+/**
  * Extracts a zip archive using only OS tools (`tar` or PowerShell on Windows, `unzip` on macOS/Linux).
  * Does not use a Node unzip library.
  */
@@ -333,9 +348,9 @@ export async function extractZipNative(
         try {
             await Exec('tar', [
                 '-xf',
-                zipPath,
+                pathForWindowsMsysTar(zipPath),
                 '-C',
-                destDir
+                pathForWindowsMsysTar(destDir)
             ], {
                 silent,
                 showCommand: show

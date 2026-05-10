@@ -1112,4 +1112,7 @@ program.command('sign-package')
         }
     });
 
-program.parse(process.argv);
+void program.parseAsync(process.argv).catch((err: unknown) => {
+    Logger.instance.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+});

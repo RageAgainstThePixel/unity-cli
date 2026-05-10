@@ -141,6 +141,28 @@ export class UnityHub {
     }
 
     /**
+     * Some Hub versions on Windows return a non-zero exit (e.g. 127) after successfully streaming
+     * `editors --releases` or `editors -i` output. If the log clearly contains listing data, continue.
+     */
+    private hubListingExitTolerable(args: string[], hubOutput: string): boolean {
+        if (args.length === 0 || args[0] !== 'editors') {
+            return false;
+        }
+
+        const versionLine = /^\d{1,4}\.\d+\.\d+[abcfpx]?\d*/m;
+
+        if (args.includes('--releases') && versionLine.test(hubOutput)) {
+            return true;
+        }
+
+        if ((args.includes('-i') || args.includes('--installed')) && hubOutput.includes('installed at')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Executes the Unity Hub command with the specified arguments.
      * @param args Arguments to pass to the Unity Hub executable.
      * @param silent If true, suppresses output logging.
@@ -326,15 +348,19 @@ export class UnityHub {
             }
 
             if (exitCode > 0) {
-                const error = output.match(/Error(?: given)?:\s*(.+)/);
-                const errorMessage = error && error[1] ? error[1] : 'Unknown Error';
+                if (this.hubListingExitTolerable(args, output)) {
+                    this.logger.warn(`Unity Hub exited with code ${exitCode} but produced usable listing output; continuing.`);
+                } else {
+                    const error = output.match(/Error(?: given)?:\s*(.+)/);
+                    const errorMessage = error && error[1] ? error[1] : 'Unknown Error';
 
-                switch (errorMessage) {
-                    case 'No modules found to install.':
-                        break;
-                    default:
-                        this.logger.debug(output);
-                        throw new Error(`Failed to execute Unity Hub (exit code: ${exitCode}) ${errorMessage}`);
+                    switch (errorMessage) {
+                        case 'No modules found to install.':
+                            break;
+                        default:
+                            this.logger.debug(output);
+                            throw new Error(`Failed to execute Unity Hub (exit code: ${exitCode}) ${errorMessage}`);
+                    }
                 }
             }
 
