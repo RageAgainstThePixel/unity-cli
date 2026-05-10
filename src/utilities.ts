@@ -188,7 +188,7 @@ export async function Exec(command: string, args: string[], options: ExecOptions
     try {
         exitCode = await new Promise<number>((resolve, reject) => {
             const child = spawn(command, args, {
-                env: process.env,
+                shell: false,
                 stdio: ['ignore', 'pipe', 'pipe'],
             });
             const sigintHandler = () => child.kill('SIGINT');

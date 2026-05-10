@@ -36,6 +36,61 @@ interface ReleaseInfo {
 /** First Unity Hub line with native Windows ARM64 installers on the public CDN. */
 const MIN_NATIVE_WINDOWS_ARM64_HUB_VERSION = coerce('3.17.0')!;
 
+/** Allowed characters in a Debian package version (no shell metacharacters). */
+const LINUX_HUB_DEB_VERSION_RE = /^[0-9A-Za-z.+~:-]+$/;
+
+/**
+ * Fixed bootstrap for Linux Hub apt repo + update index. No user-controlled interpolation (CodeQL).
+ * Matches prior `Install` update path (wget | gpg | sudo tee, then sources.list).
+ */
+const LINUX_HUB_LINUX_UPDATE_REPO_BOOTSTRAP = `#!/bin/sh
+set -e
+wget -qO - https://hub.unity3d.com/linux/keys/public | gpg --dearmor | sudo tee /usr/share/keyrings/Unity_Technologies_ApS.gpg >/dev/null
+sudo sh -c 'echo "deb [signed-by=/usr/share/keyrings/Unity_Technologies_ApS.gpg] https://hub.unity3d.com/linux/repos/deb stable main" > /etc/apt/sources.list.d/unityhub.list'
+sudo apt-get update --allow-releaseinfo-change
+`;
+
+/**
+ * First phase of fresh Linux Hub install: machine-id, repo keys, jammy mirror, apt-get update.
+ * No user-controlled interpolation.
+ */
+const LINUX_HUB_LINUX_INSTALL_BOOTSTRAP = `#!/bin/sh
+set -e
+dbus-uuidgen >/etc/machine-id && mkdir -p /var/lib/dbus/ && ln -sf /etc/machine-id /var/lib/dbus/machine-id
+wget -qO - https://hub.unity3d.com/linux/keys/public | gpg --dearmor | tee /usr/share/keyrings/Unity_Technologies_ApS.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/Unity_Technologies_ApS.gpg] https://hub.unity3d.com/linux/repos/deb stable main" > /etc/apt/sources.list.d/unityhub.list
+echo "deb https://archive.ubuntu.com/ubuntu jammy main universe" | tee /etc/apt/sources.list.d/jammy.list
+apt-get update
+`;
+
+/**
+ * Post-install cleanup and xvfb / unity-hub wrapper setup. Runs as root; no user interpolation.
+ */
+const LINUX_HUB_LINUX_INSTALL_POST = `#!/bin/sh
+set -e
+apt-get clean
+sed -i 's/^\\(.*DISPLAY=:.*XAUTHORITY=.*\\)\\( "\\$@" \\)2>&1$/\\1\\2/' /usr/bin/xvfb-run
+printf '#!/bin/bash\\nxvfb-run --auto-servernum /opt/unityhub/unityhub "$@" 2>/dev/null' | tee /usr/bin/unity-hub >/dev/null
+chmod 777 /usr/bin/unity-hub
+which unityhub || { echo "Unity Hub installation failed"; exit 1; }
+hubPath=$(which unityhub)
+if [ -z "$hubPath" ]; then
+    echo "Failed to install Unity Hub"
+    exit 1
+fi
+chmod -R 777 "$hubPath"
+`;
+
+const LINUX_HUB_LINUX_APT_EXTRAS = [
+    'xvfb',
+    'ffmpeg',
+    'libgtk2.0-0',
+    'libglu1-mesa',
+    'libgconf-2-4',
+    'libncurses5',
+    'pulseaudio',
+] as const;
+
 export class UnityHub {
     /** The path to the Unity Hub executable. */
     public readonly executable: string;
@@ -345,8 +400,8 @@ export class UnityHub {
             }
 
             if (versionToInstall === null ||
-                 !versionToInstall || 
-                 !valid(versionToInstall)) {
+                !versionToInstall ||
+                !valid(versionToInstall)) {
                 if (version || process.platform !== 'linux') {
                     throw new Error(`Invalid Unity Hub version to install: ${versionToInstall}`);
                 }
@@ -375,12 +430,14 @@ export class UnityHub {
                     await DeleteDirectory(this.rootDirectory);
                     await this.installHub(version);
                 } else if (process.platform === 'linux') {
-                    await Exec('sudo', ['sh', '-c', `#!/bin/bash
-set -e
-wget -qO - https://hub.unity3d.com/linux/keys/public | gpg --dearmor | sudo tee /usr/share/keyrings/Unity_Technologies_ApS.gpg >/dev/null
-sudo sh -c 'echo "deb [signed-by=/usr/share/keyrings/Unity_Technologies_ApS.gpg] https://hub.unity3d.com/linux/repos/deb stable main" > /etc/apt/sources.list.d/unityhub.list'
-sudo apt-get update --allow-releaseinfo-change
-sudo apt-get install -y --no-install-recommends --only-upgrade unityhub${version ? '=' + version : ''}`]);
+                    const hubPkg = this.unityHubAptPackageSpec(version);
+                    const linuxExecOpts = { silent: true, showCommand: true };
+                    await Exec('sudo', ['sh', '-c', LINUX_HUB_LINUX_UPDATE_REPO_BOOTSTRAP], linuxExecOpts);
+                    await Exec(
+                        'sudo',
+                        ['apt-get', 'install', '-y', '--no-install-recommends', '--only-upgrade', hubPkg],
+                        linuxExecOpts
+                    );
                     this.logger.info(`Unity Hub updated successfully.`);
                 } else {
                     throw new Error(`Unsupported platform: ${process.platform}`);
@@ -392,6 +449,35 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub${version
 
         await fs.promises.access(this.executable, fs.constants.X_OK);
         return this.executable;
+    }
+
+    /**
+     * APT package spec for unityhub (e.g. `unityhub` or `unityhub=3.6.0`). Validated; passed as argv, not shell-embedded.
+     */
+    private unityHubAptPackageSpec(version: SemVer | string | undefined): string {
+        if (version === undefined || version === null) {
+            return 'unityhub';
+        }
+        if (typeof version === 'object' && 'version' in version) {
+            const deb = (version as SemVer).version;
+            if (!LINUX_HUB_DEB_VERSION_RE.test(deb)) {
+                throw new Error(`Invalid Unity Hub apt version: ${deb}`);
+            }
+            return `unityhub=${deb}`;
+        }
+        const raw = String(version).trim();
+        if (raw.length === 0) {
+            return 'unityhub';
+        }
+        const pinned = coerce(raw);
+        if (!pinned || !valid(pinned)) {
+            throw new Error(`Invalid Unity Hub version for apt: ${raw}`);
+        }
+        const deb = pinned.version;
+        if (!LINUX_HUB_DEB_VERSION_RE.test(deb)) {
+            throw new Error(`Invalid Unity Hub apt version: ${deb}`);
+        }
+        return `unityhub=${deb}`;
     }
 
     private async installHub(version: SemVer | string | undefined): Promise<void> {
@@ -491,35 +577,15 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub${version
                 break;
             }
             case 'linux': {
-                await Exec('sudo', ['sh', '-c', `#!/bin/bash
-set -e
-dbus-uuidgen >/etc/machine-id && mkdir -p /var/lib/dbus/ && ln -sf /etc/machine-id /var/lib/dbus/machine-id
-wget -qO - https://hub.unity3d.com/linux/keys/public | gpg --dearmor | tee /usr/share/keyrings/Unity_Technologies_ApS.gpg >/dev/null
-echo "deb [signed-by=/usr/share/keyrings/Unity_Technologies_ApS.gpg] https://hub.unity3d.com/linux/repos/deb stable main" > /etc/apt/sources.list.d/unityhub.list
-echo "deb https://archive.ubuntu.com/ubuntu jammy main universe" | tee /etc/apt/sources.list.d/jammy.list
-apt-get update
-apt-get install -y --no-install-recommends \\
-  unityhub${version ? '=' + version : ''} \\
-  xvfb \\
-  ffmpeg \\
-  libgtk2.0-0 \\
-  libglu1-mesa \\
-  libgconf-2-4 \\
-  libncurses5 \\
-  pulseaudio
-apt-get clean
-sed -i 's/^\\(.*DISPLAY=:.*XAUTHORITY=.*\\)\\( "\\$@" \\)2>&1$/\\1\\2/' /usr/bin/xvfb-run
-printf '#!/bin/bash\nxvfb-run --auto-servernum /opt/unityhub/unityhub "$@" 2>/dev/null' | tee /usr/bin/unity-hub >/dev/null
-chmod 777 /usr/bin/unity-hub
-which unityhub || { echo "Unity Hub installation failed"; exit 1; }
-hubPath=$(which unityhub)
-
-if [ -z "$hubPath" ]; then
-    echo "Failed to install Unity Hub"
-    exit 1
-fi
-
-chmod -R 777 "$hubPath"`]);
+                const hubPkg = this.unityHubAptPackageSpec(version);
+                const linuxExecOpts = { silent: true, showCommand: true };
+                await Exec('sudo', ['sh', '-c', LINUX_HUB_LINUX_INSTALL_BOOTSTRAP], linuxExecOpts);
+                await Exec(
+                    'sudo',
+                    ['apt-get', 'install', '-y', '--no-install-recommends', hubPkg, ...LINUX_HUB_LINUX_APT_EXTRAS],
+                    linuxExecOpts
+                );
+                await Exec('sudo', ['sh', '-c', LINUX_HUB_LINUX_INSTALL_POST], linuxExecOpts);
                 break;
             }
             default:
