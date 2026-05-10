@@ -314,23 +314,7 @@ function assertResolvedPathUnderRoot(candidate: string, root: string, label: str
 }
 
 /**
- * Git's MSYS tar on Windows treats "D:\path" as a remote host named "D" ("Cannot connect to D: resolve failed").
- * Use a /drive/... style path so tar opens local files correctly.
- */
-export function pathForWindowsMsysTar(absPath: string): string {
-    const normalized = path.resolve(absPath);
-    const m = /^([A-Za-z]):[/\\](.*)$/.exec(normalized);
-
-    if (m?.[1] != null && m[2] != null) {
-        return `/${m[1].toLowerCase()}/${m[2].replace(/\\/g, '/')}`;
-    }
-
-    return normalized.replace(/\\/g, '/');
-}
-
-/**
- * Extracts a zip archive using only OS tools (`tar` or PowerShell on Windows, `unzip` on macOS/Linux).
- * Does not use a Node unzip library.
+ * Extracts a zip archive using OS tools (PowerShell on Windows, `unzip` elsewhere).
  */
 export async function extractZipNative(
     zipPath: string,
@@ -345,39 +329,27 @@ export async function extractZipNative(
     const show = execOptions?.showCommand ?? false;
 
     if (process.platform === 'win32') {
+        const scriptBody =
+            'param([Parameter(Mandatory=$true)][string]$ZipPath,[Parameter(Mandatory=$true)][string]$DestPath)\n' +
+            '$ErrorActionPreference = "Stop"\n' +
+            'Expand-Archive -LiteralPath $ZipPath -DestinationPath $DestPath -Force\n';
+        const tmpDir = await fs.promises.mkdtemp(path.join(GetTempDir(), 'unity-cli-expand-zip-'));
+        const scriptPath = path.join(tmpDir, 'Expand-Archive.ps1');
         try {
-            await Exec('tar', [
-                '-xf',
-                pathForWindowsMsysTar(zipPath),
-                '-C',
-                pathForWindowsMsysTar(destDir)
+            await fs.promises.writeFile(scriptPath, scriptBody, 'utf8');
+            await Exec('powershell.exe', [
+                '-NoProfile',
+                '-NonInteractive',
+                '-File',
+                scriptPath,
+                zipPath,
+                destDir,
             ], {
                 silent,
-                showCommand: show
+                showCommand: show,
             });
-        } catch {
-            const scriptBody =
-                'param([Parameter(Mandatory=$true)][string]$ZipPath,[Parameter(Mandatory=$true)][string]$DestPath)\n' +
-                '$ErrorActionPreference = "Stop"\n' +
-                'Expand-Archive -LiteralPath $ZipPath -DestinationPath $DestPath -Force\n';
-            const tmpDir = await fs.promises.mkdtemp(path.join(GetTempDir(), 'unity-cli-expand-zip-'));
-            const scriptPath = path.join(tmpDir, 'Expand-Archive.ps1');
-            try {
-                await fs.promises.writeFile(scriptPath, scriptBody, 'utf8');
-                await Exec('powershell.exe', [
-                    '-NoProfile',
-                    '-NonInteractive',
-                    '-File',
-                    scriptPath,
-                    zipPath,
-                    destDir,
-                ], {
-                    silent,
-                    showCommand: show,
-                });
-            } finally {
-                await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
-            }
+        } finally {
+            await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
         }
     } else {
         await Exec('unzip', [
