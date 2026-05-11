@@ -36,6 +36,61 @@ interface ReleaseInfo {
 /** First Unity Hub line with native Windows ARM64 installers on the public CDN. */
 const MIN_NATIVE_WINDOWS_ARM64_HUB_VERSION = coerce('3.17.0')!;
 
+/** Allowed characters in a Debian package version (no shell metacharacters). */
+const LINUX_HUB_DEB_VERSION_RE = /^[0-9A-Za-z.+~:-]+$/;
+
+/**
+ * Fixed bootstrap for Linux Hub apt repo + update index. No user-controlled interpolation (CodeQL).
+ * Matches prior `Install` update path (wget | gpg | sudo tee, then sources.list).
+ */
+const LINUX_HUB_LINUX_UPDATE_REPO_BOOTSTRAP = `#!/bin/sh
+set -e
+wget -qO - https://hub.unity3d.com/linux/keys/public | gpg --dearmor | sudo tee /usr/share/keyrings/Unity_Technologies_ApS.gpg >/dev/null
+sudo sh -c 'echo "deb [signed-by=/usr/share/keyrings/Unity_Technologies_ApS.gpg] https://hub.unity3d.com/linux/repos/deb stable main" > /etc/apt/sources.list.d/unityhub.list'
+sudo apt-get update --allow-releaseinfo-change
+`;
+
+/**
+ * First phase of fresh Linux Hub install: machine-id, repo keys, jammy mirror, apt-get update.
+ * No user-controlled interpolation.
+ */
+const LINUX_HUB_LINUX_INSTALL_BOOTSTRAP = `#!/bin/sh
+set -e
+dbus-uuidgen >/etc/machine-id && mkdir -p /var/lib/dbus/ && ln -sf /etc/machine-id /var/lib/dbus/machine-id
+wget -qO - https://hub.unity3d.com/linux/keys/public | gpg --dearmor | tee /usr/share/keyrings/Unity_Technologies_ApS.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/Unity_Technologies_ApS.gpg] https://hub.unity3d.com/linux/repos/deb stable main" > /etc/apt/sources.list.d/unityhub.list
+echo "deb https://archive.ubuntu.com/ubuntu jammy main universe" | tee /etc/apt/sources.list.d/jammy.list
+apt-get update
+`;
+
+/**
+ * Post-install cleanup and xvfb / unity-hub wrapper setup. Runs as root; no user interpolation.
+ */
+const LINUX_HUB_LINUX_INSTALL_POST = `#!/bin/sh
+set -e
+apt-get clean
+sed -i 's/^\\(.*DISPLAY=:.*XAUTHORITY=.*\\)\\( "\\$@" \\)2>&1$/\\1\\2/' /usr/bin/xvfb-run
+printf '#!/bin/bash\\nxvfb-run --auto-servernum /opt/unityhub/unityhub "$@" 2>/dev/null' | tee /usr/bin/unity-hub >/dev/null
+chmod 777 /usr/bin/unity-hub
+which unityhub || { echo "Unity Hub installation failed"; exit 1; }
+hubPath=$(which unityhub)
+if [ -z "$hubPath" ]; then
+    echo "Failed to install Unity Hub"
+    exit 1
+fi
+chmod -R 777 "$hubPath"
+`;
+
+const LINUX_HUB_LINUX_APT_EXTRAS = [
+    'xvfb',
+    'ffmpeg',
+    'libgtk2.0-0',
+    'libglu1-mesa',
+    'libgconf-2-4',
+    'libncurses5',
+    'pulseaudio',
+] as const;
+
 export class UnityHub {
     /** The path to the Unity Hub executable. */
     public readonly executable: string;
@@ -86,12 +141,99 @@ export class UnityHub {
     }
 
     /**
+     * Some Hub builds (notably Windows headless) occasionally exit non-zero after streaming usable
+     * `editors --releases` / `editors -i` data. Tolerate only when the captured output parses the same
+     * way {@link ListAvailableReleases} / {@link ListInstalledEditors} would (avoids regex false positives).
+     */
+    private hubListingExitTolerable(args: string[], hubOutput: string): boolean {
+        if (!this.isHubEditorListingArgs(args)) {
+            return false;
+        }
+
+        if (args.includes('--releases')) {
+            return this.parseAvailableReleasesFromHubText(hubOutput).length > 0;
+        }
+
+        if (args.includes('-i') || args.includes('--installed')) {
+            return hubOutput.includes('installed at');
+        }
+
+        return false;
+    }
+
+    private isHubEditorListingArgs(args: string[]): boolean {
+        return args.length > 0 && args[0] === 'editors' &&
+            (args.includes('--releases') || args.includes('-i') || args.includes('--installed'));
+    }
+
+    private async delayMs(ms: number): Promise<void> {
+        await new Promise<void>((resolve) => setTimeout(resolve, ms));
+    }
+
+    /** Same parsing rules as {@link ListAvailableReleases}; must stay in sync. */
+    private parseAvailableReleasesFromHubText(output: string): UnityVersion[] {
+        return output.split('\n')
+            .map(line => line.trim())
+            .map(line => {
+                const match = line.match(/^(\d{1,4}\.\d+\.\d+[abcfpx]?\d*)/);
+                return match ? match[1] : undefined;
+            })
+            .filter((line): line is string => !!line && /^\d{1,4}\.\d+\.\d+[abcfpx]?\d*/.test(line))
+            .map(line => new UnityVersion(line!))
+            .sort((a, b) => UnityVersion.compare(b, a));
+    }
+
+    /** Same parsing rules as {@link ListInstalledEditors}; must stay in sync. */
+    private parseInstalledEditorsFromHubText(output: string): UnityEditor[] {
+        const paths = output.split('\n')
+            .filter(line => /installed at/.test(line))
+            .map(line => line.trim());
+        const editors: UnityEditor[] = [];
+        const pattern = /(?<version>\d+\.\d+\.\d+[abcfpx]?\d*)\s*(?:\((?<arch>Apple silicon|Intel)\))?\s*,? installed at (?<editorPath>.*)/;
+        const matches = paths.map((line) => line.match(pattern)).filter(match => match && match.groups);
+
+        if (paths.length !== matches.length) {
+            throw new Error(`Failed to parse all installed Unity Editors!\n > paths: ${JSON.stringify(paths)}\n  > matches: ${JSON.stringify(matches)}`);
+        }
+
+        for (const match of matches) {
+            if (match && match.groups && match.groups.version && match.groups.editorPath) {
+                const version = new UnityVersion(match.groups.version, null, match.groups.arch === 'Apple silicon' ? 'ARM64' : match.groups.arch === 'Intel' ? 'X86_64' : undefined);
+                editors.push(new UnityEditor(path.normalize(match.groups.editorPath), version));
+            }
+        }
+
+        editors.sort((a, b) => {
+            if (!a.version && !b.version) { return 0; }
+            if (!a.version) { return 1; }
+            if (!b.version) { return -1; }
+            return UnityVersion.compare(b.version!, a.version!);
+        });
+
+        return editors;
+    }
+
+    /**
      * Executes the Unity Hub command with the specified arguments.
      * @param args Arguments to pass to the Unity Hub executable.
-     * @param silent If true, suppresses output logging.
+     * @param options Logging and spawn options for this invocation.
      * @returns The output from the command.
      */
-    public async Exec(args: string[], options: ExecOptions = { silent: this.logger.logLevel > LogLevel.CI, showCommand: this.logger.logLevel <= LogLevel.CI }): Promise<string> {
+    public async Exec(
+        args: string[],
+        options: ExecOptions = { silent: this.logger.logLevel > LogLevel.CI, showCommand: this.logger.logLevel <= LogLevel.CI },
+    ): Promise<string> {
+        return this.execImpl(args, options, 0);
+    }
+
+    /**
+     * @param listingRetryDepth 0 on first attempt; 1 after one listing-only retry (flaky Hub exits on Windows CI).
+     */
+    private async execImpl(
+        args: string[],
+        options: ExecOptions,
+        listingRetryDepth: number,
+    ): Promise<string> {
         let output: string = '';
         let exitCode: number = 0;
 
@@ -137,7 +279,8 @@ export class UnityHub {
                     'Completed with errors.'
                 ];
                 const child = spawn(executable, execArgs, {
-                    stdio: ['ignore', 'pipe', 'pipe']
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                    ...(process.platform === 'win32' ? { windowsHide: true } : {}),
                 });
                 const sigintHandler = () => child.kill('SIGINT');
                 const sigtermHandler = () => child.kill('SIGTERM');
@@ -267,19 +410,28 @@ export class UnityHub {
             if (match ||
                 retryConditions.some(s => output.includes(s))) {
                 this.logger.warn(`Install failed, retrying...`);
-                return await this.Exec(args);
+                return await this.execImpl(args, options, 0);
             }
 
             if (exitCode > 0) {
-                const error = output.match(/Error(?: given)?:\s*(.+)/);
-                const errorMessage = error && error[1] ? error[1] : 'Unknown Error';
+                if (this.hubListingExitTolerable(args, output)) {
+                    this.logger.warn(`Unity Hub exited with code ${exitCode} but produced usable listing output; continuing.`);
+                } else {
+                    const error = output.match(/Error(?: given)?:\s*(.+)/);
+                    const errorMessage = error && error[1] ? error[1] : 'Unknown Error';
 
-                switch (errorMessage) {
-                    case 'No modules found to install.':
-                        break;
-                    default:
-                        this.logger.debug(output);
-                        throw new Error(`Failed to execute Unity Hub (exit code: ${exitCode}) ${errorMessage}`);
+                    switch (errorMessage) {
+                        case 'No modules found to install.':
+                            break;
+                        default:
+                            if (this.isHubEditorListingArgs(args) && listingRetryDepth < 1) {
+                                this.logger.warn(`Unity Hub listing command failed (exit code ${exitCode}); retrying once after 2s...`);
+                                await this.delayMs(2000);
+                                return await this.execImpl(args, options, listingRetryDepth + 1);
+                            }
+                            this.logger.debug(output);
+                            throw new Error(`Failed to execute Unity Hub (exit code: ${exitCode}) ${errorMessage}`);
+                    }
                 }
             }
 
@@ -345,8 +497,8 @@ export class UnityHub {
             }
 
             if (versionToInstall === null ||
-                 !versionToInstall || 
-                 !valid(versionToInstall)) {
+                !versionToInstall ||
+                !valid(versionToInstall)) {
                 if (version || process.platform !== 'linux') {
                     throw new Error(`Invalid Unity Hub version to install: ${versionToInstall}`);
                 }
@@ -375,12 +527,14 @@ export class UnityHub {
                     await DeleteDirectory(this.rootDirectory);
                     await this.installHub(version);
                 } else if (process.platform === 'linux') {
-                    await Exec('sudo', ['sh', '-c', `#!/bin/bash
-set -e
-wget -qO - https://hub.unity3d.com/linux/keys/public | gpg --dearmor | sudo tee /usr/share/keyrings/Unity_Technologies_ApS.gpg >/dev/null
-sudo sh -c 'echo "deb [signed-by=/usr/share/keyrings/Unity_Technologies_ApS.gpg] https://hub.unity3d.com/linux/repos/deb stable main" > /etc/apt/sources.list.d/unityhub.list'
-sudo apt-get update --allow-releaseinfo-change
-sudo apt-get install -y --no-install-recommends --only-upgrade unityhub${version ? '=' + version : ''}`]);
+                    const hubPkg = this.unityHubAptPackageSpec(version);
+                    const linuxExecOpts = { silent: true, showCommand: true };
+                    await Exec('sudo', ['sh', '-c', LINUX_HUB_LINUX_UPDATE_REPO_BOOTSTRAP], linuxExecOpts);
+                    await Exec(
+                        'sudo',
+                        ['apt-get', 'install', '-y', '--no-install-recommends', '--only-upgrade', hubPkg],
+                        linuxExecOpts
+                    );
                     this.logger.info(`Unity Hub updated successfully.`);
                 } else {
                     throw new Error(`Unsupported platform: ${process.platform}`);
@@ -392,6 +546,35 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub${version
 
         await fs.promises.access(this.executable, fs.constants.X_OK);
         return this.executable;
+    }
+
+    /**
+     * APT package spec for unityhub (e.g. `unityhub` or `unityhub=3.6.0`). Validated; passed as argv, not shell-embedded.
+     */
+    private unityHubAptPackageSpec(version: SemVer | string | undefined): string {
+        if (version === undefined || version === null) {
+            return 'unityhub';
+        }
+        if (typeof version === 'object' && 'version' in version) {
+            const deb = (version as SemVer).version;
+            if (!LINUX_HUB_DEB_VERSION_RE.test(deb)) {
+                throw new Error(`Invalid Unity Hub apt version: ${deb}`);
+            }
+            return `unityhub=${deb}`;
+        }
+        const raw = String(version).trim();
+        if (raw.length === 0) {
+            return 'unityhub';
+        }
+        const pinned = coerce(raw);
+        if (!pinned || !valid(pinned)) {
+            throw new Error(`Invalid Unity Hub version for apt: ${raw}`);
+        }
+        const deb = pinned.version;
+        if (!LINUX_HUB_DEB_VERSION_RE.test(deb)) {
+            throw new Error(`Invalid Unity Hub apt version: ${deb}`);
+        }
+        return `unityhub=${deb}`;
     }
 
     private async installHub(version: SemVer | string | undefined): Promise<void> {
@@ -491,35 +674,15 @@ sudo apt-get install -y --no-install-recommends --only-upgrade unityhub${version
                 break;
             }
             case 'linux': {
-                await Exec('sudo', ['sh', '-c', `#!/bin/bash
-set -e
-dbus-uuidgen >/etc/machine-id && mkdir -p /var/lib/dbus/ && ln -sf /etc/machine-id /var/lib/dbus/machine-id
-wget -qO - https://hub.unity3d.com/linux/keys/public | gpg --dearmor | tee /usr/share/keyrings/Unity_Technologies_ApS.gpg >/dev/null
-echo "deb [signed-by=/usr/share/keyrings/Unity_Technologies_ApS.gpg] https://hub.unity3d.com/linux/repos/deb stable main" > /etc/apt/sources.list.d/unityhub.list
-echo "deb https://archive.ubuntu.com/ubuntu jammy main universe" | tee /etc/apt/sources.list.d/jammy.list
-apt-get update
-apt-get install -y --no-install-recommends \\
-  unityhub${version ? '=' + version : ''} \\
-  xvfb \\
-  ffmpeg \\
-  libgtk2.0-0 \\
-  libglu1-mesa \\
-  libgconf-2-4 \\
-  libncurses5 \\
-  pulseaudio
-apt-get clean
-sed -i 's/^\\(.*DISPLAY=:.*XAUTHORITY=.*\\)\\( "\\$@" \\)2>&1$/\\1\\2/' /usr/bin/xvfb-run
-printf '#!/bin/bash\nxvfb-run --auto-servernum /opt/unityhub/unityhub "$@" 2>/dev/null' | tee /usr/bin/unity-hub >/dev/null
-chmod 777 /usr/bin/unity-hub
-which unityhub || { echo "Unity Hub installation failed"; exit 1; }
-hubPath=$(which unityhub)
-
-if [ -z "$hubPath" ]; then
-    echo "Failed to install Unity Hub"
-    exit 1
-fi
-
-chmod -R 777 "$hubPath"`]);
+                const hubPkg = this.unityHubAptPackageSpec(version);
+                const linuxExecOpts = { silent: true, showCommand: true };
+                await Exec('sudo', ['sh', '-c', LINUX_HUB_LINUX_INSTALL_BOOTSTRAP], linuxExecOpts);
+                await Exec(
+                    'sudo',
+                    ['apt-get', 'install', '-y', '--no-install-recommends', hubPkg, ...LINUX_HUB_LINUX_APT_EXTRAS],
+                    linuxExecOpts
+                );
+                await Exec('sudo', ['sh', '-c', LINUX_HUB_LINUX_INSTALL_POST], linuxExecOpts);
                 break;
             }
             default:
@@ -746,33 +909,7 @@ chmod -R 777 "$hubPath"`]);
      */
     public async ListInstalledEditors(): Promise<UnityEditor[]> {
         const output = await this.Exec(['editors', '-i']);
-        const paths = output.split('\n')
-            .filter(line => /installed at/.test(line))
-            .map(line => line.trim());
-        const editors: UnityEditor[] = [];
-        const pattern = /(?<version>\d+\.\d+\.\d+[abcfpx]?\d*)\s*(?:\((?<arch>Apple silicon|Intel)\))?\s*,? installed at (?<editorPath>.*)/;
-        const matches = paths.map(path => path.match(pattern)).filter(match => match && match.groups);
-
-        if (paths.length !== matches.length) {
-            throw new Error(`Failed to parse all installed Unity Editors!\n > paths: ${JSON.stringify(paths)}\n  > matches: ${JSON.stringify(matches)}`);
-        }
-
-        for (const match of matches) {
-            if (match && match.groups && match.groups.version && match.groups.editorPath) {
-                const version = new UnityVersion(match.groups.version, null, match.groups.arch === 'Apple silicon' ? 'ARM64' : match.groups.arch === 'Intel' ? 'X86_64' : undefined);
-                editors.push(new UnityEditor(path.normalize(match.groups.editorPath), version));
-            }
-        }
-
-        // Sort editors descending by UnityVersion so callers receive newest matches first
-        editors.sort((a, b) => {
-            if (!a.version && !b.version) { return 0; }
-            if (!a.version) { return 1; }
-            if (!b.version) { return -1; }
-            return UnityVersion.compare(b.version!, a.version!);
-        });
-
-        return editors;
+        return this.parseInstalledEditorsFromHubText(output);
     }
 
     /**
@@ -781,16 +918,7 @@ chmod -R 777 "$hubPath"`]);
      */
     public async ListAvailableReleases(): Promise<UnityVersion[]> {
         const output = await this.Exec(['editors', '--releases']);
-        // filter out version lines only 2021.3.45f2 (may include installed path following version)
-        return output.split('\n')
-            .map(line => line.trim())
-            .map(line => {
-                const match = line.match(/^(\d{1,4}\.\d+\.\d+[abcfpx]?\d*)/);
-                return match ? match[1] : undefined;
-            })
-            .filter((line): line is string => !!line && /^\d{1,4}\.\d+\.\d+[abcfpx]?\d*/.test(line))
-            .map(line => new UnityVersion(line!))
-            .sort((a, b) => UnityVersion.compare(b, a)); // Sort descending by version
+        return this.parseAvailableReleasesFromHubText(output);
     }
 
     private async checkInstalledEditors(

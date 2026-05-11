@@ -116,6 +116,10 @@ export type ExecOptions = {
     silent?: boolean;
     showCommand?: boolean;
     /**
+     * Merged on top of `process.env` for the child process. When omitted, the child inherits the current environment (default `spawn` behavior).
+     */
+    env?: NodeJS.ProcessEnv;
+    /**
      * Substrings replaced with `*****` in streamed lines, captured output, and the logged command line.
      * Only values with length >= 4 are applied (avoids noisy replacements). Longer literals are applied first.
      */
@@ -187,9 +191,14 @@ export async function Exec(command: string, args: string[], options: ExecOptions
 
     try {
         exitCode = await new Promise<number>((resolve, reject) => {
+            const spawnEnv =
+                options.env !== undefined && Object.keys(options.env).length > 0
+                    ? { ...process.env, ...options.env }
+                    : undefined;
             const child = spawn(command, args, {
-                env: process.env,
+                shell: false,
                 stdio: ['ignore', 'pipe', 'pipe'],
+                ...(spawnEnv !== undefined ? { env: spawnEnv } : {}),
             });
             const sigintHandler = () => child.kill('SIGINT');
             const sigtermHandler = () => child.kill('SIGTERM');
@@ -305,8 +314,7 @@ function assertResolvedPathUnderRoot(candidate: string, root: string, label: str
 }
 
 /**
- * Extracts a zip archive using only OS tools (`tar` or PowerShell on Windows, `unzip` on macOS/Linux).
- * Does not use a Node unzip library.
+ * Extracts a zip archive using OS tools (PowerShell on Windows, `unzip` elsewhere).
  */
 export async function extractZipNative(
     zipPath: string,
@@ -321,39 +329,27 @@ export async function extractZipNative(
     const show = execOptions?.showCommand ?? false;
 
     if (process.platform === 'win32') {
+        const scriptBody =
+            'param([Parameter(Mandatory=$true)][string]$ZipPath,[Parameter(Mandatory=$true)][string]$DestPath)\n' +
+            '$ErrorActionPreference = "Stop"\n' +
+            'Expand-Archive -LiteralPath $ZipPath -DestinationPath $DestPath -Force\n';
+        const tmpDir = await fs.promises.mkdtemp(path.join(GetTempDir(), 'unity-cli-expand-zip-'));
+        const scriptPath = path.join(tmpDir, 'Expand-Archive.ps1');
         try {
-            await Exec('tar', [
-                '-xf',
+            await fs.promises.writeFile(scriptPath, scriptBody, 'utf8');
+            await Exec('powershell.exe', [
+                '-NoProfile',
+                '-NonInteractive',
+                '-File',
+                scriptPath,
                 zipPath,
-                '-C',
-                destDir
+                destDir,
             ], {
                 silent,
-                showCommand: show
+                showCommand: show,
             });
-        } catch {
-            const scriptBody =
-                'param([Parameter(Mandatory=$true)][string]$ZipPath,[Parameter(Mandatory=$true)][string]$DestPath)\n' +
-                '$ErrorActionPreference = "Stop"\n' +
-                'Expand-Archive -LiteralPath $ZipPath -DestinationPath $DestPath -Force\n';
-            const tmpDir = await fs.promises.mkdtemp(path.join(GetTempDir(), 'unity-cli-expand-zip-'));
-            const scriptPath = path.join(tmpDir, 'Expand-Archive.ps1');
-            try {
-                await fs.promises.writeFile(scriptPath, scriptBody, 'utf8');
-                await Exec('powershell.exe', [
-                    '-NoProfile',
-                    '-NonInteractive',
-                    '-File',
-                    scriptPath,
-                    zipPath,
-                    destDir,
-                ], {
-                    silent,
-                    showCommand: show,
-                });
-            } finally {
-                await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
-            }
+        } finally {
+            await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
         }
     } else {
         await Exec('unzip', [

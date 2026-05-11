@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { Logger } from './logging';
 import { UnityVersion } from './unity-version';
@@ -200,20 +201,20 @@ export class UnityEditor {
     public scrubSensitiveArgs(args: string[]): string[] {
         const sensitiveFlags = ['-username', '-password', '-cloudOrganization', '-serial'];
         const scrubbedArgs: string[] = [];
-        
+
         for (let i = 0; i < args.length; i++) {
             const arg = args[i];
             if (!arg) continue;
-            
+
             scrubbedArgs.push(arg);
-            
+
             // If this is a sensitive flag and the next item is its value
             if (sensitiveFlags.includes(arg) && i + 1 < args.length) {
                 scrubbedArgs.push('[REDACTED]');
                 i++; // Skip the next item (the actual value) since we've already added [REDACTED]
             }
         }
-        
+
         return scrubbedArgs;
     }
 
@@ -290,7 +291,7 @@ export class UnityEditor {
 
             const logPath: string = GetArgumentValueAsString('-logFile', command.args);
             logTail = TailLogFile(logPath, command.projectPath);
-            
+
             // Scrub sensitive arguments before logging
             const scrubbedArgs = this.scrubSensitiveArgs(command.args);
             const commandStr = `\x1b[34m${this.editorPath} ${scrubbedArgs.join(' ')}\x1b[0m`;
@@ -417,38 +418,82 @@ export class UnityEditor {
         return path.join(logsDir, `${prefix ? prefix + '-' : ''}Unity-${timestamp}.log`);
     }
 
+    /**
+     * Resolves a writable Pulse/XDG runtime directory. CI runners often lack systemd-logind's `/run/user/$UID`
+     * (Pulse then fails with "Failed to create secure directory (.../pulse)").
+     */
+    private async resolveLinuxXdgRuntimeDir(): Promise<string> {
+        const fromEnv = process.env.XDG_RUNTIME_DIR?.trim();
+        if (fromEnv && fromEnv.length > 0) {
+            try {
+                await fs.promises.mkdir(fromEnv, { recursive: true, mode: 0o700 });
+            } catch (error) {
+                this.logger.debug(`Could not mkdir XDG_RUNTIME_DIR (${fromEnv}): ${error}`);
+            }
+            try {
+                await fs.promises.access(fromEnv, fs.constants.W_OK);
+                return fromEnv;
+            } catch {
+                this.logger.debug(
+                    `XDG_RUNTIME_DIR from environment is not usable (${fromEnv}); falling back like unset.`
+                );
+            }
+        }
+
+        const uid = typeof process.getuid === 'function' ? process.getuid() : 1000;
+        const systemdUser = `/run/user/${uid}`;
+        try {
+            await fs.promises.access(systemdUser, fs.constants.W_OK);
+            return systemdUser;
+        } catch {
+            this.logger.debug(`Using tmp XDG_RUNTIME_DIR (not using ${systemdUser}: missing or not writable).`);
+        }
+
+        const fallback = path.join(os.tmpdir(), `unity-cli-xdg-runtime-${uid}`);
+        await fs.promises.mkdir(fallback, { recursive: true, mode: 0o700 });
+        return fallback;
+    }
+
     private async prepareLinuxAudioEnvironment(): Promise<NodeJS.ProcessEnv> {
         if (process.platform !== 'linux') {
             return {};
         }
 
+        const runtimeDir = await this.resolveLinuxXdgRuntimeDir();
+
         const envOverrides: NodeJS.ProcessEnv = {
             SDL_AUDIODRIVER: process.env.SDL_AUDIODRIVER || 'dummy',
             AUDIODRIVER: process.env.AUDIODRIVER || 'dummy',
-            AUDIODEV: process.env.AUDIODEV || 'null',
-            ALSA_CARD: process.env.ALSA_CARD || 'Loopback',
-            PULSE_SINK: process.env.PULSE_SINK || 'unity_dummy'
+            AUDIODEV: process.env.AUDIODEV?.trim() || 'null',
+            PULSE_SINK: process.env.PULSE_SINK || 'unity_dummy',
+            XDG_RUNTIME_DIR: runtimeDir,
         };
 
-        const defaultRuntimeDir = `/run/user/${typeof process.getuid === 'function' ? process.getuid() : 1000}`;
-        const runtimeDir = process.env.XDG_RUNTIME_DIR || defaultRuntimeDir;
-        envOverrides.XDG_RUNTIME_DIR = runtimeDir;
-
-        try {
-            await fs.promises.mkdir(runtimeDir, { recursive: true, mode: 0o700 });
-        } catch (error) {
-            this.logger.debug(`Failed to ensure XDG_RUNTIME_DIR (${runtimeDir}): ${error}`);
+        const alsaCard = process.env.ALSA_CARD?.trim();
+        if (alsaCard && alsaCard.length > 0) {
+            envOverrides.ALSA_CARD = alsaCard;
         }
 
-        await this.tryExec('bash', ['-c', 'pulseaudio --check 2>/dev/null || pulseaudio --start --exit-idle-time=-1 || true']);
-        await this.tryExec('bash', ['-c', 'command -v pactl >/dev/null 2>&1 && { pactl list short sinks 2>/dev/null | grep -q unity_dummy || pactl load-module module-null-sink sink_name=unity_dummy sink_properties=device.description=UnityCI >/tmp/unity-null-sink.id; } || true']);
+        await this.tryExec(
+            'bash',
+            ['-c', 'pulseaudio --check 2>/dev/null || pulseaudio --start --exit-idle-time=-1 || true'],
+            envOverrides
+        );
+        await this.tryExec(
+            'bash',
+            [
+                '-c',
+                'command -v pactl >/dev/null 2>&1 && { pactl list short sinks 2>/dev/null | grep -q unity_dummy || pactl load-module module-null-sink sink_name=unity_dummy sink_properties=device.description=UnityCI >/tmp/unity-null-sink.id; } || true',
+            ],
+            envOverrides
+        );
 
         return envOverrides;
     }
 
-    private async tryExec(command: string, args: string[]): Promise<void> {
+    private async tryExec(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<void> {
         try {
-            await Exec(command, args, { silent: true, showCommand: false });
+            await Exec(command, args, { silent: true, showCommand: false, env });
         } catch (error) {
             this.logger.debug(`Skipped helper command "${command} ${args.join(' ')}": ${error}`);
         }

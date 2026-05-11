@@ -3,7 +3,7 @@
     "rootDir": "src",
     "outDir": "dist",
     "module": "commonjs",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "target": "esnext",
     "types": [
       "node"

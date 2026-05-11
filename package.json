@@ -1,6 +1,6 @@
 {
   "name": "@rage-against-the-pixel/unity-cli",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "A command line utility for the Unity Game Engine.",
   "author": "RageAgainstThePixel",
   "license": "MIT",
@@ -13,7 +13,7 @@
   },
   "homepage": "https://github.com/RageAgainstThePixel/unity-cli#readme",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=24.0.0"
   },
   "keywords": [
     "unity-cli",
@@ -56,21 +56,27 @@
     "@electron/asar": "^4.2.0",
     "@rage-against-the-pixel/unity-releases-api": "^1.0.4",
     "commander": "^14.0.3",
-    "glob": "^11.1.0",
-    "semver": "^7.7.4",
+    "glob": "^13.0.6",
+    "semver": "^7.8.0",
     "source-map-support": "^0.5.21",
-    "tar": "^7.5.13",
+    "tar": "^7.5.15",
     "update-notifier": "^7.3.1",
     "yaml": "^2.8.4"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "@types/node": "^24.12.2",
+    "@types/node": "^24.12.3",
     "@types/semver": "^7.7.1",
     "@types/update-notifier": "^6.0.8",
-    "jest": "^30.3.0",
+    "jest": "^30.4.2",
     "ts-jest": "^29.4.9",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "babel-plugin-istanbul": {
+      "test-exclude": "7.0.2"
+    },
+    "glob": "$glob"
   }
 }

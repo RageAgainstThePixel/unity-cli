@@ -62,6 +62,19 @@ export class UpmCli {
         return 'https://cdn.packages.unity.com/upm-cli';
     }
 
+    /**
+     * HTTPS URL under the UPM CLI CDN for a release file. Caller must validate `tag` (e.g. {@link UpmCli.validateVersionFormat});
+     * path segments are encoded to avoid tainted file-derived strings reaching the network unchecked (CodeQL js/file-access-to-http).
+     */
+    private static buildUpmReleaseAssetUrl(cdnBase: string, tag: string, fileName: string): string {
+        const root = new URL(`${cdnBase.replace(/\/$/, '')}/`);
+        return new URL(`releases/${encodeURIComponent(tag)}/${encodeURIComponent(fileName)}`, root).href;
+    }
+
+    private static buildUpmLatestTxtUrl(cdnBase: string): string {
+        return new URL('latest.txt', new URL(`${cdnBase.replace(/\/$/, '')}/`)).href;
+    }
+
     private static normalizeSemver(version: string): string | undefined {
         const normalized = valid(version);
         if (normalized) {
@@ -261,7 +274,7 @@ export class UpmCli {
 
     public async GetLatestReleaseTag(): Promise<string> {
         const cdn = UpmCli.getCdnBaseUrl();
-        const latestUrl = `${cdn}/latest.txt`;
+        const latestUrl = UpmCli.buildUpmLatestTxtUrl(cdn);
         const version = (await HttpsGetText(latestUrl)).trim();
         this.validateVersionFormat(version);
         return version;
@@ -311,9 +324,8 @@ export class UpmCli {
 
         const platform = this.getPlatformId();
         const zipName = `upm-${platform}.zip`;
-        const baseReleaseUrl = `${cdn}/releases/${version}`;
-        const zipUrl = `${baseReleaseUrl}/${zipName}`;
-        const checksumUrl = `${baseReleaseUrl}/${zipName}.sha256`;
+        const zipUrl = UpmCli.buildUpmReleaseAssetUrl(cdn, version, zipName);
+        const checksumUrl = UpmCli.buildUpmReleaseAssetUrl(cdn, version, `${zipName}.sha256`);
 
         const tempRoot = path.join(GetTempDir(), `unity-cli-upm-${Date.now()}`);
         const resolvedTempRoot = path.resolve(tempRoot);
