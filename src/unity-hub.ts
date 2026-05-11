@@ -141,34 +141,99 @@ export class UnityHub {
     }
 
     /**
-     * Some Hub versions on Windows return a non-zero exit (e.g. 127) after successfully streaming
-     * `editors --releases` or `editors -i` output. If the log clearly contains listing data, continue.
+     * Some Hub builds (notably Windows headless) occasionally exit non-zero after streaming usable
+     * `editors --releases` / `editors -i` data. Tolerate only when the captured output parses the same
+     * way {@link ListAvailableReleases} / {@link ListInstalledEditors} would (avoids regex false positives).
      */
     private hubListingExitTolerable(args: string[], hubOutput: string): boolean {
-        if (args.length === 0 || args[0] !== 'editors') {
+        if (!this.isHubEditorListingArgs(args)) {
             return false;
         }
 
-        const versionLine = /^\d{1,4}\.\d+\.\d+[abcfpx]?\d*/m;
-
-        if (args.includes('--releases') && versionLine.test(hubOutput)) {
-            return true;
+        if (args.includes('--releases')) {
+            return this.parseAvailableReleasesFromHubText(hubOutput).length > 0;
         }
 
-        if ((args.includes('-i') || args.includes('--installed')) && hubOutput.includes('installed at')) {
-            return true;
+        if (args.includes('-i') || args.includes('--installed')) {
+            return hubOutput.includes('installed at');
         }
 
         return false;
     }
 
+    private isHubEditorListingArgs(args: string[]): boolean {
+        return args.length > 0 && args[0] === 'editors' &&
+            (args.includes('--releases') || args.includes('-i') || args.includes('--installed'));
+    }
+
+    private async delayMs(ms: number): Promise<void> {
+        await new Promise<void>((resolve) => setTimeout(resolve, ms));
+    }
+
+    /** Same parsing rules as {@link ListAvailableReleases}; must stay in sync. */
+    private parseAvailableReleasesFromHubText(output: string): UnityVersion[] {
+        return output.split('\n')
+            .map(line => line.trim())
+            .map(line => {
+                const match = line.match(/^(\d{1,4}\.\d+\.\d+[abcfpx]?\d*)/);
+                return match ? match[1] : undefined;
+            })
+            .filter((line): line is string => !!line && /^\d{1,4}\.\d+\.\d+[abcfpx]?\d*/.test(line))
+            .map(line => new UnityVersion(line!))
+            .sort((a, b) => UnityVersion.compare(b, a));
+    }
+
+    /** Same parsing rules as {@link ListInstalledEditors}; must stay in sync. */
+    private parseInstalledEditorsFromHubText(output: string): UnityEditor[] {
+        const paths = output.split('\n')
+            .filter(line => /installed at/.test(line))
+            .map(line => line.trim());
+        const editors: UnityEditor[] = [];
+        const pattern = /(?<version>\d+\.\d+\.\d+[abcfpx]?\d*)\s*(?:\((?<arch>Apple silicon|Intel)\))?\s*,? installed at (?<editorPath>.*)/;
+        const matches = paths.map((line) => line.match(pattern)).filter(match => match && match.groups);
+
+        if (paths.length !== matches.length) {
+            throw new Error(`Failed to parse all installed Unity Editors!\n > paths: ${JSON.stringify(paths)}\n  > matches: ${JSON.stringify(matches)}`);
+        }
+
+        for (const match of matches) {
+            if (match && match.groups && match.groups.version && match.groups.editorPath) {
+                const version = new UnityVersion(match.groups.version, null, match.groups.arch === 'Apple silicon' ? 'ARM64' : match.groups.arch === 'Intel' ? 'X86_64' : undefined);
+                editors.push(new UnityEditor(path.normalize(match.groups.editorPath), version));
+            }
+        }
+
+        editors.sort((a, b) => {
+            if (!a.version && !b.version) { return 0; }
+            if (!a.version) { return 1; }
+            if (!b.version) { return -1; }
+            return UnityVersion.compare(b.version!, a.version!);
+        });
+
+        return editors;
+    }
+
     /**
      * Executes the Unity Hub command with the specified arguments.
      * @param args Arguments to pass to the Unity Hub executable.
-     * @param silent If true, suppresses output logging.
+     * @param options Logging and spawn options for this invocation.
      * @returns The output from the command.
      */
-    public async Exec(args: string[], options: ExecOptions = { silent: this.logger.logLevel > LogLevel.CI, showCommand: this.logger.logLevel <= LogLevel.CI }): Promise<string> {
+    public async Exec(
+        args: string[],
+        options: ExecOptions = { silent: this.logger.logLevel > LogLevel.CI, showCommand: this.logger.logLevel <= LogLevel.CI },
+    ): Promise<string> {
+        return this.execImpl(args, options, 0);
+    }
+
+    /**
+     * @param listingRetryDepth 0 on first attempt; 1 after one listing-only retry (flaky Hub exits on Windows CI).
+     */
+    private async execImpl(
+        args: string[],
+        options: ExecOptions,
+        listingRetryDepth: number,
+    ): Promise<string> {
         let output: string = '';
         let exitCode: number = 0;
 
@@ -214,7 +279,8 @@ export class UnityHub {
                     'Completed with errors.'
                 ];
                 const child = spawn(executable, execArgs, {
-                    stdio: ['ignore', 'pipe', 'pipe']
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                    ...(process.platform === 'win32' ? { windowsHide: true } : {}),
                 });
                 const sigintHandler = () => child.kill('SIGINT');
                 const sigtermHandler = () => child.kill('SIGTERM');
@@ -344,7 +410,7 @@ export class UnityHub {
             if (match ||
                 retryConditions.some(s => output.includes(s))) {
                 this.logger.warn(`Install failed, retrying...`);
-                return await this.Exec(args);
+                return await this.execImpl(args, options, 0);
             }
 
             if (exitCode > 0) {
@@ -358,6 +424,11 @@ export class UnityHub {
                         case 'No modules found to install.':
                             break;
                         default:
+                            if (this.isHubEditorListingArgs(args) && listingRetryDepth < 1) {
+                                this.logger.warn(`Unity Hub listing command failed (exit code ${exitCode}); retrying once after 2s...`);
+                                await this.delayMs(2000);
+                                return await this.execImpl(args, options, listingRetryDepth + 1);
+                            }
                             this.logger.debug(output);
                             throw new Error(`Failed to execute Unity Hub (exit code: ${exitCode}) ${errorMessage}`);
                     }
@@ -838,33 +909,7 @@ export class UnityHub {
      */
     public async ListInstalledEditors(): Promise<UnityEditor[]> {
         const output = await this.Exec(['editors', '-i']);
-        const paths = output.split('\n')
-            .filter(line => /installed at/.test(line))
-            .map(line => line.trim());
-        const editors: UnityEditor[] = [];
-        const pattern = /(?<version>\d+\.\d+\.\d+[abcfpx]?\d*)\s*(?:\((?<arch>Apple silicon|Intel)\))?\s*,? installed at (?<editorPath>.*)/;
-        const matches = paths.map(path => path.match(pattern)).filter(match => match && match.groups);
-
-        if (paths.length !== matches.length) {
-            throw new Error(`Failed to parse all installed Unity Editors!\n > paths: ${JSON.stringify(paths)}\n  > matches: ${JSON.stringify(matches)}`);
-        }
-
-        for (const match of matches) {
-            if (match && match.groups && match.groups.version && match.groups.editorPath) {
-                const version = new UnityVersion(match.groups.version, null, match.groups.arch === 'Apple silicon' ? 'ARM64' : match.groups.arch === 'Intel' ? 'X86_64' : undefined);
-                editors.push(new UnityEditor(path.normalize(match.groups.editorPath), version));
-            }
-        }
-
-        // Sort editors descending by UnityVersion so callers receive newest matches first
-        editors.sort((a, b) => {
-            if (!a.version && !b.version) { return 0; }
-            if (!a.version) { return 1; }
-            if (!b.version) { return -1; }
-            return UnityVersion.compare(b.version!, a.version!);
-        });
-
-        return editors;
+        return this.parseInstalledEditorsFromHubText(output);
     }
 
     /**
@@ -873,16 +918,7 @@ export class UnityHub {
      */
     public async ListAvailableReleases(): Promise<UnityVersion[]> {
         const output = await this.Exec(['editors', '--releases']);
-        // filter out version lines only 2021.3.45f2 (may include installed path following version)
-        return output.split('\n')
-            .map(line => line.trim())
-            .map(line => {
-                const match = line.match(/^(\d{1,4}\.\d+\.\d+[abcfpx]?\d*)/);
-                return match ? match[1] : undefined;
-            })
-            .filter((line): line is string => !!line && /^\d{1,4}\.\d+\.\d+[abcfpx]?\d*/.test(line))
-            .map(line => new UnityVersion(line!))
-            .sort((a, b) => UnityVersion.compare(b, a)); // Sort descending by version
+        return this.parseAvailableReleasesFromHubText(output);
     }
 
     private async checkInstalledEditors(
