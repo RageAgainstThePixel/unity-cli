@@ -725,11 +725,15 @@ program.command('create-project')
         args.push('-createProject', projectPath);
 
         if (!unityEditor.version.isLegacy() && options.template && options.template.length > 0) {
-            const templatePath = unityEditor.GetTemplatePath(options.template);
+            const templatePath = unityEditor.GetTemplatePath(options.template) ??
+                unityEditor.GetTemplatePath('com\\.unity\\.template\\.urp-[\\w-]+') ??
+                unityEditor.GetAvailableTemplates()[0];
 
-            if (templatePath) {
-                args.push('-cloneFromTemplate', templatePath);
+            if (!templatePath) {
+                throw new Error(`No Unity project template found for ${options.template}`);
             }
+
+            args.push('-cloneFromTemplate', templatePath);
         }
 
         await unityEditor.Run({ projectPath, args });
