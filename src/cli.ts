@@ -724,16 +724,28 @@ program.command('create-project')
 
         args.push('-createProject', projectPath);
 
-        if (!unityEditor.version.isLegacy() && options.template && options.template.length > 0) {
-            const templatePath = unityEditor.GetTemplatePath(options.template) ??
-                unityEditor.GetTemplatePath('com\\.unity\\.template\\.urp-[\\w-]+') ??
-                unityEditor.GetAvailableTemplates()[0];
+        if (options.template && options.template.length > 0) {
+            const availableTemplates = unityEditor.GetAvailableTemplates();
 
-            if (!templatePath) {
-                throw new Error(`No Unity project template found for ${options.template}`);
+            if (availableTemplates.length === 0) {
+                if (unityEditor.version.isLessThan('2019.0.0')) {
+                    Logger.instance.info(
+                        `Skipping template selection for Unity ${unityEditor.version.toString()} because project templates are not supported.`
+                    );
+                } else {
+                    throw new Error(`No Unity project templates found for ${unityEditor.version.toString()}`);
+                }
+            } else {
+                const templatePath = unityEditor.GetTemplatePath(options.template) ??
+                    unityEditor.GetTemplatePath('com\\.unity\\.template\\.urp-[\\w-]+') ??
+                    availableTemplates[0];
+
+                if (!templatePath) {
+                    throw new Error(`No Unity project template found for ${options.template}`);
+                }
+
+                args.push('-cloneFromTemplate', templatePath);
             }
-
-            args.push('-cloneFromTemplate', templatePath);
         }
 
         await unityEditor.Run({ projectPath, args });
