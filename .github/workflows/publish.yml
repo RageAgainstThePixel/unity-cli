@@ -3,21 +3,31 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
 jobs:
   publish:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 24.x
           registry-url: "https://registry.npmjs.org"
-      - run: |
+          package-manager-cache: false
+      - name: Ensure npm supports trusted publishing
+        run: |
+          major=$(npm --version | cut -d. -f1)
+          minor=$(npm --version | cut -d. -f2)
+          patch=$(npm --version | cut -d. -f3)
+          if [ "$major" -lt 11 ] || { [ "$major" -eq 11 ] && [ "$minor" -lt 5 ]; } || { [ "$major" -eq 11 ] && [ "$minor" -eq 5 ] && [ "$patch" -lt 1 ]; }; then
+            npm install -g npm@latest
+          fi
+      - name: Build and publish
+        run: |
           npm i
           npm run build
-          # check if the last release is the same as the current version
           lastVersion=$(npm show @rage-against-the-pixel/unity-cli version)
           version=$(node -p "require('./package.json').version")
           if [ "$version" = "$lastVersion" ]; then
@@ -25,5 +35,3 @@ jobs:
             exit 0
           fi
           npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
