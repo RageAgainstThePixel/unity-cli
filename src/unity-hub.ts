@@ -39,46 +39,93 @@ const MIN_NATIVE_WINDOWS_ARM64_HUB_VERSION = coerce('3.17.0')!;
 /** Allowed characters in a Debian package version (no shell metacharacters). */
 const LINUX_HUB_DEB_VERSION_RE = /^[0-9A-Za-z.+~:-]+$/;
 
+/** Hub 3.20+ Electron Forge deb layout. */
+export const LINUX_HUB_EXECUTABLE_MODERN = '/usr/lib/unityhub/unityhub';
+/** Hub ≤3.19 fpm / electron-builder layout. */
+export const LINUX_HUB_EXECUTABLE_LEGACY = '/opt/unityhub/unityhub';
+
+/**
+ * Resolves the Unity Hub binary on Linux.
+ * Prefers UNITY_HUB_PATH, then the Hub 3.20+ path, then the legacy /opt path.
+ * When neither is present (pre-install), defaults to the modern path.
+ */
+export function resolveLinuxHubExecutable(
+    envPath: string | undefined = process.env.UNITY_HUB_PATH,
+    existsSync: (p: string) => boolean = fs.existsSync
+): string {
+    if (envPath !== undefined && envPath.length > 0) {
+        return envPath;
+    }
+    if (existsSync(LINUX_HUB_EXECUTABLE_MODERN)) {
+        return LINUX_HUB_EXECUTABLE_MODERN;
+    }
+    if (existsSync(LINUX_HUB_EXECUTABLE_LEGACY)) {
+        return LINUX_HUB_EXECUTABLE_LEGACY;
+    }
+    return LINUX_HUB_EXECUTABLE_MODERN;
+}
+
 /**
  * Fixed bootstrap for Linux Hub apt repo + update index. No user-controlled interpolation (CodeQL).
- * Matches prior `Install` update path (wget | gpg | sudo tee, then sources.list).
+ * Uses DEB822 .sources (Hub 3.20+) and removes legacy .list to avoid duplicate-source warnings.
  */
 const LINUX_HUB_LINUX_UPDATE_REPO_BOOTSTRAP = `#!/bin/sh
 set -e
 wget -qO - https://hub.unity3d.com/linux/keys/public | gpg --dearmor | sudo tee /usr/share/keyrings/Unity_Technologies_ApS.gpg >/dev/null
-sudo sh -c 'echo "deb [signed-by=/usr/share/keyrings/Unity_Technologies_ApS.gpg] https://hub.unity3d.com/linux/repos/deb stable main" > /etc/apt/sources.list.d/unityhub.list'
+sudo rm -f /etc/apt/sources.list.d/unityhub.list
+sudo tee /etc/apt/sources.list.d/unityhub.sources >/dev/null <<'EOF'
+Types: deb
+URIs: https://hub.unity3d.com/linux/repos/deb
+Suites: stable
+Components: main
+Signed-By: /usr/share/keyrings/Unity_Technologies_ApS.gpg
+EOF
 sudo apt-get update --allow-releaseinfo-change
 `;
 
 /**
  * First phase of fresh Linux Hub install: machine-id, repo keys, jammy mirror, apt-get update.
- * No user-controlled interpolation.
+ * No user-controlled interpolation. Uses DEB822 .sources (Hub 3.20+).
  */
 const LINUX_HUB_LINUX_INSTALL_BOOTSTRAP = `#!/bin/sh
 set -e
 dbus-uuidgen >/etc/machine-id && mkdir -p /var/lib/dbus/ && ln -sf /etc/machine-id /var/lib/dbus/machine-id
 wget -qO - https://hub.unity3d.com/linux/keys/public | gpg --dearmor | tee /usr/share/keyrings/Unity_Technologies_ApS.gpg >/dev/null
-echo "deb [signed-by=/usr/share/keyrings/Unity_Technologies_ApS.gpg] https://hub.unity3d.com/linux/repos/deb stable main" > /etc/apt/sources.list.d/unityhub.list
+rm -f /etc/apt/sources.list.d/unityhub.list
+tee /etc/apt/sources.list.d/unityhub.sources >/dev/null <<'EOF'
+Types: deb
+URIs: https://hub.unity3d.com/linux/repos/deb
+Suites: stable
+Components: main
+Signed-By: /usr/share/keyrings/Unity_Technologies_ApS.gpg
+EOF
 echo "deb https://archive.ubuntu.com/ubuntu jammy main universe" | tee /etc/apt/sources.list.d/jammy.list
 apt-get update
 `;
 
 /**
  * Post-install cleanup and xvfb / unity-hub wrapper setup. Runs as root; no user interpolation.
+ * Resolves Hub 3.20+ (/usr/lib/unityhub) and legacy (/opt/unityhub) layouts.
  */
 const LINUX_HUB_LINUX_INSTALL_POST = `#!/bin/sh
 set -e
 apt-get clean
 sed -i 's/^\\(.*DISPLAY=:.*XAUTHORITY=.*\\)\\( "\\$@" \\)2>&1$/\\1\\2/' /usr/bin/xvfb-run
-printf '#!/bin/bash\\nxvfb-run --auto-servernum /opt/unityhub/unityhub "$@" 2>/dev/null' | tee /usr/bin/unity-hub >/dev/null
-chmod 777 /usr/bin/unity-hub
-which unityhub || { echo "Unity Hub installation failed"; exit 1; }
-hubPath=$(which unityhub)
-if [ -z "$hubPath" ]; then
-    echo "Failed to install Unity Hub"
-    exit 1
+command -v unityhub >/dev/null || { echo "Unity Hub installation failed"; exit 1; }
+hubPath=$(readlink -f "$(command -v unityhub)" 2>/dev/null || true)
+if [ -z "$hubPath" ] || [ ! -x "$hubPath" ]; then
+    if [ -x /usr/lib/unityhub/unityhub ]; then
+        hubPath=/usr/lib/unityhub/unityhub
+    elif [ -x /opt/unityhub/unityhub ]; then
+        hubPath=/opt/unityhub/unityhub
+    else
+        echo "Failed to install Unity Hub"
+        exit 1
+    fi
 fi
-chmod -R 777 "$hubPath"
+printf '#!/bin/bash\\nxvfb-run --auto-servernum %s "$@" 2>/dev/null\\n' "$hubPath" | tee /usr/bin/unity-hub >/dev/null
+chmod 777 /usr/bin/unity-hub
+chmod -R 777 "$(dirname "$hubPath")"
 `;
 
 const LINUX_HUB_LINUX_APT_EXTRAS = [
@@ -93,9 +140,9 @@ const LINUX_HUB_LINUX_APT_EXTRAS = [
 
 export class UnityHub {
     /** The path to the Unity Hub executable. */
-    public readonly executable: string;
+    public executable!: string;
     /** The root directory of the Unity Hub installation. */
-    public readonly rootDirectory: string;
+    public rootDirectory!: string;
     /** The file extension for the Unity editor executable. */
     public readonly editorFileExtension: string;
 
@@ -131,13 +178,18 @@ export class UnityHub {
                 this.editorFileExtension = '/Unity.app/Contents/MacOS/Unity';
                 break;
             case 'linux':
-                this.executable = process.env.UNITY_HUB_PATH || '/opt/unityhub/unityhub';
-                this.rootDirectory = path.join(this.executable, '../');
+                this.refreshLinuxHubPaths();
                 this.editorFileExtension = '/Editor/Unity';
                 break;
             default:
                 throw new Error(`Unsupported platform: ${process.platform}`);
         }
+    }
+
+    /** Re-resolve Linux Hub executable + root after install/upgrade (Hub 3.20 moved under /usr/lib). */
+    private refreshLinuxHubPaths(): void {
+        this.executable = resolveLinuxHubExecutable();
+        this.rootDirectory = path.join(this.executable, '../');
     }
 
     /**
@@ -535,6 +587,7 @@ export class UnityHub {
                         ['apt-get', 'install', '-y', '--no-install-recommends', '--only-upgrade', hubPkg],
                         linuxExecOpts
                     );
+                    this.refreshLinuxHubPaths();
                     this.logger.info(`Unity Hub updated successfully.`);
                 } else {
                     throw new Error(`Unsupported platform: ${process.platform}`);
@@ -544,6 +597,9 @@ export class UnityHub {
             }
         }
 
+        if (process.platform === 'linux') {
+            this.refreshLinuxHubPaths();
+        }
         await fs.promises.access(this.executable, fs.constants.X_OK);
         return this.executable;
     }
@@ -683,6 +739,7 @@ export class UnityHub {
                     linuxExecOpts
                 );
                 await Exec('sudo', ['sh', '-c', LINUX_HUB_LINUX_INSTALL_POST], linuxExecOpts);
+                this.refreshLinuxHubPaths();
                 break;
             }
             default:
