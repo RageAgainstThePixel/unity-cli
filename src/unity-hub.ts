@@ -105,7 +105,8 @@ apt-get update
 
 /**
  * Post-install cleanup and xvfb / unity-hub wrapper setup. Runs as root; no user interpolation.
- * Resolves Hub 3.20+ (/usr/lib/unityhub) and legacy (/opt/unityhub) layouts.
+ * Wrapper resolves Hub 3.20+ (/usr/lib/unityhub) vs legacy (/opt/unityhub) at runtime so apt
+ * upgrades that move the binary do not leave a stale path (exit 127).
  */
 const LINUX_HUB_LINUX_INSTALL_POST = `#!/bin/sh
 set -e
@@ -123,7 +124,21 @@ if [ -z "$hubPath" ] || [ ! -x "$hubPath" ]; then
         exit 1
     fi
 fi
-printf '#!/bin/bash\\nxvfb-run --auto-servernum %s "$@" 2>/dev/null\\n' "$hubPath" | tee /usr/bin/unity-hub >/dev/null
+tee /usr/bin/unity-hub >/dev/null <<'WRAPPER'
+#!/bin/bash
+if [ -x /usr/lib/unityhub/unityhub ]; then
+  hubBin=/usr/lib/unityhub/unityhub
+elif [ -x /opt/unityhub/unityhub ]; then
+  hubBin=/opt/unityhub/unityhub
+else
+  hubBin=$(readlink -f "$(command -v unityhub)" 2>/dev/null || true)
+fi
+if [ -z "$hubBin" ] || [ ! -x "$hubBin" ]; then
+  echo "Unity Hub binary not found" >&2
+  exit 127
+fi
+exec xvfb-run --auto-servernum "$hubBin" "$@" 2>/dev/null
+WRAPPER
 chmod 777 /usr/bin/unity-hub
 chmod -R 777 "$(dirname "$hubPath")"
 `;
@@ -587,6 +602,8 @@ export class UnityHub {
                         ['apt-get', 'install', '-y', '--no-install-recommends', '--only-upgrade', hubPkg],
                         linuxExecOpts
                     );
+                    // Refresh xvfb wrapper after upgrades that move /opt → /usr/lib (Hub 3.20+).
+                    await Exec('sudo', ['sh', '-c', LINUX_HUB_LINUX_INSTALL_POST], linuxExecOpts);
                     this.refreshLinuxHubPaths();
                     this.logger.info(`Unity Hub updated successfully.`);
                 } else {
