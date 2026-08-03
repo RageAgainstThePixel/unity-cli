@@ -17,6 +17,12 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
       - name: UTP batch assertion helpers (contract)
         run: bash tests/run-utp-tests-contract.sh
   setup:

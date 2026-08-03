@@ -1,31 +1,19 @@
 #!/usr/bin/env bash
 # Shared helpers for UTP CI batch validation (.github/actions/scripts/run-utp-tests.sh).
 # Keep behavior in sync with contract tests: tests/run-utp-tests-contract.sh
+#
+# Severity checks go through utp-file-has-actionable-severity.cjs → normalizeTelemetryEntry
+# so benign Unity noise (multicast WSAEACCES, OpenCL, StackAllocator, etc.) is remapped
+# before Error/Exception/Assert are treated as failures. Do not re-special-case messages here.
 
-# Returns 0 if this UTP NDJSON line is known engine/CI noise (not a scenario failure).
-utp_line_is_benign_noise() {
-  local line="$1"
-  # Windows hosted runners often cannot join IGMP multicast (WSAEACCES / 10013).
-  # Unity logs this as Error then falls back to alternate multi-casting; builds continue.
-  echo "$line" | grep -qiE \
-    'Unable to join player connection multicast group|player connection multicast group \(err:[[:space:]]*10013\)'
-}
+_UTP_ASSERT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_UTP_ACTIONABLE_SEVERITY_JS="${_UTP_ASSERT_DIR}/utp-file-has-actionable-severity.cjs"
 
-# Returns 0 if the UTP file has an actionable Error/Exception/(optional Assert) that is not benign noise.
+# Returns 0 if the UTP file has an actionable Error/Exception/(optional Assert) after normalize.
 utp_file_has_actionable_severity() {
   local utp_file="$1"
   local severities_re="$2"
-  local line
-  while IFS= read -r line || [ -n "$line" ]; do
-    [ -z "$line" ] && continue
-    if echo "$line" | grep -qiE "\"severity\"[[:space:]]*:[[:space:]]*\"(${severities_re})\""; then
-      if utp_line_is_benign_noise "$line"; then
-        continue
-      fi
-      return 0
-    fi
-  done <"$utp_file"
-  return 1
+  node "$_UTP_ACTIONABLE_SEVERITY_JS" "$utp_file" "$severities_re"
 }
 
 # Returns 0 (true) if this UTP JSON log should fail an *expected-success* scenario.

@@ -1,6 +1,10 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { normalizeTelemetryEntry, UTP_SUPPORTED_TOP_LEVEL_PROPERTIES } from '../src/utp';
+import {
+    normalizeTelemetryEntry,
+    Severity,
+    UTP_SUPPORTED_TOP_LEVEL_PROPERTIES,
+} from '../src/utp';
 import { buildTestResultsTableMarkdown, utpToTestResultSummary } from '../src/logging';
 import { formatUtpUnrecognizedTopLevelPropertiesMessage } from '../src/unity-logging';
 
@@ -69,6 +73,51 @@ describe('UTP telemetry fixtures', () => {
         const { utp, unknownTopLevelKeys } = normalizeTelemetryEntry(payload);
         expect(unknownTopLevelKeys).toEqual(['futureUnityOnlyField']);
         expect(utp.type).toBe('Compiler');
+    });
+});
+
+describe('normalizeTelemetryEntry benign severity remaps', () => {
+    it('remaps player-connection multicast Error to Info', () => {
+        const { utp } = normalizeTelemetryEntry({
+            type: 'LogEntry',
+            severity: 'Error',
+            message: 'Unable to join player connection multicast group (err: 10013).',
+        });
+        expect(utp.severity).toBe(Severity.Info);
+    });
+
+    it('remaps OpenCL and StackAllocator elevated severities to Info', () => {
+        const opencl = normalizeTelemetryEntry({
+            type: 'LogEntry',
+            severity: Severity.Error,
+            message: 'Failed to find a suitable OpenCL device, baking cannot use GPU lightmapper.',
+        }).utp;
+        expect(opencl.severity).toBe(Severity.Info);
+
+        const stack = normalizeTelemetryEntry({
+            type: 'LogEntry',
+            severity: Severity.Assert,
+            message: '~StackAllocator(ALLOC_TEMP_MAIN) m_LastAlloc not NULL. Did you forget to call FreeAllStackAllocations()?',
+        }).utp;
+        expect(stack.severity).toBe(Severity.Info);
+    });
+
+    it('leaves real Errors unchanged', () => {
+        const { utp } = normalizeTelemetryEntry({
+            type: 'Compiler',
+            severity: 'Error',
+            message: 'Assets/Foo.cs(1,1): error CS0001: boom',
+        });
+        expect(utp.severity).toBe(Severity.Error);
+    });
+
+    it('canonicalizes severity casing', () => {
+        const { utp } = normalizeTelemetryEntry({
+            type: 'LogEntry',
+            severity: 'error',
+            message: 'real failure',
+        });
+        expect(utp.severity).toBe(Severity.Error);
     });
 });
 

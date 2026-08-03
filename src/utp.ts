@@ -1,4 +1,10 @@
 import { Logger } from "./logging";
+import { UTP_BENIGN_SEVERITY_REMAPS } from './utp-benign';
+
+export {
+    UTP_BENIGN_SEVERITY_REMAPS,
+    utpMessageMatchesBenignRemap,
+} from './utp-benign';
 
 export class UTPBase {
     type?: string;
@@ -153,6 +159,30 @@ export enum Severity {
     Assert = 'Assert'
 }
 
+/** Severities that normally fail builds / CI expected-success checks. */
+export function isElevatedUtpSeverity(severity: Severity | string | undefined): boolean {
+    return severity === Severity.Error
+        || severity === Severity.Exception
+        || severity === Severity.Assert;
+}
+
+/**
+ * Downgrades elevated severity on known benign messages. Mutates `utp`.
+ * @returns true when severity was changed.
+ */
+export function remapBenignUtpSeverity(utp: UTP): boolean {
+    if (!utp.message || !isElevatedUtpSeverity(utp.severity)) {
+        return false;
+    }
+    for (const { fragment, severity } of UTP_BENIGN_SEVERITY_REMAPS) {
+        if (utp.message.includes(fragment)) {
+            utp.severity = severity as Severity;
+            return true;
+        }
+    }
+    return false;
+}
+
 /**
  * Root-level JSON keys on UTP objects that this CLI recognizes. Other keys are still parsed
  * but reported via {@link normalizeTelemetryEntry}'s `unknownTopLevelKeys` for logging.
@@ -197,8 +227,9 @@ export interface NormalizeTelemetryResult {
 }
 
 /**
- * Normalizes UTP telemetry entries to canonical shapes. Unknown top-level keys are listed
- * for the caller to log (with the raw `##utp:` line when tailing logs).
+ * Normalizes UTP telemetry entries to canonical shapes and remaps known benign elevated
+ * severities. Unknown top-level keys are listed for the caller to log (with the raw
+ * `##utp:` line when tailing logs).
  */
 export function normalizeTelemetryEntry(entry: unknown): NormalizeTelemetryResult {
     if (!entry || typeof entry !== 'object') {
@@ -233,6 +264,18 @@ export function normalizeTelemetryEntry(entry: unknown): NormalizeTelemetryResul
     if (utp.lineNumber === undefined && typeof utp.line === 'number') {
         utp.lineNumber = utp.line;
     }
+
+    // Canonicalize severity string casing from Unity payloads.
+    if (typeof utp.severity === 'string') {
+        const matched = (Object.values(Severity) as string[]).find(
+            s => s.toLowerCase() === (utp.severity as string).toLowerCase()
+        );
+        if (matched) {
+            utp.severity = matched as Severity;
+        }
+    }
+
+    remapBenignUtpSeverity(utp);
 
     if (!utp.type) {
         Logger.instance.warn('UTP entry missing type property; telemetry entry may be ignored.');
