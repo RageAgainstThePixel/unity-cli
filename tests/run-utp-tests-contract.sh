@@ -35,6 +35,15 @@ printf '%s\n' '{"type":"Log","severity":"Error","message":"Unable to join player
 if utp_signals_failure_for_expected_success CompilerWarnings "$tmpdir/multicast.json"; then
   fail "CompilerWarnings + player-connection multicast Error should be remapped (not actionable)"
 fi
+
+# Unity 2019-style sibling WSAEACCES line (same CI failure mode as multicast).
+printf '%s\n' '{"type":"Log","severity":"Error","message":"Socket: bind failed, error: An attempt was made to access a socket in a way forbidden by its access permissions."}' >"$tmpdir/socket-bind.json"
+if utp_signals_failure_for_expected_success CompilerWarnings "$tmpdir/socket-bind.json"; then
+  fail "CompilerWarnings + Socket bind failed should be remapped (not actionable)"
+fi
+if utp_signals_failure_for_expected_success BuildWarnings "$tmpdir/socket-bind.json"; then
+  fail "BuildWarnings + Socket bind failed should be remapped (not actionable)"
+fi
 if utp_signals_failure_for_expected_success BuildWarnings "$tmpdir/multicast.json"; then
   fail "BuildWarnings + player-connection multicast Error should be remapped (not actionable)"
 fi

@@ -17,8 +17,13 @@ export const UTP_BENIGN_SEVERITY_REMAPS: ReadonlyArray<{
             '~StackAllocator(ALLOC_TEMP_MAIN) m_LastAlloc not NULL. Did you forget to call FreeAllStackAllocations()?',
         severity: 'Info',
     },
-    // Windows hosted CI often cannot join IGMP multicast (WSAEACCES / 10013); Unity falls back.
+    // Windows hosted CI: WSAEACCES (10013) — player-connection multicast / socket bind. Unity falls back.
     { fragment: 'Unable to join player connection multicast group', severity: 'Info' },
+    { fragment: 'Socket: bind failed', severity: 'Info' },
+    {
+        fragment: 'An attempt was made to access a socket in a way forbidden by its access permissions',
+        severity: 'Info',
+    },
     { fragment: 'Access token is unavailable; failed to update', severity: 'Info' },
 ];
 

@@ -1270,8 +1270,21 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                 logger.warn(`Failed to parse telemetry JSON: ${error} -- raw: ${jsonPart}`);
             }
         } else {
+            // Skip plain-log false positives (e.g. "Socket: bind failed, error: …" matching \berror\b).
+            if (utpMessageMatchesBenignRemap(line)) {
+                if (Logger.instance.logLevel !== LogLevel.UTP) {
+                    process.stdout.write(`${line}\n`);
+                }
+                return;
+            }
             const scan = parsePlainLogIssue(line);
             if (scan) {
+                if (utpMessageMatchesBenignRemap(scan.message)) {
+                    if (Logger.instance.logLevel !== LogLevel.UTP) {
+                        process.stdout.write(`${line}\n`);
+                    }
+                    return;
+                }
                 const key = buildIssueKey(scan.file, scan.line, scan.message);
                 if (!seenIssueKeys.has(key)) {
                     seenIssueKeys.add(key);

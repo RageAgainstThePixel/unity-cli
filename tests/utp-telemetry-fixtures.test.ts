@@ -86,6 +86,23 @@ describe('normalizeTelemetryEntry benign severity remaps', () => {
         expect(utp.severity).toBe(Severity.Info);
     });
 
+    it('remaps Socket bind failed / WSAEACCES permission Errors to Info', () => {
+        const bind = normalizeTelemetryEntry({
+            type: 'LogEntry',
+            severity: 'Error',
+            message:
+                'Socket: bind failed, error: An attempt was made to access a socket in a way forbidden by its access permissions.',
+        }).utp;
+        expect(bind.severity).toBe(Severity.Info);
+
+        const plainExtracted = normalizeTelemetryEntry({
+            type: 'LogEntry',
+            severity: Severity.Error,
+            message: 'An attempt was made to access a socket in a way forbidden by its access permissions.',
+        }).utp;
+        expect(plainExtracted.severity).toBe(Severity.Info);
+    });
+
     it('remaps OpenCL and StackAllocator elevated severities to Info', () => {
         const opencl = normalizeTelemetryEntry({
             type: 'LogEntry',
