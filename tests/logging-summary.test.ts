@@ -28,6 +28,13 @@ describe('stripSummaryNoiseFromLogMessage', () => {
         );
         expect(stripSummaryNoiseFromLogMessage('Access token is unavailable; failed to update')).toBe('');
     });
+
+    it('removes player-connection multicast noise', () => {
+        expect(stripSummaryNoiseFromLogMessage('Unable to join player connection multicast group (err: 10013).')).toBe('');
+        expect(
+            stripSummaryNoiseFromLogMessage('Before. Unable to join player connection multicast group (err: 10013). After.')
+        ).toBe('Before. After.');
+    });
 });
 
 describe('mergeLogEntriesPreferringSeverity', () => {

@@ -2,6 +2,32 @@
 # Shared helpers for UTP CI batch validation (.github/actions/scripts/run-utp-tests.sh).
 # Keep behavior in sync with contract tests: tests/run-utp-tests-contract.sh
 
+# Returns 0 if this UTP NDJSON line is known engine/CI noise (not a scenario failure).
+utp_line_is_benign_noise() {
+  local line="$1"
+  # Windows hosted runners often cannot join IGMP multicast (WSAEACCES / 10013).
+  # Unity logs this as Error then falls back to alternate multi-casting; builds continue.
+  echo "$line" | grep -qiE \
+    'Unable to join player connection multicast group|player connection multicast group \(err:[[:space:]]*10013\)'
+}
+
+# Returns 0 if the UTP file has an actionable Error/Exception/(optional Assert) that is not benign noise.
+utp_file_has_actionable_severity() {
+  local utp_file="$1"
+  local severities_re="$2"
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -z "$line" ] && continue
+    if echo "$line" | grep -qiE "\"severity\"[[:space:]]*:[[:space:]]*\"(${severities_re})\""; then
+      if utp_line_is_benign_noise "$line"; then
+        continue
+      fi
+      return 0
+    fi
+  done <"$utp_file"
+  return 1
+}
+
 # Returns 0 (true) if this UTP JSON log should fail an *expected-success* scenario.
 utp_signals_failure_for_expected_success() {
   local test_name="$1"
@@ -9,18 +35,18 @@ utp_signals_failure_for_expected_success() {
   case "$test_name" in
     CompilerWarnings|BuildWarnings)
       # Engine / allocator assert telemetry is common here; only treat Error/Exception as hard failures.
-      grep -qi '"severity"[[:space:]]*:[[:space:]]*"\(Error\|Exception\)"' "$utp_file" 2>/dev/null
+      utp_file_has_actionable_severity "$utp_file" 'Error|Exception'
       ;;
     *)
-      grep -qi '"severity"[[:space:]]*:[[:space:]]*"\(Error\|Exception\|Assert\)"' "$utp_file" 2>/dev/null
+      utp_file_has_actionable_severity "$utp_file" 'Error|Exception|Assert'
       ;;
   esac
 }
 
-# Returns 0 if UTP log contains any Error/Exception/Assert (used for expected-failure scenarios).
+# Returns 0 if UTP log contains any actionable Error/Exception/Assert (expected-failure scenarios).
 utp_signals_any_severity_problem() {
   local utp_file="$1"
-  grep -qi '"severity"[[:space:]]*:[[:space:]]*"\(Error\|Exception\|Assert\)"' "$utp_file" 2>/dev/null
+  utp_file_has_actionable_severity "$utp_file" 'Error|Exception|Assert'
 }
 
 # Prints first path to an NUnit results file containing <test-case>, or nothing.

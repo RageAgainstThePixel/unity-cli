@@ -25,6 +25,29 @@ if ! utp_signals_failure_for_expected_success CompilerWarnings "$tmpdir/warn-err
   fail "CompilerWarnings + Error should signal failure for expected-success check"
 fi
 
+# Windows GHA multicast permission noise (WSAEACCES 10013) must not fail expected-success checks.
+printf '%s\n' '{"type":"Log","severity":"Error","message":"Unable to join player connection multicast group (err: 10013)."}' >"$tmpdir/multicast.json"
+if utp_signals_failure_for_expected_success CompilerWarnings "$tmpdir/multicast.json"; then
+  fail "CompilerWarnings + player-connection multicast Error should be treated as benign noise"
+fi
+if utp_signals_failure_for_expected_success BuildWarnings "$tmpdir/multicast.json"; then
+  fail "BuildWarnings + player-connection multicast Error should be treated as benign noise"
+fi
+if utp_signals_failure_for_expected_success EditmodeTestsPassing "$tmpdir/multicast.json"; then
+  fail "Expected-success scenarios should ignore player-connection multicast Error noise"
+fi
+if utp_signals_any_severity_problem "$tmpdir/multicast.json"; then
+  fail "utp_signals_any_severity_problem should ignore player-connection multicast Error noise"
+fi
+
+# Mixed: multicast noise + real Error still fails.
+printf '%s\n' \
+  '{"type":"Log","severity":"Error","message":"Unable to join player connection multicast group (err: 10013)."}' \
+  '{"type":"Log","severity":"Error","message":"boom"}' >"$tmpdir/multicast-plus-real.json"
+if ! utp_signals_failure_for_expected_success CompilerWarnings "$tmpdir/multicast-plus-real.json"; then
+  fail "Real Error alongside multicast noise should still signal failure"
+fi
+
 printf '%s\n' '{"severity":"Assert"}' >"$tmpdir/nonwarn-assert.json"
 if ! utp_signals_failure_for_expected_success EditmodeTestsPassing "$tmpdir/nonwarn-assert.json"; then
   fail "Non-warning scenario should still treat Assert as failure for expected-success check"

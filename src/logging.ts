@@ -386,8 +386,10 @@ function formatDurationMsForSummary(ms: number | undefined): string {
 }
 
 /** Unity/CI noise shown in logs; omit from workflow summary foldouts and counts. */
-const SUMMARY_NOISE_ACCESS_TOKEN = 'Access token is unavailable; failed to update';
-
+const SUMMARY_NOISE_PHRASES = [
+    'Access token is unavailable; failed to update',
+    'Unable to join player connection multicast group',
+] as const;
 /**
  * Removes known noise phrases from a log message for summary display.
  * Exported for unit tests.
@@ -395,9 +397,12 @@ const SUMMARY_NOISE_ACCESS_TOKEN = 'Access token is unavailable; failed to updat
 export function stripSummaryNoiseFromLogMessage(message: string): string {
     const flat = toSingleLineText(message);
     if (!flat) return '';
-    const pattern = SUMMARY_NOISE_ACCESS_TOKEN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const out = flat.replace(new RegExp(pattern, 'gi'), ' ').replace(/\s+/g, ' ').trim();
-    return out;
+    let out = flat;
+    for (const phrase of SUMMARY_NOISE_PHRASES) {
+        const pattern = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        out = out.replace(new RegExp(pattern, 'gi'), ' ');
+    }
+    return out.replace(/\s+/g, ' ').trim();
 }
 
 function filterNoiseFromSummaryLogEntries(entries: UTP[]): UTP[] {
