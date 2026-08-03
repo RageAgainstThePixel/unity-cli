@@ -1269,8 +1269,8 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                     const message = stacktrace == undefined ? utp.message : `${utp.message}\n${stacktrace}`;
 
                     if (!annotationCommandPrefixRegex.test(message)) {
-                        // only annotate if the file is within the current project
-                        if (normalizedPath.annotationFile) {
+                        // Remapped benign noise (e.g. multicast WSAEACCES) must not become Checks annotations.
+                        if (normalizedPath.annotationFile && messageLevel === LogLevel.ERROR) {
                             logger.annotate(LogLevel.ERROR, message, normalizedPath.annotationFile, utp.line);
                             // Link stack trace to annotations: emit one annotation per frame (capped) for clickable stack in Checks
                             if (stacktrace && projectPath) {
