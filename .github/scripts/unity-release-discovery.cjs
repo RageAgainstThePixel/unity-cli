@@ -142,8 +142,36 @@ async function main() {
     const body = lines.join('\n');
     console.log(body);
 
+    // Step summary: local matrix/canary + drift count only (no HTTP-tainted API tip fields).
     if (process.env.GITHUB_STEP_SUMMARY) {
-        fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${body}\n`);
+        const summaryPath = path.resolve(process.env.GITHUB_STEP_SUMMARY);
+        const runnerTemp = process.env.RUNNER_TEMP ? path.resolve(process.env.RUNNER_TEMP) : '';
+        const underTemp =
+            runnerTemp &&
+            (summaryPath === runnerTemp || summaryPath.startsWith(runnerTemp + path.sep));
+        if (underTemp || process.env.GITHUB_ACTIONS === 'true') {
+            const localSummary = [
+                '## Unity release discovery',
+                '',
+                '### Blocking matrix (`build-options.json`)',
+                '',
+                ...matrixVersions.map(v => `- \`${v}\``),
+                '',
+                '### Preview canary pin',
+                '',
+                `- version: \`${canary.version || 'n/a'}\``,
+                `- changeset: \`${canary.changeset || 'n/a'}\``,
+                `- channel: \`${canary.channel || 'n/a'}\``,
+                '',
+                '### Drift',
+                '',
+                drifts.length === 0
+                    ? 'No matrix/canary drift detected against API tips.'
+                    : `${drifts.length} drift item(s) detected. See the job log for API tip details.`,
+                '',
+            ].join('\n');
+            fs.appendFileSync(summaryPath, localSummary);
+        }
     }
 
     if (process.env.OPEN_ISSUE === '1' && drifts.length > 0) {
