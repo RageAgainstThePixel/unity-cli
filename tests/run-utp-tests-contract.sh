@@ -133,4 +133,33 @@ if edit_play_log_suggests_tests_completed_ok EditmodeTestsPassing EditMode; then
   fail "edit_play_log_suggests_tests_completed_ok should reject logs that also contain failure markers"
 fi
 
+# --- run-utp-tests.sh harness contracts (no Unity) ---
+UTP_RUNNER="$ROOT/.github/actions/scripts/run-utp-tests.sh"
+if ! grep -q 'set -euo pipefail' "$UTP_RUNNER"; then
+  fail "run-utp-tests.sh must use set -euo pipefail"
+fi
+if grep -qE '^[[:space:]]*declare -A' "$UTP_RUNNER"; then
+  fail "run-utp-tests.sh must not use declare -A (macOS bash 3.2)"
+fi
+if ! grep -q 'scenarios_run' "$UTP_RUNNER"; then
+  fail "run-utp-tests.sh must track scenarios_run / zero-artifact guard"
+fi
+# Membership check mirrors is_known_utp_test in run-utp-tests.sh
+is_known_utp_test() {
+  case "$1" in
+    CompilerWarnings|CompilerErrors|BuildWarnings|BuildErrors|PlaymodeTestsErrors|EditmodeTestsErrors|EditmodeTestsPassing|EditmodeTestsSkipped|PlaymodeTestsPassing|PlaymodeTestsSkipped|EditmodeSuite|PlaymodeSuite)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+if ! is_known_utp_test CompilerWarnings; then
+  fail "CompilerWarnings should be a known UTP test"
+fi
+if is_known_utp_test NotARealTest; then
+  fail "NotARealTest should not be a known UTP test"
+fi
+
 echo "run-utp-tests-contract: OK"

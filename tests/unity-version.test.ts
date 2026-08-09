@@ -101,27 +101,43 @@ describe('UnityVersion', () => {
         expect(match.version).toBe('2021.3.5p2');
     });
 
-    it('returns original when no channel candidates exist', () => {
+    it('throws when no channel candidates exist', () => {
         const available = [
             '2021.3.5f2'
         ];
 
         const version = new UnityVersion('2021.3.x');
-        const match = version.findMatch(available, ['a']);
-
-        expect(match.version).toBe('2021.3.x');
+        expect(() => version.findMatch(available, ['a'])).toThrow(/No Unity release matching/);
     });
 
-    it('keeps explicit minor requests when no matching releases are available', () => {
+    it('throws when explicit minor has no matching releases', () => {
         const available = [
             '6000.3.0f1'
         ];
 
         const version = new UnityVersion('6000.0.x');
-        const match = version.findMatch(available);
+        expect(() => version.findMatch(available)).toThrow(/No Unity release matching/);
+    });
 
-        // When only other minors exist (e.g., 6000.3.*), do not fall back to them.
-        expect(match.version).toBe('6000.0.x');
+    it('throws for stable channel when only beta exists (6000.6)', () => {
+        const available = [
+            '6000.6.0b7',
+            '6000.5.7f1',
+            '6000.7.0a4',
+        ];
+        const version = new UnityVersion('6000.6');
+        expect(() => version.findMatch(available, ['f'])).toThrow(/No stable \(f\) release/);
+    });
+
+    it('resolves beta channel for 6000.6 when only b releases exist', () => {
+        const available = [
+            '6000.6.0b5',
+            '6000.6.0b7',
+            '6000.5.7f1',
+        ];
+        const version = new UnityVersion('6000.6');
+        const match = version.findMatch(available, ['b']);
+        expect(match.version).toBe('6000.6.0b7');
     });
 
     it('evaluates caret compatibility with satisfies', () => {

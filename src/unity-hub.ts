@@ -892,10 +892,17 @@ export class UnityHub {
                 }
 
                 if (!resolvedVersion?.changeset) {
-                    const unityReleaseInfo: UnityRelease = await this.GetEditorReleaseInfo(resolvedVersion);
+                    const unityReleaseInfo: UnityRelease = await this.GetEditorReleaseInfo(resolvedVersion, channels);
                     resolvedVersion = new UnityVersion(unityReleaseInfo.version, unityReleaseInfo.shortRevision, resolvedVersion.architecture);
                 }
             } catch (error) {
+                // Fail closed for partial versions: never Hub-install "6000.6" and hope it picks a beta.
+                if (!resolvedVersion.isFullyQualified()) {
+                    const msg = error instanceof Error ? error.message : String(error);
+                    throw new Error(
+                        `Failed to resolve Unity ${unityVersion.toString()} for channel(s) [${channels.join(', ')}]: ${msg}`
+                    );
+                }
                 this.logger.warn(`Failed to get Unity release info for ${resolvedVersion.toString()}! falling back to legacy search...\n${error}`);
                 try {
                     resolvedVersion = await this.fallbackVersionLookup(resolvedVersion);
@@ -903,6 +910,13 @@ export class UnityHub {
                     this.logger.warn(`Failed to lookup changeset for Unity ${resolvedVersion.toString()}!\n${fallbackError}`);
                 }
             }
+        }
+
+        if (!resolvedVersion.isLegacy() && !resolvedVersion.isFullyQualified()) {
+            throw new Error(
+                `Refusing to install non-fully-qualified Unity version ${resolvedVersion.toString()} without a resolved release. ` +
+                `Use a fully-qualified version or --channel matching an available stream.`
+            );
         }
 
         const allowPartialMatches = !resolvedVersion.isFullyQualified();
@@ -1112,9 +1126,10 @@ done
      * Gets the specified Unity release info from the Unity Releases API.
      * Supports querying by exact version or by prefix (e.g., "2020", "2020.1", "2021.x", "2021.3.x").
      * @param unityVersion The Unity version to get the release info for.
+     * @param channels Letter channels to accept (`f`, `p`, `b`, `a`, `x`). Default stable-only.
      * @returns The Unity release info.
      */
-    public async GetEditorReleaseInfo(unityVersion: UnityVersion): Promise<UnityRelease> {
+    public async GetEditorReleaseInfo(unityVersion: UnityVersion, channels: string[] = ['f']): Promise<UnityRelease> {
         // Prefer querying the releases API with the exact fully-qualified Unity version (e.g., 2022.3.10f1).
         // If we don't have a fully-qualified version, use the most specific prefix available:
         //  - "YYYY.M" when provided (e.g., 6000.1)
@@ -1135,6 +1150,7 @@ done
         }
 
         const releasesClient = new UnityReleasesClient();
+        const channelSet = new Set(channels.map(c => c.toLowerCase()));
 
         function getPlatform(): Array<('MAC_OS' | 'LINUX' | 'WINDOWS')> {
             switch (process.platform) {
@@ -1147,6 +1163,11 @@ done
                 default:
                     throw new Error(`Unsupported platform: ${process.platform}`);
             }
+        }
+
+        function releaseChannelLetter(releaseVersion: string): string | undefined {
+            const m = /^(\d{1,4})\.(\d+)\.(\d+)([abcfpx])(\d+)$/.exec(releaseVersion);
+            return m?.[4];
         }
 
         const request: GetUnityReleasesData = {
@@ -1173,15 +1194,18 @@ done
                 throw new Error(`No Unity releases found for version: ${version}`);
             }
 
-            // Filter to stable 'f' releases only unless the user explicitly asked for a pre-release
-            const isExplicitPrerelease = /[abcpx]$/.test(unityVersion.version) || /[abcpx]/.test(unityVersion.version);
             const releases: ReleaseInfo[] = (data.results || [])
                 .filter((release) => {
                     const v = release.version;
                     if (v == null || v === '') {
                         return false;
                     }
-                    return isExplicitPrerelease || v.includes('f');
+                    // Exact FQ request: accept that row regardless of channel filter.
+                    if (fullUnityVersionPattern.test(unityVersion.version) && v === unityVersion.version) {
+                        return true;
+                    }
+                    const letter = releaseChannelLetter(v);
+                    return letter != null && channelSet.has(letter);
                 })
                 .map(release => ({
                     unityRelease: release,
@@ -1189,7 +1213,13 @@ done
                 }));
 
             if (releases.length === 0) {
-                throw new Error(`No suitable Unity releases (stable) found for version: ${version}`);
+                const channelList = [...channelSet].join(',');
+                throw new Error(
+                    `No suitable Unity releases (channels: ${channelList}) found for version: ${version}` +
+                    (channelSet.has('f') && channelSet.size === 1
+                        ? `. No stable (f) release for ${version}; use --channel b/a or a fully-qualified version.`
+                        : '')
+                );
             }
 
             releases.sort((a, b) => UnityVersion.compare(b.unityVersion, a.unityVersion));

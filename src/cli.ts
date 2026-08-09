@@ -358,6 +358,7 @@ program.command('setup-unity')
     .option('-p, --unity-project <unityProject>', 'The path to a Unity project or "none" to skip project detection.')
     .option('-u, --unity-version <unityVersion>', 'The Unity version to get (e.g. 2020.3.1f1, 2021.x, 2022.1.*, 6000). If specified, it will override the version read from the project.')
     .option('-c, --changeset <changeset>', 'The Unity changeset to get (e.g. 1234567890ab).')
+    .option('--channel <channels>', 'Release channel letter(s) to accept when resolving partial versions: f,p,b,a,x (comma-separated). Default: f (stable only).')
     .option('-a, --arch <arch>', 'The Unity architecture to get (e.g. x86_64, arm64). Defaults to the architecture of the current process.')
     .option('-b, --build-targets <buildTargets>', 'The Unity build target to get/install as comma-separated values (e.g. iOS,Android).')
     .option('-m, --modules <modules>', 'The Unity module to get/install as comma-separated values (e.g. ios,android).')
@@ -416,10 +417,23 @@ program.command('setup-unity')
         }
 
         const unityHub = new UnityHub();
-        const unityEditor = await unityHub.GetEditor(unityVersion, modules);
+        const channels: string[] = options.channel
+            ? String(options.channel).split(/[ ,]+/).map((c: string) => c.trim().toLowerCase()).filter(Boolean)
+            : ['f'];
+        const allowedChannels = new Set(['f', 'p', 'b', 'a', 'x']);
+        for (const ch of channels) {
+            if (!allowedChannels.has(ch)) {
+                Logger.instance.error(`Invalid --channel '${ch}'. Expected one of: f, p, b, a, x.`);
+                process.exit(1);
+            }
+        }
+        const unityEditor = await unityHub.GetEditor(unityVersion, modules, channels);
         const output: { [key: string]: string } = {
             'UNITY_HUB_PATH': unityHub.executable,
-            'UNITY_EDITOR_PATH': unityEditor.editorPath
+            'UNITY_EDITOR_PATH': unityEditor.editorPath,
+            'UNITY_EDITOR_VERSION': unityEditor.version.version,
+            'UNITY_EDITOR_CHANGESET': unityEditor.version.changeset ?? '',
+            'UNITY_EDITOR_CHANNELS': channels.join(','),
         };
 
         if (unityProject) {

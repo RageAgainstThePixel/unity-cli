@@ -1,0 +1,44 @@
+# Non-blocking preview canary: newest Unity beta line (6000.6) with explicit channel + changeset.
+# Does not gate PR merges. TMP/buildpipeline issues may keep this red until upstream fix ships.
+name: unity-preview-canary
+on:
+  schedule:
+    - cron: '0 6 * * 1' # weekly Monday 06:00 UTC
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  canary:
+    name: preview canary
+    uses: ./.github/workflows/unity-build.yml
+    continue-on-error: true
+    permissions:
+      contents: read
+      checks: write
+    secrets:
+      UNITY_USERNAME: ${{ secrets.UNITY_USERNAME }}
+      UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+    with:
+      utp-test-profile: normal
+      matrix: >-
+        {
+          "include": [
+            {
+              "name": "ubuntu-latest StandaloneLinux64",
+              "os": "ubuntu-latest",
+              "unity-version": "6000.6.0b7",
+              "changeset": "53d4abb44f07",
+              "channel": "b",
+              "build-target": "StandaloneLinux64"
+            },
+            {
+              "name": "windows-latest StandaloneWindows64",
+              "os": "windows-latest",
+              "unity-version": "6000.6.0b7",
+              "changeset": "53d4abb44f07",
+              "channel": "b",
+              "build-target": "StandaloneWindows64"
+            }
+          ]
+        }

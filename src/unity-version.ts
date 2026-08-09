@@ -103,10 +103,16 @@ export class UnityVersion {
                 this.logger.debug(`Found Unity ${latest.version}`);
                 return new UnityVersion(latest.version, null, this.architecture);
             }
+
+            throw new Error(
+                `No Unity release matching ${this.version} for channel(s) [${channels.join(', ')}]. ` +
+                (channels.length === 1 && channels[0] === 'f'
+                    ? `No stable (f) release for ${this.version}; use --channel b/a or a fully-qualified version (e.g. 6000.6.0b7).`
+                    : `Try a different --channel or a fully-qualified version.`)
+            );
         }
 
-        this.logger.debug(`No matching Unity version found for ${this.version}`);
-        return this;
+        throw new Error(`No matching Unity version found for ${this.version}`);
     }
 
     satisfies(version: UnityVersion): boolean {

@@ -12,6 +12,7 @@ A powerful all-in-one command line utility for the Unity Game Engine. Automate U
 ## Table of Contents
 
 - [Features](#features)
+- [Unity version support](docs/unity-version-support.md)
 - [Installation](#installation)
 - [Usage](#usage)
   - [Common Commands](#common-commands)
@@ -48,6 +49,8 @@ A powerful all-in-one command line utility for the Unity Game Engine. Automate U
   - [Github Actions](#github-actions)
 
 ## Features
+
+See [Unity version support](docs/unity-version-support.md) for how CI tiers (supported / preview / untested) map to `setup-unity --channel` and the blocking matrix.
 
 - Install and manage Unity Hub and Unity Editors (multi-platform)
 - Activate and return Unity licenses (personal, professional, floating)
@@ -242,6 +245,7 @@ unity-cli hub editors --installed
 - `-p`, `--unity-project <unityProject>` The path to a Unity project or `none` to skip project detection.
 - `-u`, `--unity-version <unityVersion>` The Unity version to get (e.g. `2020.3.1f1`, `2021.x`, `2022.1.*`, `6000`). If specified, it will override the version read from the project.
 - `-c`, `--changeset <changeset>` The Unity changeset to get (e.g. `1234567890ab`).
+- `--channel <channels>` Release channel letter(s) when resolving partial versions: `f`,`p`,`b`,`a`,`x` (comma-separated). Default: `f` (stable only). Partial versions fail closed if no match exists for the requested channel(s).
 - `-a`, `--arch <arch>` The Unity architecture to get (e.g. `x86_64`, `arm64`). Defaults to the architecture of the current process.
 - `-b`, `--build-targets <buildTargets>` The Unity build target to get/install as comma-separated values (e.g. `iOS,Android`).
 - `-m`, `--modules <modules>` The Unity module to get/install as comma-separated values (e.g. `ios,android`).
