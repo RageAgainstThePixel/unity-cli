@@ -31,6 +31,13 @@ export class UnityVersion {
         changeset: string | null | undefined = undefined,
         architecture: 'X86_64' | 'ARM64' | undefined = undefined
     ) {
+        // Accept ProjectVersion / matrix style: "5.6.7f1 (e80cc3114ac1)"
+        const embedded = version.match(/^(.+?)\s*\(([a-fA-F0-9]+)\)\s*$/);
+        if (embedded) {
+            version = embedded[1]!.trim();
+            changeset = changeset ?? embedded[2];
+        }
+
         this.version = version;
         this.changeset = changeset;
         this.semVer = UnityVersion.createSemVer(version);

@@ -9,6 +9,20 @@ describe('UnityVersion', () => {
         expect(UnityVersion.compare(f2, version)).toBeGreaterThan(0);
     });
 
+    it('parses embedded changeset from version (changeset) strings', () => {
+        const version = new UnityVersion('5.6.7f1 (e80cc3114ac1)');
+        expect(version.version).toBe('5.6.7f1');
+        expect(version.changeset).toBe('e80cc3114ac1');
+        expect(version.isFullyQualified()).toBe(true);
+        expect(version.toString()).toBe('5.6.7f1 (e80cc3114ac1)');
+    });
+
+    it('keeps explicit changeset over embedded parenthetical', () => {
+        const version = new UnityVersion('5.6.7f1 (e80cc3114ac1)', 'aaaaaaaaaaaa');
+        expect(version.version).toBe('5.6.7f1');
+        expect(version.changeset).toBe('aaaaaaaaaaaa');
+    });
+
     it('orders Unity builds by channel and revision', () => {
         const alpha = new UnityVersion('2021.3.5a1');
         const beta = new UnityVersion('2021.3.5b1');

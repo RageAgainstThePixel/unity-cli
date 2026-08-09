@@ -884,30 +884,38 @@ export class UnityHub {
         let resolvedVersion = unityVersion;
 
         if (!resolvedVersion.isLegacy()) {
-            try {
-                if (!resolvedVersion.isFullyQualified()) {
+            // Hub list is a fast path only. Misses must fall through to the Releases API —
+            // do not fail-closed until both Hub match and API resolution have failed.
+            if (!resolvedVersion.isFullyQualified()) {
+                try {
                     const releases = await this.ListAvailableReleases();
                     Logger.instance.debug(`Found ${releases.length} available Unity releases, searching channels: ${channels.join(', ')}`);
                     resolvedVersion = resolvedVersion.findMatch(releases, channels);
-                }
-
-                if (!resolvedVersion?.changeset) {
-                    const unityReleaseInfo: UnityRelease = await this.GetEditorReleaseInfo(resolvedVersion, channels);
-                    resolvedVersion = new UnityVersion(unityReleaseInfo.version, unityReleaseInfo.shortRevision, resolvedVersion.architecture);
-                }
-            } catch (error) {
-                // Fail closed for partial versions: never Hub-install "6000.6" and hope it picks a beta.
-                if (!resolvedVersion.isFullyQualified()) {
-                    const msg = error instanceof Error ? error.message : String(error);
-                    throw new Error(
-                        `Failed to resolve Unity ${unityVersion.toString()} for channel(s) [${channels.join(', ')}]: ${msg}`
+                } catch (hubMatchError) {
+                    this.logger.debug(
+                        `No Hub list match for ${resolvedVersion.toString()} (channels: ${channels.join(', ')}); trying Releases API...\n${hubMatchError}`
                     );
                 }
-                this.logger.warn(`Failed to get Unity release info for ${resolvedVersion.toString()}! falling back to legacy search...\n${error}`);
+            }
+
+            if (!resolvedVersion.changeset) {
                 try {
-                    resolvedVersion = await this.fallbackVersionLookup(resolvedVersion);
-                } catch (fallbackError) {
-                    this.logger.warn(`Failed to lookup changeset for Unity ${resolvedVersion.toString()}!\n${fallbackError}`);
+                    const unityReleaseInfo: UnityRelease = await this.GetEditorReleaseInfo(resolvedVersion, channels);
+                    resolvedVersion = new UnityVersion(unityReleaseInfo.version, unityReleaseInfo.shortRevision, resolvedVersion.architecture);
+                } catch (error) {
+                    // Fail closed for partial versions: never Hub-install "6000.6" and hope it picks a beta.
+                    if (!resolvedVersion.isFullyQualified()) {
+                        const msg = error instanceof Error ? error.message : String(error);
+                        throw new Error(
+                            `Failed to resolve Unity ${unityVersion.toString()} for channel(s) [${channels.join(', ')}]: ${msg}`
+                        );
+                    }
+                    this.logger.warn(`Failed to get Unity release info for ${resolvedVersion.toString()}! falling back to legacy search...\n${error}`);
+                    try {
+                        resolvedVersion = await this.fallbackVersionLookup(resolvedVersion);
+                    } catch (fallbackError) {
+                        this.logger.warn(`Failed to lookup changeset for Unity ${resolvedVersion.toString()}!\n${fallbackError}`);
+                    }
                 }
             }
         }
