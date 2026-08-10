@@ -12,7 +12,6 @@ jobs:
   canary:
     name: preview canary
     uses: ./.github/workflows/unity-build.yml
-    continue-on-error: true
     permissions:
       contents: read
       checks: write
