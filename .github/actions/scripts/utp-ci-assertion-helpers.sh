@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 # Shared helpers for UTP CI batch validation (.github/actions/scripts/run-utp-tests.sh).
 # Keep behavior in sync with contract tests: tests/run-utp-tests-contract.sh
+#
+# Severity checks go through utp-file-has-actionable-severity.cjs → normalizeTelemetryEntry
+# so benign Unity noise (multicast WSAEACCES, OpenCL, StackAllocator, etc.) is remapped
+# before Error/Exception/Assert are treated as failures. Do not re-special-case messages here.
+
+_UTP_ASSERT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_UTP_ACTIONABLE_SEVERITY_JS="${_UTP_ASSERT_DIR}/utp-file-has-actionable-severity.cjs"
+
+# Returns 0 if the UTP file has an actionable Error/Exception/(optional Assert) after normalize.
+utp_file_has_actionable_severity() {
+  local utp_file="$1"
+  local severities_re="$2"
+  node "$_UTP_ACTIONABLE_SEVERITY_JS" "$utp_file" "$severities_re"
+}
 
 # Returns 0 (true) if this UTP JSON log should fail an *expected-success* scenario.
 utp_signals_failure_for_expected_success() {
@@ -9,18 +23,18 @@ utp_signals_failure_for_expected_success() {
   case "$test_name" in
     CompilerWarnings|BuildWarnings)
       # Engine / allocator assert telemetry is common here; only treat Error/Exception as hard failures.
-      grep -qi '"severity"[[:space:]]*:[[:space:]]*"\(Error\|Exception\)"' "$utp_file" 2>/dev/null
+      utp_file_has_actionable_severity "$utp_file" 'Error|Exception'
       ;;
     *)
-      grep -qi '"severity"[[:space:]]*:[[:space:]]*"\(Error\|Exception\|Assert\)"' "$utp_file" 2>/dev/null
+      utp_file_has_actionable_severity "$utp_file" 'Error|Exception|Assert'
       ;;
   esac
 }
 
-# Returns 0 if UTP log contains any Error/Exception/Assert (used for expected-failure scenarios).
+# Returns 0 if UTP log contains any actionable Error/Exception/Assert (expected-failure scenarios).
 utp_signals_any_severity_problem() {
   local utp_file="$1"
-  grep -qi '"severity"[[:space:]]*:[[:space:]]*"\(Error\|Exception\|Assert\)"' "$utp_file" 2>/dev/null
+  utp_file_has_actionable_severity "$utp_file" 'Error|Exception|Assert'
 }
 
 # Prints first path to an NUnit results file containing <test-case>, or nothing.

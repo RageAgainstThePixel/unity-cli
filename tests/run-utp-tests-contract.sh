@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # Contract tests for UTP CI assertion helpers (bash; run on Linux CI or Git Bash).
+# Requires dist/utp.js (npm run build) — helpers parse UTP via normalizeTelemetryEntry.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ ! -f "$ROOT/dist/utp.js" ]; then
+  echo "Building dist/ for UTP normalize…" >&2
+  (cd "$ROOT" && npm run build)
+fi
 # shellcheck source=../.github/actions/scripts/utp-ci-assertion-helpers.sh
 source "$ROOT/.github/actions/scripts/utp-ci-assertion-helpers.sh"
 
@@ -23,6 +28,71 @@ fi
 printf '%s\n' '{"type":"Log","severity":"Error","message":"boom"}' >"$tmpdir/warn-err.json"
 if ! utp_signals_failure_for_expected_success CompilerWarnings "$tmpdir/warn-err.json"; then
   fail "CompilerWarnings + Error should signal failure for expected-success check"
+fi
+
+# Windows GHA multicast permission noise — remapped to Info by normalizeTelemetryEntry.
+printf '%s\n' '{"type":"Log","severity":"Error","message":"Unable to join player connection multicast group (err: 10013)."}' >"$tmpdir/multicast.json"
+if utp_signals_failure_for_expected_success CompilerWarnings "$tmpdir/multicast.json"; then
+  fail "CompilerWarnings + player-connection multicast Error should be remapped (not actionable)"
+fi
+
+# Unity 2019-style sibling WSAEACCES line (same CI failure mode as multicast).
+printf '%s\n' '{"type":"Log","severity":"Error","message":"Socket: bind failed, error: An attempt was made to access a socket in a way forbidden by its access permissions."}' >"$tmpdir/socket-bind.json"
+if utp_signals_failure_for_expected_success CompilerWarnings "$tmpdir/socket-bind.json"; then
+  fail "CompilerWarnings + Socket bind failed should be remapped (not actionable)"
+fi
+if utp_signals_failure_for_expected_success BuildWarnings "$tmpdir/socket-bind.json"; then
+  fail "BuildWarnings + Socket bind failed should be remapped (not actionable)"
+fi
+if utp_signals_failure_for_expected_success BuildWarnings "$tmpdir/multicast.json"; then
+  fail "BuildWarnings + player-connection multicast Error should be remapped (not actionable)"
+fi
+if utp_signals_failure_for_expected_success EditmodeTestsPassing "$tmpdir/multicast.json"; then
+  fail "Expected-success scenarios should treat remapped multicast as non-actionable"
+fi
+if utp_signals_any_severity_problem "$tmpdir/multicast.json"; then
+  fail "utp_signals_any_severity_problem should treat remapped multicast as non-actionable"
+fi
+
+# Pretty-printed CLI artifact shape (writeUtpTelemetryLog) must parse + remap the same way.
+cat >"$tmpdir/multicast-pretty.json" <<'EOF'
+[
+  {
+    "type": "LogEntry",
+    "severity": "Error",
+    "message": "Unable to join player connection multicast group (err: 10013)."
+  }
+]
+EOF
+if utp_signals_failure_for_expected_success CompilerWarnings "$tmpdir/multicast-pretty.json"; then
+  fail "Pretty-printed multicast UTP artifact should remap Error → Info"
+fi
+
+# Mixed: multicast noise + real Error still fails.
+printf '%s\n' \
+  '{"type":"Log","severity":"Error","message":"Unable to join player connection multicast group (err: 10013)."}' \
+  '{"type":"Log","severity":"Error","message":"boom"}' >"$tmpdir/multicast-plus-real.json"
+if ! utp_signals_failure_for_expected_success CompilerWarnings "$tmpdir/multicast-plus-real.json"; then
+  fail "Real Error alongside multicast noise should still signal failure"
+fi
+
+# Pretty mixed array
+cat >"$tmpdir/multicast-plus-real-pretty.json" <<'EOF'
+[
+  {
+    "type": "LogEntry",
+    "severity": "Error",
+    "message": "Unable to join player connection multicast group (err: 10013)."
+  },
+  {
+    "type": "LogEntry",
+    "severity": "Error",
+    "message": "boom"
+  }
+]
+EOF
+if ! utp_signals_failure_for_expected_success CompilerWarnings "$tmpdir/multicast-plus-real-pretty.json"; then
+  fail "Pretty-printed real Error alongside multicast should still signal failure"
 fi
 
 printf '%s\n' '{"severity":"Assert"}' >"$tmpdir/nonwarn-assert.json"
@@ -61,6 +131,35 @@ fi
 printf '%s\n' 'Test run completed.' 'test run failed' >"$UNITY_PROJECT_PATH/Builds/Logs/EditmodeTestsPassing-EditMode-Unity-2.log"
 if edit_play_log_suggests_tests_completed_ok EditmodeTestsPassing EditMode; then
   fail "edit_play_log_suggests_tests_completed_ok should reject logs that also contain failure markers"
+fi
+
+# --- run-utp-tests.sh harness contracts (no Unity) ---
+UTP_RUNNER="$ROOT/.github/actions/scripts/run-utp-tests.sh"
+if ! grep -q 'set -euo pipefail' "$UTP_RUNNER"; then
+  fail "run-utp-tests.sh must use set -euo pipefail"
+fi
+if grep -qE '^[[:space:]]*declare -A' "$UTP_RUNNER"; then
+  fail "run-utp-tests.sh must not use declare -A (macOS bash 3.2)"
+fi
+if ! grep -q 'scenarios_run' "$UTP_RUNNER"; then
+  fail "run-utp-tests.sh must track scenarios_run / zero-artifact guard"
+fi
+# Membership check mirrors is_known_utp_test in run-utp-tests.sh
+is_known_utp_test() {
+  case "$1" in
+    CompilerWarnings|CompilerErrors|BuildWarnings|BuildErrors|PlaymodeTestsErrors|EditmodeTestsErrors|EditmodeTestsPassing|EditmodeTestsSkipped|PlaymodeTestsPassing|PlaymodeTestsSkipped|EditmodeSuite|PlaymodeSuite)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+if ! is_known_utp_test CompilerWarnings; then
+  fail "CompilerWarnings should be a known UTP test"
+fi
+if is_known_utp_test NotARealTest; then
+  fail "NotARealTest should not be a known UTP test"
 fi
 
 echo "run-utp-tests-contract: OK"

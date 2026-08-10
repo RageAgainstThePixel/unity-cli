@@ -31,6 +31,13 @@ export class UnityVersion {
         changeset: string | null | undefined = undefined,
         architecture: 'X86_64' | 'ARM64' | undefined = undefined
     ) {
+        // Accept ProjectVersion / matrix style: "5.6.7f1 (e80cc3114ac1)" (no regex: avoid ReDoS).
+        const embedded = UnityVersion.tryParseEmbeddedChangeset(version);
+        if (embedded) {
+            version = embedded.version;
+            changeset = changeset ?? embedded.changeset;
+        }
+
         this.version = version;
         this.changeset = changeset;
         this.semVer = UnityVersion.createSemVer(version);
@@ -103,10 +110,16 @@ export class UnityVersion {
                 this.logger.debug(`Found Unity ${latest.version}`);
                 return new UnityVersion(latest.version, null, this.architecture);
             }
+
+            throw new Error(
+                `No Unity release matching ${this.version} for channel(s) [${channels.join(', ')}]. ` +
+                (channels.length === 1 && channels[0] === 'f'
+                    ? `No stable (f) release for ${this.version}; use --channel b/a or a fully-qualified version (e.g. 6000.6.0b7).`
+                    : `Try a different --channel or a fully-qualified version.`)
+            );
         }
 
-        this.logger.debug(`No matching Unity version found for ${this.version}`);
-        return this;
+        throw new Error(`No matching Unity version found for ${this.version}`);
     }
 
     satisfies(version: UnityVersion): boolean {
@@ -143,6 +156,37 @@ export class UnityVersion {
 
     private static readonly UNITY_RELEASE_PATTERN = /^(\d{1,4})\.(\d+)\.(\d+)([abcfpx])(\d+)$/;
     private static readonly VERSION_TOKEN_PATTERN = /^(\d{1,4})(?:\.(\d+|x|\*))?(?:\.(\d+|x|\*))?/;
+
+    /**
+     * Parses trailing " (hexchangeset)" without regex to avoid ReDoS on hostile input.
+     */
+    private static tryParseEmbeddedChangeset(raw: string): { version: string; changeset: string } | null {
+        if (!raw.endsWith(')')) {
+            return null;
+        }
+        const open = raw.lastIndexOf('(');
+        if (open <= 0 || raw[open - 1] !== ' ') {
+            return null;
+        }
+        const hex = raw.slice(open + 1, -1);
+        if (hex.length === 0) {
+            return null;
+        }
+        for (let i = 0; i < hex.length; i++) {
+            const c = hex.charCodeAt(i);
+            const isHex =
+                (c >= 48 && c <= 57) || // 0-9
+                (c >= 97 && c <= 102) || // a-f
+                (c >= 65 && c <= 70); // A-F
+            if (!isHex) {
+                return null;
+            }
+        }
+        return {
+            version: raw.slice(0, open - 1).trimEnd(),
+            changeset: hex,
+        };
+    }
 
     private static readonly UNITY_CHANNEL_ORDER: Record<string, number> = {
         a: 0,

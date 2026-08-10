@@ -1,4 +1,5 @@
 import { UTP, Severity } from './utp';
+import { UTP_BENIGN_SEVERITY_REMAPS } from './utp-benign';
 import { GitHubActionsLoggerProvider, GitHubAnnotationLevel } from './github-actions-ci';
 import { ILoggerProvider, LocalCliLoggerProvider, LoggerAnnotationOptions, MarkdownTarget } from './logger-provider';
 
@@ -386,18 +387,32 @@ function formatDurationMsForSummary(ms: number | undefined): string {
 }
 
 /** Unity/CI noise shown in logs; omit from workflow summary foldouts and counts. */
-const SUMMARY_NOISE_ACCESS_TOKEN = 'Access token is unavailable; failed to update';
+function buildSummaryNoisePatterns(): RegExp[] {
+    return UTP_BENIGN_SEVERITY_REMAPS.map(({ fragment }) => {
+        const escaped = fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Multicast lines often include "(err: 10013)." — strip the whole clause.
+        if (fragment.includes('multicast group')) {
+            return new RegExp(`${escaped}(?:\\s*\\(err:\\s*\\d+\\))?\\.?`, 'gi');
+        }
+        return new RegExp(escaped, 'gi');
+    });
+}
+
+const SUMMARY_NOISE_PATTERNS: RegExp[] = buildSummaryNoisePatterns();
 
 /**
  * Removes known noise phrases from a log message for summary display.
- * Exported for unit tests.
+ * Exported for unit tests. Fragments come from {@link UTP_BENIGN_SEVERITY_REMAPS}.
  */
 export function stripSummaryNoiseFromLogMessage(message: string): string {
     const flat = toSingleLineText(message);
     if (!flat) return '';
-    const pattern = SUMMARY_NOISE_ACCESS_TOKEN.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const out = flat.replace(new RegExp(pattern, 'gi'), ' ').replace(/\s+/g, ' ').trim();
-    return out;
+    let out = flat;
+    for (const pattern of SUMMARY_NOISE_PATTERNS) {
+        pattern.lastIndex = 0;
+        out = out.replace(pattern, ' ');
+    }
+    return out.replace(/\s+/g, ' ').trim();
 }
 
 function filterNoiseFromSummaryLogEntries(entries: UTP[]): UTP[] {

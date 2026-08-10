@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
 _UTP_HELPERS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/utp-ci-assertion-helpers.sh"
 # shellcheck source=utp-ci-assertion-helpers.sh
@@ -23,28 +23,26 @@ fi
 
 IFS=',' read -ra tests <<< "$TESTS_INPUT"
 failures=0
+scenarios_run=0
 
-declare -A known_tests=(
-  [CompilerWarnings]=1
-  [CompilerErrors]=1
-  [BuildWarnings]=1
-  [BuildErrors]=1
-  [PlaymodeTestsErrors]=1
-  [EditmodeTestsErrors]=1
-  [EditmodeTestsPassing]=1
-  [EditmodeTestsSkipped]=1
-  [PlaymodeTestsPassing]=1
-  [PlaymodeTestsSkipped]=1
-  [EditmodeSuite]=1
-  [PlaymodeSuite]=1
-)
+# Bash 3.2-safe (macOS /bin/bash): avoid declare -A with unquoted keys under set -u.
+is_known_utp_test() {
+  case "$1" in
+    CompilerWarnings|CompilerErrors|BuildWarnings|BuildErrors|PlaymodeTestsErrors|EditmodeTestsErrors|EditmodeTestsPassing|EditmodeTestsSkipped|PlaymodeTestsPassing|PlaymodeTestsSkipped|EditmodeSuite|PlaymodeSuite)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
 
 effective_tests=0
 declare -a selected_tests=()
 for raw_test in "${tests[@]}"; do
   tname="$(echo "$raw_test" | xargs)"
   if [ -n "$tname" ] && [ "$tname" != "None" ]; then
-    if [ -z "${known_tests[$tname]+x}" ]; then
+    if ! is_known_utp_test "$tname"; then
       echo "::error::TESTS_INPUT includes unknown test selection '$tname'"
       exit 1
     fi
@@ -109,6 +107,8 @@ for raw_test in "${tests[@]}"; do
     echo "Skipping empty/None test entry"
     continue
   fi
+
+  scenarios_run=$((scenarios_run + 1))
 
   src="$GITHUB_WORKSPACE/unity-tests/${test_name}.cs"
   is_suite=0
@@ -385,6 +385,23 @@ for raw_test in "${tests[@]}"; do
   find "$UNITY_PROJECT_PATH/Builds/Logs" -maxdepth 1 -type f -name "*${test_name}*.log" -exec cp {} "$test_artifacts/" \; 2>/dev/null || true
 
 done
+
+if [ "$scenarios_run" -eq 0 ]; then
+  echo "::error::No UTP scenarios were executed (harness aborted or empty selection)"
+  exit 1
+fi
+
+utp_log_count=0
+if [ -d "$UNITY_PROJECT_PATH/Builds/Logs" ]; then
+  utp_log_count=$(find "$UNITY_PROJECT_PATH/Builds/Logs" -maxdepth 1 -type f -name '*-utp-json.log' 2>/dev/null | wc -l | tr -d ' ')
+fi
+if [ "${utp_log_count:-0}" -eq 0 ] && [ -d "${GITHUB_WORKSPACE:-}/utp-artifacts" ]; then
+  utp_log_count=$(find "$GITHUB_WORKSPACE/utp-artifacts" -type f -name '*-utp-json.log' 2>/dev/null | wc -l | tr -d ' ')
+fi
+if [ "${utp_log_count:-0}" -eq 0 ]; then
+  echo "::error::No *-utp-json.log artifacts were produced after ${scenarios_run} scenario(s) — treating as harness failure"
+  exit 1
+fi
 
 if [ "$failures" -gt 0 ]; then
   echo "::error::One or more tests did not meet expectations ($failures)"

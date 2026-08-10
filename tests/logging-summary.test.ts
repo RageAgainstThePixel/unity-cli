@@ -28,6 +28,20 @@ describe('stripSummaryNoiseFromLogMessage', () => {
         );
         expect(stripSummaryNoiseFromLogMessage('Access token is unavailable; failed to update')).toBe('');
     });
+
+    it('removes player-connection multicast noise', () => {
+        expect(stripSummaryNoiseFromLogMessage('Unable to join player connection multicast group (err: 10013).')).toBe('');
+        expect(
+            stripSummaryNoiseFromLogMessage('Before. Unable to join player connection multicast group (err: 10013). After.')
+        ).toBe('Before. After.');
+    });
+
+    it('removes OpenCL / access-token noise phrases from the shared remap list', () => {
+        expect(stripSummaryNoiseFromLogMessage('Access token is unavailable; failed to update')).toBe('');
+        expect(
+            stripSummaryNoiseFromLogMessage('Failed to find a suitable OpenCL device, baking cannot use GPU lightmapper.')
+        ).toBe('');
+    });
 });
 
 describe('mergeLogEntriesPreferringSeverity', () => {

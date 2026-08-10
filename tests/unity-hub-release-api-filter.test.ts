@@ -62,4 +62,21 @@ describe('UnityHub GetEditorReleaseInfo (sparse API rows)', () => {
         const hub = new UnityHub();
         await expect(hub.GetEditorReleaseInfo(new UnityVersion('2021'))).rejects.toThrow(/No suitable Unity releases/);
     });
+
+    it('accepts beta releases when channel b is requested', async () => {
+        mockGetUnityReleases.mockResolvedValue({
+            data: {
+                results: [
+                    { version: '6000.6.0b7', shortRevision: '53d4abb44f07' },
+                    { version: '6000.5.7f1', shortRevision: 'stable' },
+                ],
+            },
+            error: undefined,
+        });
+
+        const hub = new UnityHub();
+        const info = await hub.GetEditorReleaseInfo(new UnityVersion('6000.6'), ['b']);
+        expect(info.version).toBe('6000.6.0b7');
+        expect(info.shortRevision).toBe('53d4abb44f07');
+    });
 });

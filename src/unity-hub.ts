@@ -39,46 +39,108 @@ const MIN_NATIVE_WINDOWS_ARM64_HUB_VERSION = coerce('3.17.0')!;
 /** Allowed characters in a Debian package version (no shell metacharacters). */
 const LINUX_HUB_DEB_VERSION_RE = /^[0-9A-Za-z.+~:-]+$/;
 
+/** Hub 3.20+ Electron Forge deb layout. */
+export const LINUX_HUB_EXECUTABLE_MODERN = '/usr/lib/unityhub/unityhub';
+/** Hub ≤3.19 fpm / electron-builder layout. */
+export const LINUX_HUB_EXECUTABLE_LEGACY = '/opt/unityhub/unityhub';
+
+/**
+ * Resolves the Unity Hub binary on Linux.
+ * Prefers UNITY_HUB_PATH, then the Hub 3.20+ path, then the legacy /opt path.
+ * When neither is present (pre-install), defaults to the modern path.
+ */
+export function resolveLinuxHubExecutable(
+    envPath: string | undefined = process.env.UNITY_HUB_PATH,
+    existsSync: (p: string) => boolean = fs.existsSync
+): string {
+    if (envPath !== undefined && envPath.length > 0) {
+        return envPath;
+    }
+    if (existsSync(LINUX_HUB_EXECUTABLE_MODERN)) {
+        return LINUX_HUB_EXECUTABLE_MODERN;
+    }
+    if (existsSync(LINUX_HUB_EXECUTABLE_LEGACY)) {
+        return LINUX_HUB_EXECUTABLE_LEGACY;
+    }
+    return LINUX_HUB_EXECUTABLE_MODERN;
+}
+
 /**
  * Fixed bootstrap for Linux Hub apt repo + update index. No user-controlled interpolation (CodeQL).
- * Matches prior `Install` update path (wget | gpg | sudo tee, then sources.list).
+ * Uses DEB822 .sources (Hub 3.20+) and removes legacy .list to avoid duplicate-source warnings.
  */
 const LINUX_HUB_LINUX_UPDATE_REPO_BOOTSTRAP = `#!/bin/sh
 set -e
 wget -qO - https://hub.unity3d.com/linux/keys/public | gpg --dearmor | sudo tee /usr/share/keyrings/Unity_Technologies_ApS.gpg >/dev/null
-sudo sh -c 'echo "deb [signed-by=/usr/share/keyrings/Unity_Technologies_ApS.gpg] https://hub.unity3d.com/linux/repos/deb stable main" > /etc/apt/sources.list.d/unityhub.list'
+sudo rm -f /etc/apt/sources.list.d/unityhub.list
+sudo tee /etc/apt/sources.list.d/unityhub.sources >/dev/null <<'EOF'
+Types: deb
+URIs: https://hub.unity3d.com/linux/repos/deb
+Suites: stable
+Components: main
+Signed-By: /usr/share/keyrings/Unity_Technologies_ApS.gpg
+EOF
 sudo apt-get update --allow-releaseinfo-change
 `;
 
 /**
  * First phase of fresh Linux Hub install: machine-id, repo keys, jammy mirror, apt-get update.
- * No user-controlled interpolation.
+ * No user-controlled interpolation. Uses DEB822 .sources (Hub 3.20+).
  */
 const LINUX_HUB_LINUX_INSTALL_BOOTSTRAP = `#!/bin/sh
 set -e
 dbus-uuidgen >/etc/machine-id && mkdir -p /var/lib/dbus/ && ln -sf /etc/machine-id /var/lib/dbus/machine-id
 wget -qO - https://hub.unity3d.com/linux/keys/public | gpg --dearmor | tee /usr/share/keyrings/Unity_Technologies_ApS.gpg >/dev/null
-echo "deb [signed-by=/usr/share/keyrings/Unity_Technologies_ApS.gpg] https://hub.unity3d.com/linux/repos/deb stable main" > /etc/apt/sources.list.d/unityhub.list
+rm -f /etc/apt/sources.list.d/unityhub.list
+tee /etc/apt/sources.list.d/unityhub.sources >/dev/null <<'EOF'
+Types: deb
+URIs: https://hub.unity3d.com/linux/repos/deb
+Suites: stable
+Components: main
+Signed-By: /usr/share/keyrings/Unity_Technologies_ApS.gpg
+EOF
 echo "deb https://archive.ubuntu.com/ubuntu jammy main universe" | tee /etc/apt/sources.list.d/jammy.list
 apt-get update
 `;
 
 /**
  * Post-install cleanup and xvfb / unity-hub wrapper setup. Runs as root; no user interpolation.
+ * Wrapper resolves Hub 3.20+ (/usr/lib/unityhub) vs legacy (/opt/unityhub) at runtime so apt
+ * upgrades that move the binary do not leave a stale path (exit 127).
  */
 const LINUX_HUB_LINUX_INSTALL_POST = `#!/bin/sh
 set -e
 apt-get clean
 sed -i 's/^\\(.*DISPLAY=:.*XAUTHORITY=.*\\)\\( "\\$@" \\)2>&1$/\\1\\2/' /usr/bin/xvfb-run
-printf '#!/bin/bash\\nxvfb-run --auto-servernum /opt/unityhub/unityhub "$@" 2>/dev/null' | tee /usr/bin/unity-hub >/dev/null
-chmod 777 /usr/bin/unity-hub
-which unityhub || { echo "Unity Hub installation failed"; exit 1; }
-hubPath=$(which unityhub)
-if [ -z "$hubPath" ]; then
-    echo "Failed to install Unity Hub"
-    exit 1
+command -v unityhub >/dev/null || { echo "Unity Hub installation failed"; exit 1; }
+hubPath=$(readlink -f "$(command -v unityhub)" 2>/dev/null || true)
+if [ -z "$hubPath" ] || [ ! -x "$hubPath" ]; then
+    if [ -x /usr/lib/unityhub/unityhub ]; then
+        hubPath=/usr/lib/unityhub/unityhub
+    elif [ -x /opt/unityhub/unityhub ]; then
+        hubPath=/opt/unityhub/unityhub
+    else
+        echo "Failed to install Unity Hub"
+        exit 1
+    fi
 fi
-chmod -R 777 "$hubPath"
+tee /usr/bin/unity-hub >/dev/null <<'WRAPPER'
+#!/bin/bash
+if [ -x /usr/lib/unityhub/unityhub ]; then
+  hubBin=/usr/lib/unityhub/unityhub
+elif [ -x /opt/unityhub/unityhub ]; then
+  hubBin=/opt/unityhub/unityhub
+else
+  hubBin=$(readlink -f "$(command -v unityhub)" 2>/dev/null || true)
+fi
+if [ -z "$hubBin" ] || [ ! -x "$hubBin" ]; then
+  echo "Unity Hub binary not found" >&2
+  exit 127
+fi
+exec xvfb-run --auto-servernum "$hubBin" "$@" 2>/dev/null
+WRAPPER
+chmod 777 /usr/bin/unity-hub
+chmod -R 777 "$(dirname "$hubPath")"
 `;
 
 const LINUX_HUB_LINUX_APT_EXTRAS = [
@@ -93,9 +155,9 @@ const LINUX_HUB_LINUX_APT_EXTRAS = [
 
 export class UnityHub {
     /** The path to the Unity Hub executable. */
-    public readonly executable: string;
+    public executable!: string;
     /** The root directory of the Unity Hub installation. */
-    public readonly rootDirectory: string;
+    public rootDirectory!: string;
     /** The file extension for the Unity editor executable. */
     public readonly editorFileExtension: string;
 
@@ -131,13 +193,18 @@ export class UnityHub {
                 this.editorFileExtension = '/Unity.app/Contents/MacOS/Unity';
                 break;
             case 'linux':
-                this.executable = process.env.UNITY_HUB_PATH || '/opt/unityhub/unityhub';
-                this.rootDirectory = path.join(this.executable, '../');
+                this.refreshLinuxHubPaths();
                 this.editorFileExtension = '/Editor/Unity';
                 break;
             default:
                 throw new Error(`Unsupported platform: ${process.platform}`);
         }
+    }
+
+    /** Re-resolve Linux Hub executable + root after install/upgrade (Hub 3.20 moved under /usr/lib). */
+    private refreshLinuxHubPaths(): void {
+        this.executable = resolveLinuxHubExecutable();
+        this.rootDirectory = path.join(this.executable, '../');
     }
 
     /**
@@ -535,6 +602,9 @@ export class UnityHub {
                         ['apt-get', 'install', '-y', '--no-install-recommends', '--only-upgrade', hubPkg],
                         linuxExecOpts
                     );
+                    // Refresh xvfb wrapper after upgrades that move /opt → /usr/lib (Hub 3.20+).
+                    await Exec('sudo', ['sh', '-c', LINUX_HUB_LINUX_INSTALL_POST], linuxExecOpts);
+                    this.refreshLinuxHubPaths();
                     this.logger.info(`Unity Hub updated successfully.`);
                 } else {
                     throw new Error(`Unsupported platform: ${process.platform}`);
@@ -544,6 +614,9 @@ export class UnityHub {
             }
         }
 
+        if (process.platform === 'linux') {
+            this.refreshLinuxHubPaths();
+        }
         await fs.promises.access(this.executable, fs.constants.X_OK);
         return this.executable;
     }
@@ -683,6 +756,7 @@ export class UnityHub {
                     linuxExecOpts
                 );
                 await Exec('sudo', ['sh', '-c', LINUX_HUB_LINUX_INSTALL_POST], linuxExecOpts);
+                this.refreshLinuxHubPaths();
                 break;
             }
             default:
@@ -810,25 +884,47 @@ export class UnityHub {
         let resolvedVersion = unityVersion;
 
         if (!resolvedVersion.isLegacy()) {
-            try {
-                if (!resolvedVersion.isFullyQualified()) {
+            // Hub list is a fast path only. Misses must fall through to the Releases API —
+            // do not fail-closed until both Hub match and API resolution have failed.
+            if (!resolvedVersion.isFullyQualified()) {
+                try {
                     const releases = await this.ListAvailableReleases();
                     Logger.instance.debug(`Found ${releases.length} available Unity releases, searching channels: ${channels.join(', ')}`);
                     resolvedVersion = resolvedVersion.findMatch(releases, channels);
-                }
-
-                if (!resolvedVersion?.changeset) {
-                    const unityReleaseInfo: UnityRelease = await this.GetEditorReleaseInfo(resolvedVersion);
-                    resolvedVersion = new UnityVersion(unityReleaseInfo.version, unityReleaseInfo.shortRevision, resolvedVersion.architecture);
-                }
-            } catch (error) {
-                this.logger.warn(`Failed to get Unity release info for ${resolvedVersion.toString()}! falling back to legacy search...\n${error}`);
-                try {
-                    resolvedVersion = await this.fallbackVersionLookup(resolvedVersion);
-                } catch (fallbackError) {
-                    this.logger.warn(`Failed to lookup changeset for Unity ${resolvedVersion.toString()}!\n${fallbackError}`);
+                } catch (hubMatchError) {
+                    this.logger.debug(
+                        `No Hub list match for ${resolvedVersion.toString()} (channels: ${channels.join(', ')}); trying Releases API...\n${hubMatchError}`
+                    );
                 }
             }
+
+            if (!resolvedVersion.changeset) {
+                try {
+                    const unityReleaseInfo: UnityRelease = await this.GetEditorReleaseInfo(resolvedVersion, channels);
+                    resolvedVersion = new UnityVersion(unityReleaseInfo.version, unityReleaseInfo.shortRevision, resolvedVersion.architecture);
+                } catch (error) {
+                    // Fail closed for partial versions: never Hub-install "6000.6" and hope it picks a beta.
+                    if (!resolvedVersion.isFullyQualified()) {
+                        const msg = error instanceof Error ? error.message : String(error);
+                        throw new Error(
+                            `Failed to resolve Unity ${unityVersion.toString()} for channel(s) [${channels.join(', ')}]: ${msg}`
+                        );
+                    }
+                    this.logger.warn(`Failed to get Unity release info for ${resolvedVersion.toString()}! falling back to legacy search...\n${error}`);
+                    try {
+                        resolvedVersion = await this.fallbackVersionLookup(resolvedVersion);
+                    } catch (fallbackError) {
+                        this.logger.warn(`Failed to lookup changeset for Unity ${resolvedVersion.toString()}!\n${fallbackError}`);
+                    }
+                }
+            }
+        }
+
+        if (!resolvedVersion.isLegacy() && !resolvedVersion.isFullyQualified()) {
+            throw new Error(
+                `Refusing to install non-fully-qualified Unity version ${resolvedVersion.toString()} without a resolved release. ` +
+                `Use a fully-qualified version or --channel matching an available stream.`
+            );
         }
 
         const allowPartialMatches = !resolvedVersion.isFullyQualified();
@@ -1038,9 +1134,10 @@ done
      * Gets the specified Unity release info from the Unity Releases API.
      * Supports querying by exact version or by prefix (e.g., "2020", "2020.1", "2021.x", "2021.3.x").
      * @param unityVersion The Unity version to get the release info for.
+     * @param channels Letter channels to accept (`f`, `p`, `b`, `a`, `x`). Default stable-only.
      * @returns The Unity release info.
      */
-    public async GetEditorReleaseInfo(unityVersion: UnityVersion): Promise<UnityRelease> {
+    public async GetEditorReleaseInfo(unityVersion: UnityVersion, channels: string[] = ['f']): Promise<UnityRelease> {
         // Prefer querying the releases API with the exact fully-qualified Unity version (e.g., 2022.3.10f1).
         // If we don't have a fully-qualified version, use the most specific prefix available:
         //  - "YYYY.M" when provided (e.g., 6000.1)
@@ -1061,6 +1158,7 @@ done
         }
 
         const releasesClient = new UnityReleasesClient();
+        const channelSet = new Set(channels.map(c => c.toLowerCase()));
 
         function getPlatform(): Array<('MAC_OS' | 'LINUX' | 'WINDOWS')> {
             switch (process.platform) {
@@ -1073,6 +1171,11 @@ done
                 default:
                     throw new Error(`Unsupported platform: ${process.platform}`);
             }
+        }
+
+        function releaseChannelLetter(releaseVersion: string): string | undefined {
+            const m = /^(\d{1,4})\.(\d+)\.(\d+)([abcfpx])(\d+)$/.exec(releaseVersion);
+            return m?.[4];
         }
 
         const request: GetUnityReleasesData = {
@@ -1099,15 +1202,18 @@ done
                 throw new Error(`No Unity releases found for version: ${version}`);
             }
 
-            // Filter to stable 'f' releases only unless the user explicitly asked for a pre-release
-            const isExplicitPrerelease = /[abcpx]$/.test(unityVersion.version) || /[abcpx]/.test(unityVersion.version);
             const releases: ReleaseInfo[] = (data.results || [])
                 .filter((release) => {
                     const v = release.version;
                     if (v == null || v === '') {
                         return false;
                     }
-                    return isExplicitPrerelease || v.includes('f');
+                    // Exact FQ request: accept that row regardless of channel filter.
+                    if (fullUnityVersionPattern.test(unityVersion.version) && v === unityVersion.version) {
+                        return true;
+                    }
+                    const letter = releaseChannelLetter(v);
+                    return letter != null && channelSet.has(letter);
                 })
                 .map(release => ({
                     unityRelease: release,
@@ -1115,7 +1221,13 @@ done
                 }));
 
             if (releases.length === 0) {
-                throw new Error(`No suitable Unity releases (stable) found for version: ${version}`);
+                const channelList = [...channelSet].join(',');
+                throw new Error(
+                    `No suitable Unity releases (channels: ${channelList}) found for version: ${version}` +
+                    (channelSet.has('f') && channelSet.size === 1
+                        ? `. No stable (f) release for ${version}; use --channel b/a or a fully-qualified version.`
+                        : '')
+                );
             }
 
             releases.sort((a, b) => UnityVersion.compare(b.unityVersion, a.unityVersion));

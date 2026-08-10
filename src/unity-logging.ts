@@ -20,8 +20,10 @@ import {
     UTPMemoryLeak,
     UTPPlayerBuildInfo,
     UTPTestStatus,
-    normalizeTelemetryEntry
+    isElevatedUtpSeverity,
+    normalizeTelemetryEntry,
 } from './utp';
+import { utpMessageMatchesBenignRemap } from './utp-benign';
 
 /**
  * Result of the tailLogFile function containing cleanup resources.
@@ -1128,26 +1130,6 @@ async function writeUtpTelemetryLog(filePath: string, entries: UTP[], logger: Lo
 }
 
 /**
- * Editor log messages whose severity has been changed.
- * Useful for making certain error messages that are not critical less noisy.
- * Key is a substring of the log message, value is the remapped LogLevel.
- */
-const remappedEditorLogs: Record<string, LogLevel> = {
-    'OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
-    'Failed to find a suitable OpenCL device, baking cannot use GPU lightmapper.': LogLevel.INFO,
-    '~StackAllocator(ALLOC_TEMP_MAIN) m_LastAlloc not NULL. Did you forget to call FreeAllStackAllocations()?': LogLevel.INFO,
-};
-
-function getRemappedEditorLogLevel(message: string): LogLevel | undefined {
-    for (const [fragment, level] of Object.entries(remappedEditorLogs)) {
-        if (message.includes(fragment)) {
-            return level;
-        }
-    }
-    return undefined;
-}
-
-/**
  * Tails a log file using fs.watch and ReadStream for efficient reading.
  * @param logPath The path to the log file to tail.
  * @param projectPath The path to the project (used for log annotation).
@@ -1253,15 +1235,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                     }
                 }
 
-                if (utp.message && 'severity' in utp &&
-                    (utp.severity === Severity.Error || utp.severity === Severity.Exception || utp.severity === Severity.Assert)) {
-                    let messageLevel: LogLevel = LogLevel.ERROR;
-
-                    const remappedLevel = getRemappedEditorLogLevel(utp.message);
-                    if (remappedLevel !== undefined) {
-                        messageLevel = remappedLevel;
-                    }
-
+                if (utp.message && 'severity' in utp && isElevatedUtpSeverity(utp.severity)) {
                     const normalizedPath = normalizeAnnotationPath(utp.file, projectPath);
                     const stacktrace = sanitizeStackTrace(utp.stackTrace);
                     const message = stacktrace == undefined ? utp.message : `${utp.message}\n${stacktrace}`;
@@ -1279,19 +1253,15 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                                 }
                             }
                         } else {
-                            switch (messageLevel) {
-                                case LogLevel.WARN:
-                                    logger.warn(message);
-                                    break;
-                                case LogLevel.ERROR:
-                                    logger.error(message);
-                                    break;
-                                case LogLevel.INFO:
-                                default:
-                                    logger.info(message);
-                                    break;
-                            }
+                            logger.error(message);
                         }
+                    }
+                } else if (utp.message && utpMessageMatchesBenignRemap(utp.message)) {
+                    // Remapped at normalize time (e.g. multicast WSAEACCES); surface as info, not error.
+                    const stacktrace = sanitizeStackTrace(utp.stackTrace);
+                    const message = stacktrace == undefined ? utp.message : `${utp.message}\n${stacktrace}`;
+                    if (!annotationCommandPrefixRegex.test(message)) {
+                        logger.info(message);
                     }
                 } else if (Logger.instance.logLevel === LogLevel.UTP) {
                     printUTP(utp);
@@ -1300,8 +1270,21 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                 logger.warn(`Failed to parse telemetry JSON: ${error} -- raw: ${jsonPart}`);
             }
         } else {
+            // Skip plain-log false positives (e.g. "Socket: bind failed, error: …" matching \berror\b).
+            if (utpMessageMatchesBenignRemap(line)) {
+                if (Logger.instance.logLevel !== LogLevel.UTP) {
+                    process.stdout.write(`${line}\n`);
+                }
+                return;
+            }
             const scan = parsePlainLogIssue(line);
             if (scan) {
+                if (utpMessageMatchesBenignRemap(scan.message)) {
+                    if (Logger.instance.logLevel !== LogLevel.UTP) {
+                        process.stdout.write(`${line}\n`);
+                    }
+                    return;
+                }
                 const key = buildIssueKey(scan.file, scan.line, scan.message);
                 if (!seenIssueKeys.has(key)) {
                     seenIssueKeys.add(key);
