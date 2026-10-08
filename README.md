@@ -2,7 +2,7 @@
 
 [![Discord](https://img.shields.io/discord/855294214065487932.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/xQgMW9ufN4) [![NPM Version](https://img.shields.io/npm/v/%40rage-against-the-pixel%2Funity-cli)](https://www.npmjs.com/package/@rage-against-the-pixel/unity-cli) [![NPM Downloads](https://img.shields.io/npm/dw/%40rage-against-the-pixel%2Funity-cli)](https://www.npmjs.com/package/@rage-against-the-pixel/unity-cli)
 
-A CI wrapper for Unity Hub, licenses, editor runs, and UPM pack/sign. This package is in maintenance mode.
+A CI wrapper for Unity Hub, licenses, and editor runs. This package is in maintenance mode.
 
 ## Maintenance
 
@@ -12,9 +12,10 @@ Unity ships an official CLI named `unity`. See [Use the Unity CLI](https://docs.
 
 Prefer the official CLI for Hub install, editor install and uninstall, modules, project create and open, templates, run, build, test, serial and floating licenses, and headless service-account auth.
 
+Pack and sign UPM packages with Unity's [Unity Package Manager CLI](https://docs.unity3d.com/Manual/upm-cli.html) (`upm`). Install it from [Install Unity Package Manager CLI](https://docs.unity3d.com/Manual/upm-cli-install.html), then use [`upm pack`](https://docs.unity3d.com/Manual/upm-cli-pack.html).
+
 Stay on this package when you still need:
 
-- UPM pack and sign (`upm-install`, `upm-pack`)
 - Unity 4.x, 5.x, 2017, and 2018 installs
 - Personal license activation with `--email` and `--password`
 - Live Unity Test Protocol output turned into GitHub Actions annotations and log groups
@@ -381,6 +382,8 @@ unity-cli editor-logs
 ```
 
 ### Unity Package Manager
+
+Unity publishes the pack and sign tool as its own CLI. See [Unity Package Manager CLI workflow](https://docs.unity3d.com/Manual/upm-cli.html). The commands below call that same `upm` binary.
 
 #### Install Unity Package Manager
 
