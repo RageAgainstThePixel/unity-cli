@@ -8,7 +8,7 @@ A CI wrapper for Unity Hub, licenses, editor runs, and UPM pack/sign. This packa
 
 Bug and security fixes only, and no new commands, through **January 1, 2027**, when this GitHub repository will be archived. After that date the repository is read-only: no new issues, pull requests, or fixes. `@rage-against-the-pixel/unity-cli` stays on npm and stays installable.
 
-Unity ships an official CLI named `unity`. As of October 8, 2026 it is still experimental (`1.0.0-beta.13`). There is no stable channel yet: the stable manifest returns 404 and only the beta manifest is published. See [Use the Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli). Install it with `install.ps1` / `install.sh`, or with winget package `Unity.CLI`. The winget version `1.0.0.20013` is that same beta; `unity --version` reports `1.0.0-beta.13`.
+Unity ships an official CLI named `unity`. See [Use the Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli). Install it with `install.ps1` / `install.sh`, or with winget package `Unity.CLI`.
 
 Prefer the official CLI for Hub install, editor install and uninstall, modules, project create and open, templates, run, build, test, serial and floating licenses, and headless service-account auth.
 
