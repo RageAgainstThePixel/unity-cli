@@ -16,15 +16,9 @@ macOS or Linux:
 curl -fsSL https://unity.com/install.sh | bash
 ```
 
-Windows (PowerShell):
+Windows:
 
-```powershell
-irm https://unity.com/install.ps1 | iex
-```
-
-Windows (winget):
-
-```powershell
+```bash
 winget install Unity.CLI
 ```
 
@@ -32,19 +26,8 @@ Prefer the official CLI for Hub install, editor install and uninstall, modules, 
 
 Pack and sign UPM packages with Unity's [Unity Package Manager CLI](https://docs.unity3d.com/Manual/upm-cli.html) (`upm`). See [Install Unity Package Manager CLI](https://docs.unity3d.com/Manual/upm-cli-install.html) and [`upm pack`](https://docs.unity3d.com/Manual/upm-cli-pack.html).
 
-macOS or Linux:
-
 ```bash
 curl -fsSL https://cdn.packages.unity.com/upm-cli/install.sh | bash
-```
-
-Windows (PowerShell):
-
-```powershell
-irm https://cdn.packages.unity.com/upm-cli/install.ps1 | iex
-```
-
-```bash
 upm pack <package-directory> --organization-id <id> --destination <path>
 ```
 
