@@ -28,6 +28,9 @@ Pack and sign UPM packages with Unity's [Unity Package Manager CLI](https://docs
 
 ```bash
 curl -fsSL https://cdn.packages.unity.com/upm-cli/install.sh | bash
+```
+
+```bash
 upm pack <package-directory> --organization-id <id> --destination <path>
 ```
 
