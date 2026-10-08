@@ -8,11 +8,45 @@ A CI wrapper for Unity Hub, licenses, and editor runs. This package is in mainte
 
 Bug and security fixes only, and no new commands, through **January 1, 2027**, when this GitHub repository will be archived. After that date the repository is read-only: no new issues, pull requests, or fixes. `@rage-against-the-pixel/unity-cli` stays on npm and stays installable.
 
-Unity ships an official CLI named `unity`. See [Use the Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli). Install it with `install.ps1` / `install.sh`, or with winget package `Unity.CLI`.
+Unity ships an official CLI named `unity`. See [Use the Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli).
+
+macOS or Linux:
+
+```bash
+curl -fsSL https://unity.com/install.sh | bash
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://unity.com/install.ps1 | iex
+```
+
+Windows (winget):
+
+```powershell
+winget install Unity.CLI
+```
 
 Prefer the official CLI for Hub install, editor install and uninstall, modules, project create and open, templates, run, build, test, serial and floating licenses, and headless service-account auth.
 
-Pack and sign UPM packages with Unity's [Unity Package Manager CLI](https://docs.unity3d.com/Manual/upm-cli.html) (`upm`). Install it from [Install Unity Package Manager CLI](https://docs.unity3d.com/Manual/upm-cli-install.html), then use [`upm pack`](https://docs.unity3d.com/Manual/upm-cli-pack.html).
+Pack and sign UPM packages with Unity's [Unity Package Manager CLI](https://docs.unity3d.com/Manual/upm-cli.html) (`upm`). See [Install Unity Package Manager CLI](https://docs.unity3d.com/Manual/upm-cli-install.html) and [`upm pack`](https://docs.unity3d.com/Manual/upm-cli-pack.html).
+
+macOS or Linux:
+
+```bash
+curl -fsSL https://cdn.packages.unity.com/upm-cli/install.sh | bash
+```
+
+Windows (PowerShell):
+
+```powershell
+irm https://cdn.packages.unity.com/upm-cli/install.ps1 | iex
+```
+
+```bash
+upm pack <package-directory> --organization-id <id> --destination <path>
+```
 
 Stay on this package when you still need:
 
