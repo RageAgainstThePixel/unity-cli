@@ -9,7 +9,7 @@ A powerful all-in-one command line utility for the Unity Game Engine. Automate U
 
 ## Maintenance
 
-In unity's infinite wisdom, they decided to rip off another one of my open source projects with a clone of their own. which has blessed me with more free time and ability to work on other projects. As always, I build these kinds of tools because there is a gap in tooling or some need of mine to fulfil. I only wish that one day I get credit for the hard work I've been doing over the last 20 years to bring game and joy to people's lives.
+In unity's infinite wisdom, they decided to rip off yet another one of my open source projects with a clone of their own. which has blessed me with more free time and ability to work on other projects. As always, I build these kinds of tools because there is a gap in tooling or some need of mine to fulfil. I only wish that one day I get credit for the hard work I've been doing over the last 20 years to bring games and joy to people's lives.
 
 Bug and security fixes only, and no new commands, through **January 1, 2027**, when this GitHub repository will be archived. After that date the repository is read-only: no new issues, pull requests, or fixes. `@rage-against-the-pixel/unity-cli` stays on npm and stays installable.
 
