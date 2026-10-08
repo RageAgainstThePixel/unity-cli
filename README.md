@@ -2,7 +2,28 @@
 
 [![Discord](https://img.shields.io/discord/855294214065487932.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/xQgMW9ufN4) [![NPM Version](https://img.shields.io/npm/v/%40rage-against-the-pixel%2Funity-cli)](https://www.npmjs.com/package/@rage-against-the-pixel/unity-cli) [![NPM Downloads](https://img.shields.io/npm/dw/%40rage-against-the-pixel%2Funity-cli)](https://www.npmjs.com/package/@rage-against-the-pixel/unity-cli)
 
+> [!WARNING]
+> This package is in maintenance mode.
+
 A powerful all-in-one command line utility for the Unity Game Engine. Automate Unity project setup, editor installation, license management, building, upm package signing and more! Built specifially for CI/CD pipelines and developer workflows.
+
+## Maintenance
+
+In unity's infinite wisdom, they decided to rip off yet another one of my open source projects with a clone of their own. which has blessed me with more free time and ability to work on other projects. As always, I build these kinds of tools because there is a gap in tooling or some need of mine to fulfil. I only wish that one day I get credit for the hard work I've been doing over the last 20 years to bring games and joy to people's lives.
+
+Bug and security fixes only, and no new commands, through **January 1, 2027**, when this GitHub repository will be archived. After that date the repository is read-only: no new issues, pull requests, or fixes. `@rage-against-the-pixel/unity-cli` stays on npm and stays installable.
+
+Unity ships an official CLI named `unity`. See [Use the Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli). Prefer it for Hub install, editor install and uninstall, modules, project create and open, templates, run, build, test, serial and floating licenses, and headless service-account auth.
+
+Pack and sign UPM packages with Unity's [Unity Package Manager CLI](https://docs.unity3d.com/Manual/upm-cli.html). See [Install Unity Package Manager CLI](https://docs.unity3d.com/Manual/upm-cli-install.html) and [Pack and sign a package with Unity Package Manager CLI](https://docs.unity3d.com/Manual/upm-cli-pack.html).
+
+Stay on this package when you still need:
+
+- Unity 4.x, 5.x, 2017, and 2018 installs
+- Personal license activation with `--email` and `--password`
+- Live Unity Test Protocol output turned into GitHub Actions annotations and log groups
+
+Until January 1, 2027, bug and security issues and pull requests are still in scope. Send feature requests that the official CLI already covers to Unity.
 
 > [!IMPORTANT]
 > The documented commands can download, install, or run software from Unity (Hub, Editor, Package Manager CLI, licensing tools, and similar binaries from Unity CDNs or services). That use is covered by Unity’s [Terms of Service](https://unity.com/legal/terms-of-service), the [Unity Editor Software Additional Terms](https://unity.com/legal/terms-of-service/software), and any other [Additional Terms](https://unity.com/legal/additional-terms) that apply to the offerings you use. Keep your Unity account, seats, and subscriptions in order, and read the agreements that actually bind you before relying on automation in CI or production. The full legal index is at [Unity Legal](https://unity.com/legal).
@@ -11,6 +32,7 @@ A powerful all-in-one command line utility for the Unity Game Engine. Automate U
 
 ## Table of Contents
 
+- [Maintenance](#maintenance)
 - [Features](#features)
 - [Unity version support](docs/unity-version-support.md)
 - [Installation](#installation)
@@ -363,6 +385,8 @@ unity-cli editor-logs
 ```
 
 ### Unity Package Manager
+
+Unity publishes the pack and sign tool as its own CLI. See [Unity Package Manager CLI workflow](https://docs.unity3d.com/Manual/upm-cli.html). The commands below call that same `upm` binary.
 
 #### Install Unity Package Manager
 
