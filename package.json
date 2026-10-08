@@ -1,7 +1,7 @@
 {
   "name": "@rage-against-the-pixel/unity-cli",
   "version": "3.0.2",
-  "description": "A command line utility for the Unity Game Engine.",
+  "description": "Maintenance mode. GitHub repo archives January 1, 2027. New projects should use Unity's official unity CLI.",
   "author": "RageAgainstThePixel",
   "license": "MIT",
   "repository": {

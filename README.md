@@ -2,7 +2,24 @@
 
 [![Discord](https://img.shields.io/discord/855294214065487932.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/xQgMW9ufN4) [![NPM Version](https://img.shields.io/npm/v/%40rage-against-the-pixel%2Funity-cli)](https://www.npmjs.com/package/@rage-against-the-pixel/unity-cli) [![NPM Downloads](https://img.shields.io/npm/dw/%40rage-against-the-pixel%2Funity-cli)](https://www.npmjs.com/package/@rage-against-the-pixel/unity-cli)
 
-A powerful all-in-one command line utility for the Unity Game Engine. Automate Unity project setup, editor installation, license management, building, upm package signing and more! Built specifially for CI/CD pipelines and developer workflows.
+A CI wrapper for Unity Hub, licenses, editor runs, and UPM pack/sign. This package is in maintenance mode.
+
+## Maintenance
+
+Bug and security fixes only, and no new commands, through **January 1, 2027**, when this GitHub repository will be archived. After that date the repository is read-only: no new issues, pull requests, or fixes. `@rage-against-the-pixel/unity-cli` stays on npm and stays installable.
+
+Unity ships an official CLI named `unity`. As of October 8, 2026 it is still experimental (`1.0.0-beta.13`). There is no stable channel yet: the stable manifest returns 404 and only the beta manifest is published. See [Use the Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli). Install it with `install.ps1` / `install.sh`, or with winget package `Unity.CLI`. The winget version `1.0.0.20013` is that same beta; `unity --version` reports `1.0.0-beta.13`.
+
+Prefer the official CLI for Hub install, editor install and uninstall, modules, project create and open, templates, run, build, test, serial and floating licenses, and headless service-account auth.
+
+Stay on this package when you still need:
+
+- UPM pack and sign (`upm-install`, `upm-pack`)
+- Unity 4.x, 5.x, 2017, and 2018 installs
+- Personal license activation with `--email` and `--password`
+- Live Unity Test Protocol output turned into GitHub Actions annotations and log groups
+
+Until January 1, 2027, bug and security issues and pull requests are still in scope. Send feature requests that the official CLI already covers to Unity.
 
 > [!IMPORTANT]
 > The documented commands can download, install, or run software from Unity (Hub, Editor, Package Manager CLI, licensing tools, and similar binaries from Unity CDNs or services). That use is covered by Unity’s [Terms of Service](https://unity.com/legal/terms-of-service), the [Unity Editor Software Additional Terms](https://unity.com/legal/terms-of-service/software), and any other [Additional Terms](https://unity.com/legal/additional-terms) that apply to the offerings you use. Keep your Unity account, seats, and subscriptions in order, and read the agreements that actually bind you before relying on automation in CI or production. The full legal index is at [Unity Legal](https://unity.com/legal).
@@ -11,6 +28,7 @@ A powerful all-in-one command line utility for the Unity Game Engine. Automate U
 
 ## Table of Contents
 
+- [Maintenance](#maintenance)
 - [Features](#features)
 - [Unity version support](docs/unity-version-support.md)
 - [Installation](#installation)
