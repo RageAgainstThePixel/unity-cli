@@ -372,22 +372,37 @@ export class LicensingClient {
         if (await fs.promises.mkdir(patchedDirectory, { recursive: true }) === undefined) {
             this.logger.debug('Unity Licensing Client was already patched, reusing');
         } else {
-            let found = false;
-            for (const fileName of await fs.promises.readdir(clientDirectory)) {
-                if (fileName === 'Unity.Licensing.EntitlementResolver.dll') {
+            const fileNames = await fs.promises.readdir(clientDirectory);
+            // older clients ship the resolver as its own assembly; the single-file client the Unity CLI downloads embeds it in the executable
+            const patchTarget = fileNames.includes('Unity.Licensing.EntitlementResolver.dll')
+                ? 'Unity.Licensing.EntitlementResolver.dll'
+                : path.basename(this.licenseClientPath);
+
+            for (const fileName of fileNames) {
+                if (fileName === patchTarget) {
                     await this.patchBinary(
                         path.join(clientDirectory, fileName), path.join(patchedDirectory, fileName),
                         Buffer.from('6.x', 'utf16le'),
                         Buffer.from(this.licenseVersion, 'utf16le'),
                     );
-                    found = true;
                 } else {
                     await fs.promises.symlink(path.join(clientDirectory, fileName), path.join(patchedDirectory, fileName));
                 }
             }
 
-            if (!found) {
-                throw new Error(`Could not find Unity.Licensing.EntitlementResolver.dll in ${clientDirectory}`);
+            const patchedPath = path.join(patchedDirectory, patchTarget);
+
+            if (patchTarget === path.basename(this.licenseClientPath)) {
+                await fs.promises.chmod(patchedPath, 0o755);
+
+                if (process.platform === 'darwin') {
+                    // patching invalidates the signature, and macOS kills binaries with a broken one
+                    await new Promise<void>((resolve, reject) => {
+                        const child = spawn('codesign', ['--force', '--sign', '-', patchedPath], { stdio: 'ignore' });
+                        child.on('error', reject);
+                        child.on('close', (code) => code === 0 ? resolve() : reject(new Error(`codesign failed with exit code ${code}`)));
+                    });
+                }
             }
         }
 
