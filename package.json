@@ -75,6 +75,7 @@
     "babel-plugin-istanbul": {
       "test-exclude": "7.0.2"
     },
-    "glob": "$glob"
+    "glob": "$glob",
+    "brace-expansion": "^5.0.12"
   }
 }
