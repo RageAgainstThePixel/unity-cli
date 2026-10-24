@@ -220,6 +220,12 @@ export class UnityInstaller {
             result = await cli.Run(args[0] === 'install' ? [...args, '--resume'] : args, { stream: true });
         }
 
+        // install-modules fails when every requested module is already installed
+        if (result.exitCode !== 0 && args[0] === 'install-modules' && `${result.stdout}${result.stderr}`.includes('No modules found to install')) {
+            this.logger.info('The requested modules are already installed.');
+            return;
+        }
+
         if (result.exitCode !== 0) {
             throw new Error(`unity ${args.join(' ')} failed with exit code ${result.exitCode}`);
         }
