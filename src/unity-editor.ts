@@ -20,6 +20,9 @@ import {
     LogTailResult,
 } from './unity-logging';
 
+/** Thrown when `unity run` refuses the editor arguments before it starts the editor. */
+class UnityRunRejectedError extends Error { }
+
 export interface EditorCommand {
     args: string[];
     projectPath?: string | undefined;
@@ -141,6 +144,20 @@ export class UnityEditor {
      * @throws Will throw an error if the Unity Editor fails to start or exits with a non-zero code.
      */
     public async Run(command: EditorCommand): Promise<void> {
+        try {
+            await this.runEditor(command, true);
+        } catch (error) {
+            if (!(error instanceof UnityRunRejectedError)) {
+                throw error;
+            }
+
+            // unity run refused the arguments before it started the editor, so launching directly runs it once
+            this.logger.warn(`${error.message}\nLaunching the editor directly instead.`);
+            await this.runEditor(command, false);
+        }
+    }
+
+    private async runEditor(command: EditorCommand, allowUnityRun: boolean): Promise<void> {
         let isCancelled = false;
         let exitCode: number | undefined = undefined;
         let procInfo: ProcInfo | null = null;
@@ -229,7 +246,7 @@ export class UnityEditor {
                 ...(linuxEnvOverrides ?? {})
             };
 
-            const unityCli = await this.getUnityCliForRun(command);
+            const unityCli = allowUnityRun ? await this.getUnityCliForRun(command) : undefined;
 
             if (unityCli) {
                 const runArgs = UnityEditor.GetUnityRunArgs(this.editorPath, command.projectPath!, logPath, command.args);
@@ -314,6 +331,10 @@ export class UnityEditor {
                 if (exitCode !== undefined && exitCode !== 0 && unityRunOutput) {
                     const output = unityRunOutput.split(/\r?\n/).filter(line => line.length > 0 && !line.includes('<claude-code-hint')).join('\n');
 
+                    if (output.includes('conflicts with a reserved Unity flag')) {
+                        throw new UnityRunRejectedError(`unity run rejected the editor arguments:\n${output}`);
+                    }
+
                     if (output.length > 0) {
                         this.logger.info(`unity run output:\n${output}`);
                     }
@@ -355,7 +376,7 @@ export class UnityEditor {
 
     /**
      * Builds the `unity run` arguments for an editor command.
-     * `unity run` adds -batchmode, -projectPath and -logFile itself, so those are not forwarded.
+     * `unity run` adds -batchmode, -quit, -projectPath and -logFile itself and rejects them after `--`, so those are not forwarded.
      * @param editorPath The editor executable.
      * @param projectPath The Unity project.
      * @param logPath The editor log file, which unity-cli tails itself.
@@ -372,7 +393,7 @@ export class UnityEditor {
                 continue;
             }
 
-            if (arg === '-batchmode') {
+            if (arg === '-batchmode' || arg === '-quit') {
                 continue;
             }
 

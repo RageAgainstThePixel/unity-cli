@@ -24,7 +24,7 @@ describe('UnityEditor', () => {
     });
 
     describe('GetUnityRunArgs', () => {
-        it('lets unity run own -batchmode, -projectPath and -logFile', () => {
+        it('lets unity run own -batchmode, -quit, -projectPath and -logFile', () => {
             const args = UnityEditor.GetUnityRunArgs('/editor/Unity', '/project', '/logs/run.log', [
                 '-projectPath', '/project',
                 '-logFile', '/logs/run.log',
@@ -43,7 +43,6 @@ describe('UnityEditor', () => {
                 '--',
                 '-automated',
                 '-nographics',
-                '-quit',
                 '-executeMethod', 'Build.Run',
             ]);
         });
