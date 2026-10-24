@@ -89,11 +89,16 @@ export class LicensingClient {
     }
 
     /**
-     * The folder that holds the whole licensing client: the folder around a macOS app bundle, otherwise the executable's folder.
+     * The folder that holds the whole licensing client: the bundle root for a macOS bundle (…/Contents/MacOS/client), otherwise the executable's folder.
      */
     private static clientRootDirectory(clientPath: string): string {
-        const bundle = clientPath.match(/^(.*?\.app)[\\/]/)?.[1];
-        return bundle ? path.dirname(bundle) : path.dirname(clientPath);
+        const macOSDirectory = path.dirname(clientPath);
+
+        if (path.basename(macOSDirectory) === 'MacOS' && path.basename(path.dirname(macOSDirectory)) === 'Contents') {
+            return path.dirname(path.dirname(macOSDirectory));
+        }
+
+        return macOSDirectory;
     }
 
     /**
@@ -419,8 +424,9 @@ export class LicensingClient {
             }
 
             if (patchedFiles.length === 0) {
+                const searched = (await LicensingClient.listBinaries(patchedDirectory)).map(file => path.relative(patchedDirectory, file));
                 await fs.promises.rm(patchedDirectory, { recursive: true, force: true });
-                throw new Error(`Could not find the 6.x license version in any Unity Licensing Client binary under ${clientRoot}`);
+                throw new Error(`Could not find the 6.x license version in any Unity Licensing Client binary under ${clientRoot}. Searched:\n${searched.map(file => `  > ${file}`).join('\n')}`);
             }
 
             this.logger.debug(`Patched the license version in:\n${patchedFiles.map(file => `  > ${file}`).join('\n')}`);
@@ -428,8 +434,8 @@ export class LicensingClient {
 
             if (process.platform === 'darwin') {
                 // patching invalidates the signature, and macOS kills binaries with a broken one
-                const bundle = patchedClientPath.match(/^(.*?\.app)\//)?.[1];
-                const targets = bundle ? [bundle] : patchedFiles;
+                const isBundle = fs.existsSync(path.join(patchedDirectory, 'Contents', 'MacOS'));
+                const targets = isBundle ? [patchedDirectory] : patchedFiles;
 
                 for (const target of targets) {
                     await new Promise<void>((resolve, reject) => {
