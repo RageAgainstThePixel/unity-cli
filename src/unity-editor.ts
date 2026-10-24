@@ -5,7 +5,7 @@ import { Logger } from './logging';
 import { UnityVersion } from './unity-version';
 import {
     spawn,
-    ChildProcessByStdio
+    ChildProcess
 } from 'child_process';
 import {
     GetArgumentValueAsString,
@@ -13,8 +13,8 @@ import {
     KillProcess,
     KillChildProcesses,
     Exec,
-    DeleteDirectory,
 } from './utilities';
+import { UnityCli } from './unity-cli';
 import {
     TailLogFile,
     LogTailResult,
@@ -110,89 +110,6 @@ export class UnityEditor {
     }
 
     /**
-     * Get the full path to a Unity project template based on the provided template name or regex pattern.
-     * @param template The name or regex pattern of the template to find.
-     * @returns The full path to the matching template file.
-     * @throws If no templates are found, or no matching template is found.
-     */
-    public GetTemplatePath(template: string): string | undefined {
-        const templates: string[] = this.GetAvailableTemplates();
-
-        if (templates.length === 0) {
-            this.logger.warn(`No Unity templates found for ${this.version.toString()}`);
-            return undefined;
-        }
-
-        // Build a regex to match the template name, an optional numeric version suffix, and required file extension
-        // Example input: com.unity.template.3d(-cross-platform)?.*
-        // Example match: com.unity.template.3d-cross-platform-1.2.3.tar.gz or com.unity.template.3d-1.2.3.tgz
-        let regex: RegExp;
-        try {
-            regex = new RegExp(`^${template}(?:-\\d+\\.\\d+\\.\\d+)?(?:\\.tgz|\\.tar\\.gz)$`);
-        } catch (e) {
-            throw new Error(`Invalid template regex: ${template}`);
-        }
-
-        // Filter files by regex
-        const matches = templates.filter(t => regex.test(path.basename(t)));
-
-        if (matches.length === 0) {
-            this.logger.warn(`No matching template path found for ${template}`);
-            return undefined;
-        }
-
-        // Pick the longest match (as in the shell script: sort by length descending)
-        matches.sort((a, b) => b.length - a.length);
-        const templatePath = matches[0];
-
-        if (!templatePath) {
-            this.logger.warn(`No matching template path found for ${template}`);
-            return undefined;
-        }
-
-        return path.normalize(templatePath);
-    }
-
-    /**
-     * Get a list of available Unity project templates.
-     * @returns An array of available template file names.
-     */
-    public GetAvailableTemplates(): string[] {
-        if (this.version.isLessThan('2019.0.0')) {
-            this.logger.warn(`Unity version ${this.version.toString()} does not support project templates.`);
-            return [];
-        }
-
-        let templateDir: string;
-        let editorRoot = path.dirname(this.editorPath);
-
-        if (process.platform === 'darwin') {
-            templateDir = path.join(path.dirname(editorRoot), 'Resources', 'PackageManager', 'ProjectTemplates');
-        } else {
-            templateDir = path.join(editorRoot, 'Data', 'Resources', 'PackageManager', 'ProjectTemplates');
-        }
-
-        this.logger.debug(`Looking for templates in: ${templateDir}`);
-
-        if (!fs.existsSync(templateDir) ||
-            !fs.statSync(templateDir).isDirectory()) {
-            return [];
-        }
-
-        const templates: string[] = [];
-        const entries = fs.readdirSync(templateDir, { withFileTypes: true });
-
-        for (const entry of entries) {
-            if (entry.isFile() && (entry.name.endsWith('.tgz') || entry.name.endsWith('.tar.gz'))) {
-                templates.push(path.join(templateDir, entry.name));
-            }
-        }
-
-        this.logger.debug(`Found ${templates.length} templates:\n${templates.map(t => `  - ${t}`).join('\n')}`);
-        return templates;
-    }
-
-    /**
      * Scrubs sensitive command-line arguments for safe logging.
      * Replaces values for sensitive flags like -username, -password, etc. with [REDACTED].
      * @param args The command-line arguments array.
@@ -228,7 +145,8 @@ export class UnityEditor {
         let exitCode: number | undefined = undefined;
         let procInfo: ProcInfo | null = null;
         let logTail: LogTailResult | null = null;
-        let unityProcess: ChildProcessByStdio<null, null, null>;
+        let unityProcess: ChildProcess;
+        let unityRunOutput: string | undefined = undefined;
 
         async function tryKillEditorProcesses(): Promise<void> {
             try {
@@ -311,7 +229,23 @@ export class UnityEditor {
                 ...(linuxEnvOverrides ?? {})
             };
 
-            if (process.platform === 'linux' &&
+            const unityCli = await this.getUnityCliForRun(command);
+
+            if (unityCli) {
+                const runArgs = UnityEditor.GetUnityRunArgs(this.editorPath, command.projectPath!, logPath, command.args);
+                this.logger.debug(`Launching through the Unity CLI: ${unityCli.executable} ${this.scrubSensitiveArgs(runArgs).join(' ')}`);
+                unityRunOutput = '';
+                const child = spawn(
+                    unityCli.executable,
+                    runArgs, {
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                    env: baseEditorEnv
+                });
+                const collect = (data: Buffer) => { unityRunOutput += data.toString(); };
+                child.stdout.on('data', collect);
+                child.stderr.on('data', collect);
+                unityProcess = child;
+            } else if (process.platform === 'linux' &&
                 !command.args.includes('-nographics')
             ) {
                 unityProcess = spawn(
@@ -377,6 +311,14 @@ export class UnityEditor {
             if (!isCancelled) {
                 await tryKillEditorProcesses();
 
+                if (exitCode !== undefined && exitCode !== 0 && unityRunOutput) {
+                    const output = unityRunOutput.split(/\r?\n/).filter(line => line.length > 0 && !line.includes('<claude-code-hint')).join('\n');
+
+                    if (output.length > 0) {
+                        this.logger.info(`unity run output:\n${output}`);
+                    }
+                }
+
                 if (exitCode === undefined) {
                     throw Error('Failed to start Unity!');
                 } else if (exitCode !== 0) {
@@ -384,6 +326,67 @@ export class UnityEditor {
                 }
             }
         }
+    }
+
+    /**
+     * Decides whether a run goes through the official CLI's `unity run`.
+     * It needs a project, and is skipped for editors and hosts it is not verified with:
+     * editors older than 2019.1, Linux runs that need xvfb, and x86_64 editors under Rosetta.
+     * Set UNITY_CLI_DIRECT_LAUNCH=true to always launch the editor directly.
+     */
+    private async getUnityCliForRun(command: EditorCommand): Promise<UnityCli | undefined> {
+        const directLaunch = process.env.UNITY_CLI_DIRECT_LAUNCH?.trim().toLowerCase();
+
+        if (!command.projectPath ||
+            directLaunch === 'true' || directLaunch === '1' ||
+            this.version.isLessThan('2019.1.0') ||
+            (process.platform === 'linux' && !command.args.includes('-nographics')) ||
+            (process.platform === 'darwin' && process.arch === 'arm64' && this.version.architecture === 'X86_64')) {
+            return undefined;
+        }
+
+        try {
+            return await UnityCli.Find();
+        } catch (error) {
+            this.logger.debug(`Launching the editor directly, the Unity CLI was not found: ${error}`);
+            return undefined;
+        }
+    }
+
+    /**
+     * Builds the `unity run` arguments for an editor command.
+     * `unity run` adds -batchmode, -projectPath and -logFile itself, so those are not forwarded.
+     * @param editorPath The editor executable.
+     * @param projectPath The Unity project.
+     * @param logPath The editor log file, which unity-cli tails itself.
+     * @param args The editor arguments.
+     */
+    public static GetUnityRunArgs(editorPath: string, projectPath: string, logPath: string, args: string[]): string[] {
+        const forwarded: string[] = [];
+
+        for (let i = 0; i < args.length; i++) {
+            const arg = args[i]!;
+
+            if (arg === '-projectPath' || arg === '-logFile') {
+                i++;
+                continue;
+            }
+
+            if (arg === '-batchmode') {
+                continue;
+            }
+
+            forwarded.push(arg);
+        }
+
+        return [
+            'run', projectPath,
+            '--editor-path', editorPath,
+            '--log-file', logPath,
+            '--no-tail',
+            '--',
+            ...forwarded
+        ];
     }
 
     /**
@@ -535,38 +538,6 @@ export class UnityEditor {
                 return path.join(process.env.HOME || '', '.config', 'unity3d', 'Editor');
             default:
                 throw new Error(`Unsupported platform: ${process.platform}`);
-        }
-    }
-
-    /**
-     * Uninstall the Unity Editor.
-     */
-    public async Uninstall(): Promise<void> {
-        switch (process.platform) {
-            case 'darwin':
-            case 'linux':
-                await Exec('sudo', [
-                    'rm', '-rf', this.editorRootPath
-                ], { silent: true, showCommand: true });
-                break;
-            case 'win32':
-                const editorDir = path.dirname(this.editorPath);
-                const uninstallPath = path.join(editorDir, 'Uninstall.exe');
-                await fs.promises.access(uninstallPath, fs.constants.R_OK | fs.constants.X_OK);
-                await Exec('powershell', [
-                    '-NoProfile',
-                    '-Command',
-                    `Start-Process -FilePath "${uninstallPath}" -ArgumentList "/S" -Wait`
-                ], { silent: true, showCommand: true });
-                // delete the editor root directory if it still exists
-                await DeleteDirectory(editorDir);
-
-                if (this.version.isLegacy()) {
-                    // delete the MonoDevelop that is a sibling of the Unity editor directory
-                    const monoDevelopDir = path.join(path.dirname(editorDir), 'MonoDevelop');
-                    await DeleteDirectory(monoDevelopDir);
-                }
-                break;
         }
     }
 }

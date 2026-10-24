@@ -86,6 +86,13 @@ export class GitHubActionsLoggerProvider implements ILoggerProvider {
         }
     }
 
+    public addPath(directory: string): void {
+        const githubPath = process.env.GITHUB_PATH;
+        if (githubPath) {
+            fs.appendFileSync(githubPath, `${directory}\n`, { encoding: 'utf8' });
+        }
+    }
+
     public appendStepSummary(summary: string): void {
         const githubSummary = process.env.GITHUB_STEP_SUMMARY;
         if (!githubSummary) { return; }

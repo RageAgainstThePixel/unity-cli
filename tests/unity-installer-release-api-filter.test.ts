@@ -1,5 +1,5 @@
 import { UnityReleasesClient } from '@rage-against-the-pixel/unity-releases-api';
-import { UnityHub } from '../src/unity-hub';
+import { UnityInstaller } from '../src/unity-installer';
 import { UnityVersion } from '../src/unity-version';
 
 jest.mock('@rage-against-the-pixel/unity-releases-api', () => {
@@ -14,7 +14,7 @@ jest.mock('@rage-against-the-pixel/unity-releases-api', () => {
 
 const mockGetUnityReleases = jest.fn();
 
-describe('UnityHub GetEditorReleaseInfo (sparse API rows)', () => {
+describe('UnityInstaller GetEditorReleaseInfo (sparse API rows)', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         (UnityReleasesClient as jest.Mock).mockImplementation(() => ({
@@ -43,9 +43,7 @@ describe('UnityHub GetEditorReleaseInfo (sparse API rows)', () => {
             },
             error: undefined,
         });
-
-        const hub = new UnityHub();
-        const info = await hub.GetEditorReleaseInfo(new UnityVersion('2021'));
+        const info = await UnityInstaller.GetEditorReleaseInfo(new UnityVersion('2021'));
 
         expect(info.version).toBe('2021.3.45f1');
         expect(info.shortRevision).toBe('goodrev');
@@ -58,9 +56,7 @@ describe('UnityHub GetEditorReleaseInfo (sparse API rows)', () => {
             },
             error: undefined,
         });
-
-        const hub = new UnityHub();
-        await expect(hub.GetEditorReleaseInfo(new UnityVersion('2021'))).rejects.toThrow(/No suitable Unity releases/);
+        await expect(UnityInstaller.GetEditorReleaseInfo(new UnityVersion('2021'))).rejects.toThrow(/No suitable Unity releases/);
     });
 
     it('accepts beta releases when channel b is requested', async () => {
@@ -73,9 +69,7 @@ describe('UnityHub GetEditorReleaseInfo (sparse API rows)', () => {
             },
             error: undefined,
         });
-
-        const hub = new UnityHub();
-        const info = await hub.GetEditorReleaseInfo(new UnityVersion('6000.6'), ['b']);
+        const info = await UnityInstaller.GetEditorReleaseInfo(new UnityVersion('6000.6'), ['b']);
         expect(info.version).toBe('6000.6.0b7');
         expect(info.shortRevision).toBe('53d4abb44f07');
     });

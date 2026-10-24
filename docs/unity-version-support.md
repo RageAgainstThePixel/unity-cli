@@ -11,7 +11,7 @@ This repo tests Unity editors on CI in three tiers:
 ## Resolving versions
 
 - Partial versions (`6000.5`, `2021.3.x`) resolve only within the requested channel(s). Default is **stable (`f`)**.
-- If no matching stable release exists (e.g. `6000.6` while only betas ship), `setup-unity` **fails closed** instead of letting Hub guess a beta.
+- If no matching stable release exists (e.g. `6000.6` while only betas ship), `setup-unity` **fails closed** instead of letting the installer guess a beta.
 - Use `--channel b` (or `a`) when you intentionally want pre-release streams.
 - Weekly [unity-release-discovery](../.github/workflows/unity-release-discovery.yml) compares the Releases API to the matrix/canary pin and opens/updates a `unity-release-drift` issue when tips move.
 

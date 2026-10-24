@@ -5,40 +5,40 @@
 > [!WARNING]
 > This package is in maintenance mode.
 
-A powerful all-in-one command line utility for the Unity Game Engine. Automate Unity project setup, editor installation, license management, building, upm package signing and more! Built specifially for CI/CD pipelines and developer workflows.
+A thin companion to Unity's official CLI (`unity`) for CI/CD pipelines. v4 installs and wraps the official CLI and only bridges what it does not cover yet.
 
 ## Maintenance
 
 In unity's infinite wisdom, they decided to rip off yet another one of my open source projects with a clone of their own. which has blessed me with more free time and ability to work on other projects. As always, I build these kinds of tools because there is a gap in tooling or some need of mine to fulfil. I only wish that one day I get credit for the hard work I've been doing over the last 20 years to bring games and joy to people's lives.
 
-Bug and security fixes only, and no new commands, through **January 1, 2027**, when this GitHub repository will be archived. After that date the repository is read-only: no new issues, pull requests, or fixes. `@rage-against-the-pixel/unity-cli` stays on npm and stays installable.
+v4 is the last feature release. The repository stays open for security and crash fixes only, and there are no new commands. `@rage-against-the-pixel/unity-cli` v3 and v4 stay on npm.
 
-Unity ships an official CLI named `unity`. See [Use the Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli). Prefer it for Hub install, editor install and uninstall, modules, project create and open, templates, run, build, test, serial and floating licenses, and headless service-account auth.
+Use Unity's official CLI for everything it covers. See [Use the Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli). That includes Hub-free editor installs and uninstalls, modules, project create and open, templates, builds, tests, serial, floating and offline licenses, and service-account auth. Pack and sign UPM packages with Unity's [Unity Package Manager CLI](https://docs.unity3d.com/Manual/upm-cli.html).
 
-Pack and sign UPM packages with Unity's [Unity Package Manager CLI](https://docs.unity3d.com/Manual/upm-cli.html). See [Install Unity Package Manager CLI](https://docs.unity3d.com/Manual/upm-cli-install.html) and [Pack and sign a package with Unity Package Manager CLI](https://docs.unity3d.com/Manual/upm-cli-pack.html).
+unity-cli v4 still covers:
 
-Stay on this package when you still need:
+- Installing and pinning the official Unity CLI, with SHA-256 verification, for CI runners.
+- License activation and return with a Unity ID email and password, used when the official CLI cannot activate, such as a personal license on a headless runner.
+- Unity 4.x and 5.x editors: installs from Unity's archives and the license file those editors read.
+- Android target SDK setup for a project.
+- Live Editor log and Unity Test Protocol output turned into GitHub Actions annotations, log groups and job summaries.
 
-- Unity 4.x, 5.x, 2017, and 2018 installs
-- Personal license activation with `--email` and `--password`
-- Live Unity Test Protocol output turned into GitHub Actions annotations and log groups
-
-Until January 1, 2027, bug and security issues and pull requests are still in scope. Send feature requests that the official CLI already covers to Unity.
+Send feature requests that the official CLI already covers to Unity.
 
 > [!IMPORTANT]
-> The documented commands can download, install, or run software from Unity (Hub, Editor, Package Manager CLI, licensing tools, and similar binaries from Unity CDNs or services). That use is covered by Unity’s [Terms of Service](https://unity.com/legal/terms-of-service), the [Unity Editor Software Additional Terms](https://unity.com/legal/terms-of-service/software), and any other [Additional Terms](https://unity.com/legal/additional-terms) that apply to the offerings you use. Keep your Unity account, seats, and subscriptions in order, and read the agreements that actually bind you before relying on automation in CI or production. The full legal index is at [Unity Legal](https://unity.com/legal).
+> The documented commands can download, install, or run software from Unity (the Unity CLI, Editor, licensing tools, and similar binaries from Unity CDNs or services). That use is covered by Unity’s [Terms of Service](https://unity.com/legal/terms-of-service), the [Unity Editor Software Additional Terms](https://unity.com/legal/terms-of-service/software), and any other [Additional Terms](https://unity.com/legal/additional-terms) that apply to the offerings you use. Keep your Unity account, seats, and subscriptions in order, and read the agreements that actually bind you before relying on automation in CI or production. The full legal index is at [Unity Legal](https://unity.com/legal).
 >
 > Unity, Unity Hub, Unity Editor, and related names and logos are trademarks and other intellectual property of Unity Technologies Inc. and its affiliates. This project is independent and not affiliated with Unity. Names are used here only to describe what the commands talk to. If you ship Unity marks, artwork, or binaries, use Unity’s guidance, including their [IP policy](https://unity.com/legal/ip-policy-takedown-requests).
 
 ## Table of Contents
 
 - [Maintenance](#maintenance)
-- [Features](#features)
+- [Upgrading from v3](#upgrading-from-v3)
 - [Unity version support](docs/unity-version-support.md)
 - [Installation](#installation)
 - [Usage](#usage)
   - [Common Commands](#common-commands)
-  - [Install all tools](#install-all-tools)
+  - [Setup Unity CLI](#setup-unity-cli)
   - [Auth](#auth)
     - [License Version](#license-version)
     - [Activate License](#activate-license)
@@ -46,41 +46,29 @@ Until January 1, 2027, bug and security issues and pull requests are still in sc
     - [License Context](#license-context)
     - [Licensing Client Logs](#licensing-client-logs)
     - [Licensing Audit Logs](#licensing-audit-logs)
-  - [Unity Hub](#unity-hub)
-    - [Hub Version](#hub-version)
-    - [Hub Path](#hub-path)
-    - [Hub Logs](#hub-logs)
-    - [Package Manager Logs](#package-manager-logs)
-    - [Unity Hub Install](#unity-hub-install)
-    - [Run Unity Hub Commands](#run-unity-hub-commands)
-    - [Setup Unity Editor](#setup-unity-editor)
-    - [Uninstall Unity Editor](#uninstall-unity-editor)
   - [Unity Editor](#unity-editor)
+    - [Setup Unity Editor](#setup-unity-editor)
     - [Run Unity Editor Commands](#run-unity-editor-commands)
-    - [List Project Templates](#list-project-templates)
-    - [Create Unity Project](#create-unity-project)
-    - [Open Unity Project](#open-unity-project)
     - [Unity Editor Logs](#unity-editor-logs)
-  - [Unity Package Manager](#unity-package-manager)
-    - [Install Unity Package Manager](#install-unity-package-manager)
-    - [UPM Version](#upm-version)
-    - [Pack a Unity Package](#pack-a-unity-package)
-    - [Deprecated Sign Package Command](#deprecated-sign-package-command)
 - [Logging](#logging)
   - [Local cli](#local-cli)
   - [Github Actions](#github-actions)
 
-## Features
+## Upgrading from v3
 
-See [Unity version support](docs/unity-version-support.md) for how CI tiers (supported / preview / untested) map to `setup-unity --channel` and the blocking matrix.
+v4 removes the commands the official CLI covers. Call `unity` for them instead.
 
-- Install and manage Unity Hub and Unity Editors (multi-platform)
-- Activate and return Unity licenses (personal, professional, floating)
-- Create new Unity projects from templates
-- Run Unity Editor commands and builds from the CLI
-- Supports all modules, architectures, and build targets
-- Works on Windows, macOS, and Linux
-- Designed for automation and CI/CD
+| v3 command | v4 replacement |
+| --- | --- |
+| `install-all-tools`, `hub-install` | `unity-cli setup-cli` (no Hub needed) |
+| `hub`, `hub-path`, `hub-version`, `hub-logs`, `package-manager-logs` | `unity env`, `unity logs`, `unity doctor` |
+| `uninstall-unity` | `unity uninstall <version> --yes` |
+| `list-project-templates` | `unity templates list --editor <version>` |
+| `create-project` | `unity projects create <name> --editor-version <version> --template <id> --no-cloud` |
+| `open-project` | `unity open` |
+| `upm-install`, `upm-version`, `upm-pack`, `sign-package` | Unity's [Package Manager CLI](https://docs.unity3d.com/Manual/upm-cli.html) |
+
+`setup-unity` exports `UNITY_CLI_PATH` instead of `UNITY_HUB_PATH`. Unknown commands are not forwarded to `unity`.
 
 ## Installation
 
@@ -89,7 +77,7 @@ npm install -g @rage-against-the-pixel/unity-cli
 ```
 
 > [!IMPORTANT]
-> Requires Node v22.12 or higher.
+> Requires Node v24 or higher.
 
 ## Usage
 
@@ -99,7 +87,7 @@ In general, the command structure is:
 unity-cli [command] {options} <args...>
 ```
 
-With options always using double dashes (`--option`) and arguments passed directly to Unity or Unity Hub commands as they normally would with single dashes (`-arg`). Each option typically has a short alias using a single dash (`-o`), except for commands where we pass through arguments, as those get confused by the command parser.
+With options always using double dashes (`--option`) and arguments passed directly to Unity commands as they normally would with single dashes (`-arg`). Each option typically has a short alias using a single dash (`-o`), except for commands where we pass through arguments, as those get confused by the command parser.
 
 ### Common Commands
 
@@ -115,21 +103,21 @@ With options always using double dashes (`--option`) and arguments passed direct
 unity-cli --help
 ```
 
-### Install all tools
+### Setup Unity CLI
 
-`install-all-tools`: Install the Unity Hub and the Unity Package Manager cli (pack/sign). Runs `hub-install` and `upm-install` in parallel. Use `unity-cli install-all-tools --help` for all options.
+`setup-cli [options]`: Install the official Unity CLI, or reuse it when the requested version is already installed. It downloads the exact release from Unity's CDN, checks its SHA-256, caches it in the runner tool cache (`unity-cli/<version>/<arch>`), adds it to the `PATH`, and exports `UNITY_CLI_PATH` and `UNITY_CLI_VERSION`. It also sets `UNITY_NON_INTERACTIVE`, `UNITY_NO_UPDATE_CHECK` and `UNITY_NO_CONSENT_PROMPT` so the CLI never prompts or updates itself mid-job.
 
+- `--unity-cli-version <version>`: An exact official Unity CLI version (e.g. `1.0.0-beta.14`) or `latest`. Defaults to an installed CLI, then the version unity-cli is tested against.
 - `--verbose`: Enable verbose logging.
-- `--auto-update`: If any tools are installed, they're automatically updated to the latest versions. Cannot be used with `--hub-version` or `--upm-version`.
-- `--hub-version <version>`: Specify to install a specific version of Unity Hub. Cannot be used with `--auto-update`.
-- `--upm-version <version>`: Specify to install a specific version of the Unity Package Manager cli. Cannot be used with `--auto-update`.
-- `--json`: Print hub path, UPM CLI version, and resolved UPM CLI path as JSON.
+- `--json`: Prints the last line of output as JSON string.
 
 ```bash
-unity-cli install-all-tools --auto-update
+unity-cli setup-cli --unity-cli-version 1.0.0-beta.14
 ```
 
 ### Auth
+
+Every license command tries the official Unity CLI first. When it fails, unity-cli falls back to `Unity.Licensing.Client` (the copy the official CLI downloads) with your Unity ID email and password. Unity 4.x and 5.x editors read their own license file, so when `UNITY_EDITOR_PATH` points at one of them, unity-cli uses the licensing client directly and patches it for that editor.
 
 #### License Version
 
@@ -144,8 +132,8 @@ unity-cli license-version
 `activate-license [options]`: Activate a Unity license.
 
 - `-l`, `--license`: License type (personal, professional, floating). Required.
-- `-e`, `--email`: Email associated with the Unity account. Required when activating a personal or professional license.
-- `-p`, `--password`: Password for the Unity account. Required when activating a personal or professional license.
+- `-e`, `--email`: Email associated with the Unity account. Used when the official CLI cannot activate a personal or professional license.
+- `-p`, `--password`: Password for the Unity account. Used when the official CLI cannot activate a personal or professional license.
 - `-s`, `--serial`: License serial number. Required when activating a professional license.
 - `-c`, `--config`: Path to the configuration file, raw JSON, or base64 encoded JSON string. Required when activating a floating license.
 - `--json`: Prints the last line of output as JSON string.
@@ -160,7 +148,7 @@ unity-cli activate-license --license personal --email <your-email> --password <y
 `return-license [options]`: Return a Unity license.
 
 - `-l`, `--license`: License type (personal, professional, floating)
-- `-t`, `--token`: Floating license token. Required when returning a floating license.
+- `-t`, `--token`: Floating license token from activation. When given, the floating license is returned with the Unity Licensing Client.
 - `--verbose`: Enable verbose logging.
 
 ```bash
@@ -169,7 +157,7 @@ unity-cli return-license --license personal
 
 #### License Context
 
-`license-context`: Print the current license context information.
+`license-context`: Print the current license state from the official CLI and the Unity Licensing Client.
 
 ```bash
 unity-cli license-context
@@ -191,78 +179,11 @@ unity-cli licensing-client-logs
 unity-cli licensing-audit-logs
 ```
 
-### Unity Hub
-
-#### Hub Version
-
-`hub-version`: Print the Unity Hub version.
-
-```bash
-unity-cli hub-version
-```
-
-#### Hub Path
-
-`hub-path`: Print the path to the Unity Hub executable.
-
-- `--json`: Prints the last line of output as JSON string.
-
-```bash
-unity-cli hub-path
-```
-
-#### Hub Logs
-
-`hub-logs`: Prints the path to the Unity Hub log file.
-
-```bash
-unity-cli hub-logs
-```
-
-#### Package Manager Logs
-
-`package-manager-logs`: Prints the path to the Unity Package Manager log file.
-
-```bash
-unity-cli package-manager-logs
-```
-
-#### Unity Hub Install
-
-`hub-install [options]`: Install or update the Unity Hub.
-
-- `--auto-update`: Automatically updates the Unity Hub if it is already installed. Cannot be used with `--hub-version`.
-- `--hub-version`: Specify to install a specific version of Unity Hub. Cannot be used with `--auto-update`.
-- `--verbose`: Enable verbose logging.
-- `--json`: Prints the last line of output as JSON string.
-
-```bash
-unity-cli hub-install
-```
-
-#### Run Unity Hub Commands
-
-`hub [options] <args...>`: Run commands directly to the Unity Hub. (You need not to pass `--headless` or `--` to this command).
-
-- `--verbose`: Enable verbose logging.
-- `--json`: Prints the last line of output as a json string, which contains the operation results.
-- `<args...>`: Arguments to pass directly to the Unity Hub executable.
-
-Lists available Unity Hub commands:
-
-```bash
-unity-cli --verbose hub help
-```
-
-Gets a list of installed editors:
-
-```bash
-unity-cli hub editors --installed
-```
+### Unity Editor
 
 #### Setup Unity Editor
 
-`setup-unity [options]`: Find or install the Unity Editor for a project or specific version.
+`setup-unity [options]`: Find or install the Unity Editor for a project or specific version. 2017.4 and newer install with `unity install`. 5.x installs from Unity's download archive, because the official CLI reads one-digit majors as Unity 6 shorthand. 4.x installs from Unity's legacy installers on Windows and macOS.
 
 - `-p`, `--unity-project <unityProject>` The path to a Unity project or `none` to skip project detection.
 - `-u`, `--unity-version <unityVersion>` The Unity version to get (e.g. `2020.3.1f1`, `2021.x`, `2022.1.*`, `6000`). If specified, it will override the version read from the project.
@@ -271,9 +192,12 @@ unity-cli hub editors --installed
 - `-a`, `--arch <arch>` The Unity architecture to get (e.g. `x86_64`, `arm64`). Defaults to the architecture of the current process.
 - `-b`, `--build-targets <buildTargets>` The Unity build target to get/install as comma-separated values (e.g. `iOS,Android`).
 - `-m`, `--modules <modules>` The Unity module to get/install as comma-separated values (e.g. `ios,android`).
-- `-i`, `--install-path <installPath>` The path to install the Unity Editor to. By default, it will be installed to the default Unity Hub location.
+- `-i`, `--install-path <installPath>` The path to install the Unity Editor to. By default, it will be installed to the official CLI's install path.
+- `--unity-cli-version <version>` The official Unity CLI version to install when it is missing.
 - `--verbose` Enable verbose logging.
 - `--json` Prints the last line of output as JSON string.
+
+It exports `UNITY_CLI_PATH`, `UNITY_EDITOR_PATH`, `UNITY_EDITOR_VERSION`, `UNITY_EDITOR_CHANGESET`, `UNITY_EDITOR_CHANNELS` and, with a project, `UNITY_PROJECT_PATH`. With a project and the `android` module, it also installs the project's Android target SDK.
 
 Installs the latest Unity 6 version with Android and iOS modules:
 
@@ -281,25 +205,11 @@ Installs the latest Unity 6 version with Android and iOS modules:
 unity-cli setup-unity --unity-version 6000 --modules android,ios
 ```
 
-#### Uninstall Unity Editor
-
-`uninstall-unity [options]`: Uninstall a Unity Editor version.
-
-- `-e`, `--unity-editor <unityEditor>` The path to the Unity Editor executable. If unspecified, `-u`, `--unity-version` or the `UNITY_EDITOR_PATH` environment variable must be set.
-- `-u`, `--unity-version <unityVersion>` The Unity version to get (e.g. `2020.3.1f1`, `2021.x`, `2022.1.*`, `6000`). If unspecified, then `--unity-editor` must be specified.
-- `-c`, `--changeset <changeset>` The Unity changeset to get (e.g. `1234567890ab`).
-- `-a`, `--arch <arch>` The Unity architecture to get (e.g. `x86_64`, `arm64`). Defaults to the architecture of the current process.
-- `--verbose` Enable verbose logging.
-
-```bash
-unity-cli uninstall-unity --unity-version 6000
-```
-
-### Unity Editor
-
 #### Run Unity Editor Commands
 
-`run [options] <args...>`: Run Unity Editor command line arguments (passes args directly to the editor).
+`run [options] <args...>`: Run Unity Editor command line arguments with live Editor log and Unity Test Protocol annotations.
+
+Runs with a project go through the official CLI's `unity run` for 2019.1 and newer editors. Runs without a project, older editors, Linux runs that need `xvfb`, and x86_64 editors under Rosetta launch the editor directly. Set `UNITY_CLI_DIRECT_LAUNCH=true` to always launch the editor directly.
 
 - `--unity-editor <unityEditor>` The path to the Unity Editor executable. If unspecified, `--unity-project` or the `UNITY_EDITOR_PATH` environment variable must be set.
 - `--unity-project <unityProject>` The path to a Unity project. If unspecified, the `UNITY_PROJECT_PATH` environment variable will be used, otherwise no project will be specified.
@@ -317,134 +227,12 @@ unity-cli uninstall-unity --unity-version 6000
 unity-cli run --unity-project <path-to-project> -quit -batchmode -executeMethod StartCommandLineBuild
 ```
 
-#### List Project Templates
-
-> [!NOTE]
-> Regex patterns are supported for the `--template` option. For example, to create a 3D project with either the standard or cross-platform template, you can use `com.unity.template.3d(-cross-platform)?`.
-
-`list-project-templates [options]`: List available Unity project templates for an editor.
-
-- `-u`, `--unity-version <unityVersion>` The Unity version to get (e.g. `2020.3.1f1`, `2021.x`, `2022.1.*`, `6000`). If unspecified, then `--unity-editor` must be specified.
-- `-e`, `--unity-editor <unityEditor>` The path to the Unity Editor executable. If unspecified, `-u`, `--unity-version` or the `UNITY_EDITOR_PATH` environment variable must be set.
-- `--verbose` Enable verbose logging.
-- `--json` Prints the last line of output as JSON string.
-
-Lists available project templates for Unity 6:
-
-```bash
-unity-cli list-project-templates --unity-version 6000
-```
-
-#### Create Unity Project
-
-`create-project [options]`: Create a new Unity project.
-
-- `-n`, `--name <projectName>` The name of the new Unity project. If unspecified, the project will be created in the specified path or the current working directory.
-- `-p`, `--path <projectPath>` The path to create the new Unity project. If unspecified, the current working directory will be used.
-- `-t`, `--template <projectTemplate>` The name of the template package to use for creating the unity project. Supports regex patterns. (default:
- `com.unity.template.3d(-cross-platform)?`)
-- `-u`, `--unity-version <unityVersion>` The Unity version to get (e.g. `2020.3.1f1`, `2021.x`, `2022.1.*`, `6000`). If unspecified, then `--unity-editor` must be specified.
-- `-e`, `--unity-editor <unityEditor>` The path to the Unity Editor executable. If unspecified, `-u`, `--unity-version`, or the `UNITY_EDITOR_PATH` environment variable must be set.
-- `--verbose` Enable verbose logging.
-- `--json` Prints the last line of output as JSON string.
-
-Creates a new Unity project named "MyGame" using the latest version of Unity 6 and the 3D template:
-
-```bash
-unity-cli create-project --name "MyGame" --template com.unity.template.3d(-cross-platform)? --unity-version 6000
-```
-
-#### Open Unity Project
-
-`open-project [options]`: Open a Unity project in the Unity Editor.
-
-- `-p`, `--unity-project <unityProject>` The path to a Unity project. If unspecified, the `UNITY_PROJECT_PATH` environment variable or the current working directory will be used.
-- `-u`, `--unity-version <unityVersion>` The Unity version to get (e.g. `2020.3.1f1`, `2021.x`, `2022.1.*`, `6000`). If specified, it will override the version read from the project.
-- `-t`, `--build-target <buildTarget>` The Unity build target to switch the project to (e.g. `StandaloneWindows64`, `StandaloneOSX`, `iOS`, `Android`, etc).
-- `--verbose` Enable verbose logging.
-
-Opens a specific Unity project with the latest Unity 6 version and switches the active platform to Android:
-
-```bash
-unity-cli open-project --unity-project <path-to-project> --unity-version 6000 --build-target Android
-```
-
-> [!TIP]
-> If you run this command in the same directory as your Unity project, you can omit the `--unity-project`, `--unity-version`, and `--unity-editor` options.
-
-```bash
-unity-cli open-project
-```
-
 #### Unity Editor Logs
 
 `editor-logs`: Prints the path to the Unity Editor log files.
 
 ```bash
 unity-cli editor-logs
-```
-
-### Unity Package Manager
-
-Unity publishes the pack and sign tool as its own CLI. See [Unity Package Manager CLI workflow](https://docs.unity3d.com/Manual/upm-cli.html). The commands below call that same `upm` binary.
-
-#### Install Unity Package Manager
-
-`upm-install [options]`: Download and install the Unity Package Manager cli (pack/sign).
-
-- `--auto-update`: Automatically updates the upm cli if it is already installed and a newer release is available. Cannot be used with `--version`.
-- `--version <version>`: Specify to install a specific version of the Unity Package Manager cli. Cannot be used with `--auto-update`.
-- `--json`: Print version and managed paths as JSON.
-- `--verbose`: Enable verbose logging.
-
-```bash
-unity-cli upm-install --auto-update
-```
-
-#### UPM Version
-
-`upm-version`: Print the Unity Package Manager cli version.
-
-```bash
-unity-cli upm-version
-```
-
-#### Pack a Unity Package
-
-**Prerequisites:** In the [Unity Cloud Dashboard](https://cloud.unity.com/), create a **service account** on the organization you use for signing. When you assign **organization** access, open **Manage organization roles**, set the **Package Manager** role to **Package Manager Package Signer**, and save. Put the generated key id and secret in `UPM_SERVICE_ACCOUNT_KEY_ID` and `UPM_SERVICE_ACCOUNT_KEY_SECRET` (or your CI secret store). Copy **Organization ID** from **Administration** → **Settings** in that same org. If you have multiple orgs, switch to the correct one in the dashboard before creating keys or copying the id.
-
-`upm-pack [options]`: Sign and pack a Unity package.
-
-- `--source <path>`: An absolute or relative path to the root folder of the custom package to pack. This is the folder that contains the package manifest file (package.json). (optional; defaults to the current working directory).
-- `--destination <path>`: The output path for the signed tarball. If you specify a folder that doesn’t exist, it will be created for you. Note: If you omit this parameter, the tarball will be placed in the current working directory.
-- `--verbose`: Enable verbose logging.
-
-> [!NOTE]
-> Set `UNITY_ORGANIZATION_ID` or `UNITY_ORG_ID`, `UPM_SERVICE_ACCOUNT_KEY_ID`, and `UPM_SERVICE_ACCOUNT_KEY_SECRET`, or leave them unset in an interactive terminal to be prompted securely.
-
-```bash
-unity-cli upm-pack --source <path-to-package-folder> --destination <output-path>
-```
-
-#### Deprecated Sign Package Command
-
-> [!WARNING]
-> **Deprecated:** The `sign-package` command is deprecated. Use `unity-cli upm-pack --source <path-to-package-folder> --destination <output-path>` with `UNITY_ORGANIZATION_ID` or `UNITY_ORG_ID`, `UPM_SERVICE_ACCOUNT_KEY_ID`, and `UPM_SERVICE_ACCOUNT_KEY_SECRET` (or secure prompts).
-
-`sign-package [options]`: [Deprecated] Sign a Unity package using Unity Editor 6000.3+ batch mode (`-upmPack`). Use `unity-cli upm-pack` with organization and service account credentials for new workflows.
-
-- `--package <package>` Required. The fully qualified path to the folder that contains the package.json file for the package you want to sign. Note: Don't include package.json in this parameter value.
-- `--output <output>` Optional. The output directory where you want to save the signed tarball file (.tgz). If unspecified, the package contents will be updated in place with the signed .attestation.p7m file.
-- `--email <email>` Email associated with the Unity account. If unspecified, the `UNITY_USERNAME` environment variable will be used.
-- `--password <password>` The password of the Unity account. If unspecified, the `UNITY_PASSWORD` environment variable will be used.
-- `--organization <organization>` The Organization ID you copied from the Unity Cloud Dashboard. If unspecified, the `UNITY_ORGANIZATION_ID` environment variable will be used.
-- `--verbose` Enable verbose logging.
-
-> [!NOTE]
-> The `--output` option is optional. If not specified, the package contents will be updated in place with the signed `.attestation.p7m` file. Otherwise a signed `.tgz` file will be created in the specified output directory.
-
-```bash
-unity-cli sign-package --package <path-to-package-folder> --email <your-email> --password <your-password> --organization <your-organization-id>
 ```
 
 ## Logging
@@ -463,21 +251,7 @@ When `GITHUB_ACTIONS=true`, the logger emits GitHub workflow commands automatica
 - Defaults to `info` level; add `--verbose` (or temporarily set `ACTIONS_STEP_DEBUG=true`) to surface `debug` lines.
 - `Logger.annotate(...)` escapes `%`, `\r`, and `\n`, then includes `file`, `line`, `endLine`, `col`, `endColumn`, and `title` metadata so annotations are clickable in the Checks UI.
 - `startGroup`/`endGroup` become `::group::` / `::endgroup::` blocks.
-- `CI_mask`, `CI_setEnvironmentVariable`, and `CI_setOutput` write to the corresponding GitHub-provided files when those features are configured.
+- `CI_mask`, `CI_setEnvironmentVariable`, `CI_setOutput` and `CI_addPath` write to the corresponding GitHub-provided files when those features are configured.
 - **Job summary (`GITHUB_STEP_SUMMARY`) is opt-in:** set `UNITY_CLI_WORKFLOW_SUMMARY` to `1`, `true`, `yes`, or `on` (case-insensitive) so `CI_appendWorkflowSummary` can append the rich markdown block from Unity log / UTP parsing. If unset, summary output is skipped (annotations and stdout behavior are unchanged).
 
 The same command line you run locally therefore produces colorized console output on your machine and rich annotations once it runs inside Actions.
-
-### Additional CI Environments
-
-At the moment, only GitHub Actions is supported for enhanced logging. If you would like to see support for additional CI environments, please open a pull request or feature request on the GitHub repository.
-
-#### Roadmap
-
-- [ ] Support Azure DevOps logging commands
-- [ ] Support GitLab CI logging commands
-- [ ] Support Bitbucket Pipelines logging commands
-- [ ] Support Jenkins logging commands
-- [ ] Support CircleCI logging commands
-- [ ] Support Travis CI logging commands
-- [ ] Support TeamCity logging commands

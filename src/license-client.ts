@@ -3,9 +3,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { Logger } from './logging';
-import { UnityHub } from './unity-hub';
+import { UnityCli } from './unity-cli';
 import {
     ResolveGlobToPath,
+    ResolvePathCandidates,
     tryParseJson
 } from './utilities';
 
@@ -28,8 +29,12 @@ export interface ActivateOptions {
     password?: string;
 }
 
+/**
+ * The v3 licensing client, which drives Unity.Licensing.Client directly.
+ * v4 uses it as the fallback when the official Unity CLI cannot activate or return a license,
+ * for example a personal license on a headless runner, and for Unity 4.x and 5.x editors.
+ */
 export class LicensingClient {
-    private readonly unityHub: UnityHub = new UnityHub();
     private readonly logger: Logger = Logger.instance;
 
     private licenseClientPath: string | undefined;
@@ -43,19 +48,63 @@ export class LicensingClient {
         this.licenseVersion = licenseVersion;
     }
 
+    /**
+     * Finds Unity.Licensing.Client: UNITY_LICENSING_CLIENT_PATH, then the copy the official Unity CLI manages,
+     * then the Hub's external modules folder, then the client bundled with the editor in UNITY_EDITOR_PATH.
+     * @returns The licensing client executable.
+     */
     async init() {
-        try {
-            await fs.promises.access(this.unityHub.executable, fs.constants.R_OK);
-            await fs.promises.access(this.unityHub.rootDirectory, fs.constants.R_OK);
-        } catch (error) {
-            throw new Error('Unity Hub is not installed or not accessible. Please install Unity Hub before using the Licensing Client.');
+        const licensingClientExecutable = process.platform === 'win32' ? 'Unity.Licensing.Client.exe' : 'Unity.Licensing.Client';
+        let licenseClientPath: string | undefined = process.env.UNITY_LICENSING_CLIENT_PATH;
+
+        if (!licenseClientPath) {
+            try {
+                const cli = await UnityCli.Get();
+                licenseClientPath = await cli.GetLicensingClientPath();
+            } catch (error) {
+                this.logger.debug(`The Unity CLI did not report a licensing client: ${error}`);
+            }
         }
 
-        const licensingClientExecutable = process.platform === 'win32' ? 'Unity.Licensing.Client.exe' : 'Unity.Licensing.Client';
-        const licenseClientPath = await ResolveGlobToPath([this.unityHub.rootDirectory, '**', licensingClientExecutable]);
+        if (!licenseClientPath) {
+            const candidates: string[][] = LicensingClient.externalModulesDirectories()
+                .map(directory => [directory, '**', licensingClientExecutable]);
+            const editorPath = process.env.UNITY_EDITOR_PATH;
+
+            if (editorPath && editorPath.length > 0) {
+                candidates.push([path.dirname(editorPath), '**', 'Licensing', 'Client', licensingClientExecutable]);
+            }
+
+            licenseClientPath = await ResolvePathCandidates(candidates);
+        }
+
+        if (!licenseClientPath) {
+            throw new Error('Failed to find Unity.Licensing.Client. Install the Unity CLI with "unity-cli setup-cli", or set UNITY_LICENSING_CLIENT_PATH.');
+        }
+
         this.licenseClientPath = licenseClientPath;
         await fs.promises.access(this.licenseClientPath, fs.constants.X_OK);
+        this.logger.debug(`Using Unity Licensing Client at ${this.licenseClientPath}`);
         return this.licenseClientPath;
+    }
+
+    /**
+     * The folders the Unity Hub and the official Unity CLI download Unity.Licensing.Client to.
+     */
+    private static externalModulesDirectories(): string[] {
+        switch (process.platform) {
+            case 'win32':
+                return [path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'UnityHub', 'external-modules')];
+            case 'darwin':
+                return [path.join(os.homedir(), 'Library', 'Application Support', 'UnityHub', 'external-modules')];
+            default: {
+                const configHome = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+                return [
+                    path.join(configHome, 'UnityHub', 'external-modules'),
+                    path.join(configHome, 'unityhub', 'external-modules'),
+                ];
+            }
+        }
     }
 
     private getUnityCommonDir() {
@@ -156,7 +205,12 @@ export class LicensingClient {
         throw new Error('Services config value is not a valid JSON string or base64 encoded JSON string.');
     }
 
-    private async setupServicesConfig(configSource: string): Promise<string> {
+    /**
+     * Writes the floating license server's services-config.json where Unity's licensing reads it.
+     * @param configSource A path to the configuration file, raw JSON, or base64 encoded JSON.
+     * @returns The path the configuration was written to.
+     */
+    public async setupServicesConfig(configSource: string): Promise<string> {
         const servicesConfigPath = this.servicesConfigPath();
 
         if (fs.existsSync(configSource)) {
@@ -352,7 +406,7 @@ export class LicensingClient {
             }
 
             if (!found) {
-                throw new Error('Could not find Unity.Licensing.EntitlementResolver.dll in the unityhub installation');
+                throw new Error(`Could not find Unity.Licensing.EntitlementResolver.dll in ${clientDirectory}`);
             }
         }
 
@@ -726,4 +780,191 @@ export class LicensingClient {
 
         this.logger.info(`Successfully returned license of type '${licenseType}'`);
     }
+}
+/**
+ * Gets the license version a 4.x or 5.x editor in UNITY_EDITOR_PATH reads, or undefined for newer editors.
+ * @param editorPath The editor executable. Defaults to UNITY_EDITOR_PATH.
+ */
+export function GetLegacyLicenseVersion(editorPath: string | undefined = process.env.UNITY_EDITOR_PATH): '4.x' | '5.x' | undefined {
+    const versionMatch = editorPath?.match(/(\d+)\.(\d+)\.(\d+)/);
+
+    switch (versionMatch?.[1]) {
+        case '4':
+            return '4.x';
+        case '5':
+            return '5.x';
+        default:
+            return undefined;
+    }
+}
+
+/** How long one official CLI license command may run before it falls back. */
+const UNITY_CLI_LICENSE_TIMEOUT_MS = 3 * 60 * 1000;
+
+/**
+ * Activates a Unity license through the official Unity CLI first.
+ * Falls back to the Unity Licensing Client with the Unity ID email and password when the CLI fails,
+ * for example a personal license on a headless runner with no browser sign-in.
+ * 4.x and 5.x editors read their own license file, so they always use the Unity Licensing Client.
+ * @param options The activation options.
+ * @returns The floating license token, when one is known.
+ */
+export async function ActivateLicense(options: ActivateOptions): Promise<string | undefined> {
+    const logger = Logger.instance;
+    const legacyLicenseVersion = GetLegacyLicenseVersion();
+
+    if (legacyLicenseVersion) {
+        logger.info(`Unity ${legacyLicenseVersion} editors read their own license file, activating with the Unity Licensing Client...`);
+        return await new LicensingClient(legacyLicenseVersion).Activate(options);
+    }
+
+    let cliError: unknown;
+
+    try {
+        const result = await activateWithUnityCli(options);
+
+        if (result.activated) {
+            return result.token;
+        }
+
+        cliError = result.reason;
+    } catch (error) {
+        cliError = error;
+    }
+
+    logger.warn(`Unity CLI license activation failed, falling back to the Unity Licensing Client.\n${cliError}`);
+
+    if (options.licenseType !== LicenseType.floating &&
+        !options.username && !process.env.UNITY_USERNAME_BASE64) {
+        throw new Error(`Unity CLI license activation failed, and no Unity ID email and password were given for the fallback.\n${cliError}`);
+    }
+
+    return await new LicensingClient().Activate(options);
+}
+
+/**
+ * Returns a Unity license through the official Unity CLI first, then the Unity Licensing Client.
+ * @param licenseType The type of license to return.
+ * @param token The floating license token from activation. A floating license with a token is returned by the Unity Licensing Client.
+ */
+export async function ReturnLicense(licenseType: LicenseType, token: string | undefined = undefined): Promise<void> {
+    const logger = Logger.instance;
+    const legacyLicenseVersion = GetLegacyLicenseVersion();
+
+    if (legacyLicenseVersion || (licenseType === LicenseType.floating && token)) {
+        await new LicensingClient(legacyLicenseVersion).Deactivate(licenseType, token);
+        return;
+    }
+
+    try {
+        const cli = await UnityCli.Get();
+        const { exitCode, envelope } = await cli.RunJson(['license', 'return', '--yes'], { timeoutMs: UNITY_CLI_LICENSE_TIMEOUT_MS });
+
+        if (exitCode === 0 && envelope?.success !== false && !(await isLicenseActive(cli))) {
+            logger.info(`Successfully returned license of type '${licenseType}'`);
+            return;
+        }
+
+        logger.warn(`unity license return exited with code ${exitCode}${formatEnvelopeErrors(envelope)}, falling back to the Unity Licensing Client...`);
+    } catch (error) {
+        logger.warn(`Unity CLI license return failed, falling back to the Unity Licensing Client.\n${error}`);
+    }
+
+    if (licenseType === LicenseType.floating) {
+        throw new Error('The Unity CLI could not return the floating license. Pass the token from activation to return it with the Unity Licensing Client.');
+    }
+
+    await new LicensingClient().Deactivate(licenseType);
+}
+
+/**
+ * Prints the license state from the official Unity CLI, then the Unity Licensing Client context.
+ */
+export async function PrintLicenseContext(): Promise<void> {
+    try {
+        const cli = await UnityCli.Get();
+        await cli.Run(['license', 'status'], { stream: true });
+    } catch (error) {
+        Logger.instance.warn(`Failed to read the Unity CLI license status: ${error}`);
+    }
+
+    await new LicensingClient(GetLegacyLicenseVersion()).Context();
+}
+
+async function activateWithUnityCli(options: ActivateOptions): Promise<{ activated: boolean; token?: string | undefined; reason?: string | undefined }> {
+    const args = ['license', 'activate'];
+    const redactLiterals: string[] = [];
+
+    switch (options.licenseType) {
+        case LicenseType.personal:
+            args.push('--personal', '--accept-eula');
+            break;
+        case LicenseType.professional:
+            if (!options.serial) {
+                return { activated: false, reason: 'A serial is required to activate a professional license with the Unity CLI.' };
+            }
+
+            args.push('--serial', options.serial.trim());
+            redactLiterals.push(options.serial.trim());
+            break;
+        case LicenseType.floating:
+            if (!options.servicesConfig) {
+                throw new Error('Services config path is required for floating license activation');
+            }
+
+            await new LicensingClient().setupServicesConfig(options.servicesConfig);
+            args.push('--floating');
+            break;
+    }
+
+    const cli = await UnityCli.Get();
+    Logger.instance.info(`Activating a ${options.licenseType} license with the Unity CLI...`);
+    const { exitCode, envelope } = await cli.RunJson<unknown>(args, { timeoutMs: UNITY_CLI_LICENSE_TIMEOUT_MS, redactLiterals });
+
+    if (exitCode !== 0 || envelope?.success === false) {
+        return { activated: false, reason: `unity license activate exited with code ${exitCode}${formatEnvelopeErrors(envelope)}` };
+    }
+
+    if (!(await isLicenseActive(cli))) {
+        return { activated: false, reason: 'unity license activate succeeded, but unity license status reports no active license' };
+    }
+
+    const token = findToken(envelope?.data);
+
+    if (token) {
+        Logger.instance.CI_mask(token);
+    }
+
+    Logger.instance.info(`Successfully activated license of type '${options.licenseType}' with the Unity CLI`);
+    return { activated: true, token };
+}
+
+async function isLicenseActive(cli: UnityCli): Promise<boolean> {
+    const { envelope } = await cli.RunJson<{ active?: boolean }>(['license', 'status'], { timeoutMs: UNITY_CLI_LICENSE_TIMEOUT_MS });
+    return envelope?.data?.active === true;
+}
+
+function findToken(value: unknown): string | undefined {
+    if (!value || typeof value !== 'object') {
+        return undefined;
+    }
+
+    for (const [key, item] of Object.entries(value as { [key: string]: unknown })) {
+        if (typeof item === 'string' && /token/i.test(key) && item.length > 0) {
+            return item;
+        }
+
+        const nested = findToken(item);
+
+        if (nested) {
+            return nested;
+        }
+    }
+
+    return undefined;
+}
+
+function formatEnvelopeErrors(envelope: { errors?: { code: string; message: string }[] } | undefined): string {
+    const errors = envelope?.errors ?? [];
+    return errors.length > 0 ? `\n${errors.map(e => `  > ${e.code}: ${e.message}`).join('\n')}` : '';
 }
