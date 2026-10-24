@@ -74,7 +74,8 @@ export class GitHubActionsLoggerProvider implements ILoggerProvider {
 
     public setEnvironmentVariable(name: string, value: string): void {
         const githubEnv = process.env.GITHUB_ENV;
-        if (githubEnv) {
+        // a line break would let the value set other variables
+        if (githubEnv && !/[\r\n]/.test(`${name}${value}`)) {
             fs.appendFileSync(githubEnv, `${name}=${value}\n`, { encoding: 'utf8' });
         }
     }
@@ -88,7 +89,8 @@ export class GitHubActionsLoggerProvider implements ILoggerProvider {
 
     public addPath(directory: string): void {
         const githubPath = process.env.GITHUB_PATH;
-        if (githubPath) {
+        // a line break would let the value add more than one PATH entry
+        if (githubPath && !/[\r\n]/.test(directory)) {
             fs.appendFileSync(githubPath, `${directory}\n`, { encoding: 'utf8' });
         }
     }

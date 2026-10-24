@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { spawn } from 'child_process';
 import { Logger } from './logging';
 import { UnityEditor } from './unity-editor';
 import { UnityVersion } from './unity-version';
@@ -321,6 +322,7 @@ export class UnityInstaller {
             throw new Error(`Unity ${unityVersion.toString()} needs a changeset to install from the download archive`);
         }
 
+        UnityInstaller.assertArchiveVersion(unityVersion);
         const installPath = await this.getLegacyInstallPath();
         const installDir = path.join(installPath, unityVersion.version);
         const baseUrl = `https://download.unity3d.com/download_unity/${unityVersion.changeset}`;
@@ -410,17 +412,32 @@ export class UnityInstaller {
         return names;
     }
 
+    /**
+     * Runs a Unity NSIS installer silently. NSIS needs `/D=` last and unquoted, so the command line is passed verbatim, without a shell.
+     */
     private async runWindowsInstaller(url: string, installDir: string): Promise<void> {
+        if (/["\r\n]/.test(installDir)) {
+            throw new Error(`Invalid install directory: ${installDir}`);
+        }
+
         const installerPath = path.join(GetTempDir(), path.basename(url));
         await DownloadFile(url, installerPath);
         this.logger.info(`Running ${path.basename(installerPath)}...`);
 
         try {
-            await Exec('powershell', [
-                '-NoProfile',
-                '-Command',
-                `Start-Process -FilePath "${installerPath}" -ArgumentList "/S /D=${installDir}" -Wait`
-            ], { silent: true, showCommand: true });
+            const exitCode = await new Promise<number>((resolve, reject) => {
+                const child = spawn(installerPath, ['/S', `/D=${installDir}`], {
+                    shell: false,
+                    stdio: 'ignore',
+                    windowsVerbatimArguments: true,
+                });
+                child.on('error', reject);
+                child.on('close', (code) => resolve(code ?? 1));
+            });
+
+            if (exitCode !== 0) {
+                throw new Error(`${path.basename(installerPath)} failed with exit code ${exitCode}`);
+            }
         } finally {
             await fs.promises.rm(installerPath, { force: true });
         }
@@ -437,7 +454,7 @@ export class UnityInstaller {
         }
 
         this.logger.debug(`Moving ${unityAppPath} to ${targetPath}...`);
-        await Exec('sudo', ['mkdir', '-p', targetPath], { silent: true, showCommand: true });
+        await fs.promises.mkdir(targetPath, { recursive: true });
 
         for (const item of await fs.promises.readdir(unityAppPath)) {
             // the editor install path itself lives in /Applications/Unity/Hub
@@ -445,16 +462,32 @@ export class UnityInstaller {
                 continue;
             }
 
-            await Exec('sudo', ['mv', path.join(unityAppPath, item), path.join(targetPath, item)], { silent: true, showCommand: true });
+            const src = path.join(unityAppPath, item);
+            await fs.promises.cp(src, path.join(targetPath, item), { recursive: true, verbatimSymlinks: true });
+            await fs.promises.rm(src, { recursive: true, force: true });
         }
 
-        await Exec('sudo', ['chmod', '-R', '777', targetPath], { silent: true, showCommand: true });
+        await fs.promises.chmod(targetPath, 0o777);
+    }
+
+    /**
+     * Rejects versions and changesets that are not plain Unity release identifiers before they become URLs and paths.
+     */
+    private static assertArchiveVersion(unityVersion: UnityVersion): void {
+        if (!/^\d{1,2}\.\d{1,2}\.\d{1,2}(?:[abcfpx]\d{1,3})?$/.test(unityVersion.version)) {
+            throw new Error(`Invalid Unity version: ${unityVersion.version}`);
+        }
+
+        if (unityVersion.changeset && !/^[0-9a-f]{12}$/i.test(unityVersion.changeset)) {
+            throw new Error(`Invalid Unity changeset: ${unityVersion.changeset}`);
+        }
     }
 
     /**
      * Installs Unity 4.x from Unity's legacy installers.
      */
     private async installLegacyEditor(unityVersion: UnityVersion): Promise<string> {
+        UnityInstaller.assertArchiveVersion(unityVersion);
         const installPath = await this.getLegacyInstallPath();
         const installDir = path.join(installPath, `Unity ${unityVersion.version}`);
         let editorPath = resolveEditorExecutable(installDir);
@@ -565,6 +598,7 @@ export class UnityInstaller {
             if (fs.existsSync(beeBackend) && !fs.existsSync(dotBeeBackend)) {
                 this.logger.ci(`Patching Unity Linux Editor for Bee Backend...`);
                 await fs.promises.rename(beeBackend, dotBeeBackend);
+                // 'wx' fails instead of overwriting if something recreated the file since the rename
                 const wrapperSource: string = `#!/bin/bash
 # https://discussions.unity.com/t/linux-editor-stuck-on-loading-because-of-bee-backend-w-workaround/854480
 set -e
@@ -578,7 +612,7 @@ for ((i = 0; i < "\${#args[@]}"; ++i)); do
     esac
 done
 "$(dirname "$0")/.$(basename "$0")" "\${args[@]}"`
-                await fs.promises.writeFile(beeBackend, wrapperSource, { encoding: 'utf-8', mode: 0o755 });
+                await fs.promises.writeFile(beeBackend, wrapperSource, { encoding: 'utf-8', mode: 0o755, flag: 'wx' });
             }
         }
     }

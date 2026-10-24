@@ -347,27 +347,8 @@ export class LicensingClient {
 
     private async patchLicenseVersion(): Promise<void> {
         if (!this.licenseVersion) {
-            // check if the UNITY_EDITOR_PATH is set. If it is, use it to determine the license version
-            const versionMatch = process.env.UNITY_EDITOR_PATH?.match(/(\d+)\.(\d+)\.(\d+)/);
-
-            if (versionMatch) {
-                switch (versionMatch[1]) {
-                    case '4': {
-                        this.licenseVersion = '4.x';
-                        break;
-                    }
-                    case '5': {
-                        this.licenseVersion = '5.x';
-                        break;
-                    }
-                    default: {
-                        this.licenseVersion = '6.x'; // default to 6.x for any other
-                        break;
-                    }
-                }
-            } else {
-                this.licenseVersion = '6.x'; // default to 6.x if not set
-            }
+            // use the editor in UNITY_EDITOR_PATH to determine the license version, defaulting to 6.x
+            this.licenseVersion = GetLegacyLicenseVersion() ?? '6.x';
         }
 
         if (this.licenseVersion !== '6.x') {
@@ -786,16 +767,25 @@ export class LicensingClient {
  * @param editorPath The editor executable. Defaults to UNITY_EDITOR_PATH.
  */
 export function GetLegacyLicenseVersion(editorPath: string | undefined = process.env.UNITY_EDITOR_PATH): '4.x' | '5.x' | undefined {
-    const versionMatch = editorPath?.match(/(\d+)\.(\d+)\.(\d+)/);
+    // anchored per path segment, so the match stays linear on any input
+    for (const segment of (editorPath ?? '').split(/[\\/ ]/)) {
+        const major = /^(\d{1,4})\.\d{1,4}\.\d/.exec(segment)?.[1];
 
-    switch (versionMatch?.[1]) {
-        case '4':
-            return '4.x';
-        case '5':
-            return '5.x';
-        default:
-            return undefined;
+        if (major === undefined) {
+            continue;
+        }
+
+        switch (major) {
+            case '4':
+                return '4.x';
+            case '5':
+                return '5.x';
+            default:
+                return undefined;
+        }
     }
+
+    return undefined;
 }
 
 /** How long one official CLI license command may run before it falls back. */

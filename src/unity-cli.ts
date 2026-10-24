@@ -101,7 +101,8 @@ export class UnityCli {
         candidates.push(...defaultInstallLocations());
 
         for (const candidate of candidates) {
-            if (!isExecutableFile(candidate)) {
+            // only ever run a binary named unity(.exe), even when UNITY_CLI_PATH points elsewhere
+            if (path.basename(candidate).toLowerCase() !== EXE_NAME || !isExecutableFile(candidate)) {
                 continue;
             }
 
@@ -129,6 +130,10 @@ export class UnityCli {
 
         if (!binary) {
             throw new Error(`Unity CLI ${manifest.version} has no binary for ${platformKey}. Available: ${Object.keys(manifest.binaries).join(', ')}`);
+        }
+
+        if (!/^[\w.-]+$/.test(binary.filename) || !/^[0-9a-f]{64}$/i.test(binary.sha256)) {
+            throw new Error(`Invalid binary entry for ${platformKey} in the Unity CLI ${manifest.version} manifest`);
         }
 
         const cached = getToolCachePath(manifest.version);
@@ -489,6 +494,11 @@ async function fetchManifest(version: string): Promise<UnityCliManifest> {
     for (const url of urls) {
         try {
             const manifest = JSON.parse(await HttpsGetText(url)) as UnityCliManifest;
+
+            // the version becomes part of a cache path and a download URL
+            if (typeof manifest.version !== 'string' || !VERSION_PATTERN.test(manifest.version)) {
+                throw new Error(`Invalid version in ${url}: ${JSON.stringify(manifest.version)}`);
+            }
 
             if (version !== 'latest' && manifest.version !== version) {
                 throw new Error(`Manifest mismatch: requested ${version} but ${url} reports ${manifest.version}`);
