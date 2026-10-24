@@ -89,6 +89,35 @@ export class LicensingClient {
     }
 
     /**
+     * The folder that holds the whole licensing client: the folder around a macOS app bundle, otherwise the executable's folder.
+     */
+    private static clientRootDirectory(clientPath: string): string {
+        const bundle = clientPath.match(/^(.*?\.app)[\\/]/)?.[1];
+        return bundle ? path.dirname(bundle) : path.dirname(clientPath);
+    }
+
+    /**
+     * Lists the files under a directory that can hold compiled code: executables, libraries and extensionless binaries.
+     */
+    private static async listBinaries(directory: string): Promise<string[]> {
+        const results: string[] = [];
+
+        for (const entry of await fs.promises.readdir(directory, { withFileTypes: true, recursive: true })) {
+            if (!entry.isFile()) {
+                continue;
+            }
+
+            const extension = path.extname(entry.name).toLowerCase();
+
+            if (['', '.exe', '.dll', '.dylib', '.so'].includes(extension)) {
+                results.push(path.join(entry.parentPath, entry.name));
+            }
+        }
+
+        return results;
+    }
+
+    /**
      * The folders the Unity Hub and the official Unity CLI download Unity.Licensing.Client to.
      */
     private static externalModulesDirectories(): string[] {
@@ -366,39 +395,45 @@ export class LicensingClient {
             return; // no patching needed
         }
 
-        const clientDirectory = path.dirname(this.licenseClientPath);
+        const clientRoot = LicensingClient.clientRootDirectory(this.licenseClientPath);
         const patchedDirectory = path.join(os.tmpdir(), `UnityLicensingClient-${this.licenseVersion.replace('.', '_')}`);
+        const patchedClientPath = path.join(patchedDirectory, path.relative(clientRoot, this.licenseClientPath));
 
         if (await fs.promises.mkdir(patchedDirectory, { recursive: true }) === undefined) {
             this.logger.debug('Unity Licensing Client was already patched, reusing');
         } else {
-            const fileNames = await fs.promises.readdir(clientDirectory);
-            // older clients ship the resolver as its own assembly; the single-file client the Unity CLI downloads embeds it in the executable
-            const patchTarget = fileNames.includes('Unity.Licensing.EntitlementResolver.dll')
-                ? 'Unity.Licensing.EntitlementResolver.dll'
-                : path.basename(this.licenseClientPath);
+            // copy the whole client, then patch whichever binary holds the "6.x" license version:
+            // older clients ship it in Unity.Licensing.EntitlementResolver.dll, the single-file client the Unity CLI downloads embeds it in the executable
+            await fs.promises.cp(clientRoot, patchedDirectory, { recursive: true, verbatimSymlinks: true });
+            const patchedFiles: string[] = [];
 
-            for (const fileName of fileNames) {
-                if (fileName === patchTarget) {
-                    await this.patchBinary(
-                        path.join(clientDirectory, fileName), path.join(patchedDirectory, fileName),
-                        Buffer.from('6.x', 'utf16le'),
-                        Buffer.from(this.licenseVersion, 'utf16le'),
-                    );
-                } else {
-                    await fs.promises.symlink(path.join(clientDirectory, fileName), path.join(patchedDirectory, fileName));
+            for (const file of await LicensingClient.listBinaries(patchedDirectory)) {
+                try {
+                    await this.patchBinary(file, file, Buffer.from('6.x', 'utf16le'), Buffer.from(this.licenseVersion, 'utf16le'));
+                    patchedFiles.push(file);
+                } catch (error) {
+                    if (!(error instanceof Error && error.message === 'Could not find the search value')) {
+                        throw error;
+                    }
                 }
             }
 
-            const patchedPath = path.join(patchedDirectory, patchTarget);
+            if (patchedFiles.length === 0) {
+                await fs.promises.rm(patchedDirectory, { recursive: true, force: true });
+                throw new Error(`Could not find the 6.x license version in any Unity Licensing Client binary under ${clientRoot}`);
+            }
 
-            if (patchTarget === path.basename(this.licenseClientPath)) {
-                await fs.promises.chmod(patchedPath, 0o755);
+            this.logger.debug(`Patched the license version in:\n${patchedFiles.map(file => `  > ${file}`).join('\n')}`);
+            await fs.promises.chmod(patchedClientPath, 0o755);
 
-                if (process.platform === 'darwin') {
-                    // patching invalidates the signature, and macOS kills binaries with a broken one
+            if (process.platform === 'darwin') {
+                // patching invalidates the signature, and macOS kills binaries with a broken one
+                const bundle = patchedClientPath.match(/^(.*?\.app)\//)?.[1];
+                const targets = bundle ? [bundle] : patchedFiles;
+
+                for (const target of targets) {
                     await new Promise<void>((resolve, reject) => {
-                        const child = spawn('codesign', ['--force', '--sign', '-', patchedPath], { stdio: 'ignore' });
+                        const child = spawn('codesign', ['--force', '--deep', '--sign', '-', target], { stdio: 'ignore' });
                         child.on('error', reject);
                         child.on('close', (code) => code === 0 ? resolve() : reject(new Error(`codesign failed with exit code ${code}`)));
                     });
@@ -406,7 +441,7 @@ export class LicensingClient {
             }
         }
 
-        this.licenseClientPath = path.join(patchedDirectory, path.basename(this.licenseClientPath));
+        this.licenseClientPath = patchedClientPath;
         const unityCommonDir = this.getUnityCommonDir();
         const legacyLicenseFile = path.join(unityCommonDir, `Unity_v${this.licenseVersion}.ulf`);
         await fs.promises.mkdir(unityCommonDir, { recursive: true });
