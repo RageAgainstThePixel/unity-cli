@@ -595,11 +595,23 @@ export class UnityInstaller {
             const dataPath = path.join(path.dirname(editorPath), 'Data');
             const beeBackend = path.join(dataPath, 'bee_backend');
             const dotBeeBackend = path.join(dataPath, '.bee_backend');
-            if (fs.existsSync(beeBackend) && !fs.existsSync(dotBeeBackend)) {
-                this.logger.ci(`Patching Unity Linux Editor for Bee Backend...`);
-                await fs.promises.rename(beeBackend, dotBeeBackend);
-                // 'wx' fails instead of overwriting if something recreated the file since the rename
-                const wrapperSource: string = `#!/bin/bash
+            // linking fails with EEXIST once patched and ENOENT without a bee_backend, so nothing is checked before it is used
+            try {
+                await fs.promises.link(beeBackend, dotBeeBackend);
+            } catch (error) {
+                const code = (error as NodeJS.ErrnoException).code;
+
+                if (code === 'EEXIST' || code === 'ENOENT') {
+                    return;
+                }
+
+                throw error;
+            }
+
+            this.logger.ci(`Patching Unity Linux Editor for Bee Backend...`);
+            await fs.promises.unlink(beeBackend);
+            // 'wx' fails instead of overwriting if something recreated the file since the unlink
+            const wrapperSource: string = `#!/bin/bash
 # https://discussions.unity.com/t/linux-editor-stuck-on-loading-because-of-bee-backend-w-workaround/854480
 set -e
 args=("$@")
@@ -612,8 +624,7 @@ for ((i = 0; i < "\${#args[@]}"; ++i)); do
     esac
 done
 "$(dirname "$0")/.$(basename "$0")" "\${args[@]}"`
-                await fs.promises.writeFile(beeBackend, wrapperSource, { encoding: 'utf-8', mode: 0o755, flag: 'wx' });
-            }
+            await fs.promises.writeFile(beeBackend, wrapperSource, { encoding: 'utf-8', mode: 0o755, flag: 'wx' });
         }
     }
 
