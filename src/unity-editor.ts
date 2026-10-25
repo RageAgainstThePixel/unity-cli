@@ -182,7 +182,10 @@ export class UnityEditor {
                     await KillChildProcesses(procInfo);
                 }
 
-                const leftovers = (await FindProcessesUnder(editorRootPath)).filter(proc => !preexistingEditorProcesses.has(proc.pid));
+                // the licensing client is left alone: it may still be saving the license it just updated, and killing it
+                // then loses the license for the next run; return-license stops it at the end of the job instead
+                const leftovers = (await FindProcessesUnder(editorRootPath))
+                    .filter(proc => !preexistingEditorProcesses.has(proc.pid) && !/licensing/i.test(proc.name));
                 await Promise.all(leftovers.map(proc => KillProcess(proc)));
             } catch (error) {
                 Logger.instance.error(`Failed to kill Unity process: ${error}`);
@@ -387,9 +390,15 @@ export class UnityEditor {
     private async getUnityCliForRun(command: EditorCommand): Promise<UnityCli | undefined> {
         const directLaunch = process.env.UNITY_CLI_DIRECT_LAUNCH?.trim().toLowerCase();
 
-        // unity run always quits the editor, so commands that manage their own shutdown launch directly
+        // unity run always quits the editor, so commands that manage their own shutdown launch directly.
+        // Android builds start a Gradle daemon that inherits the editor's output, and unity run waits on that
+        // output until the daemon dies, so it never returns; those launch directly too
+        const buildTarget = command.args.indexOf('-buildTarget');
+        const isAndroidBuild = buildTarget >= 0 && command.args[buildTarget + 1]?.toLowerCase() === 'android';
+
         if (!command.projectPath ||
             !command.args.includes('-quit') ||
+            isAndroidBuild ||
             directLaunch === 'true' || directLaunch === '1' ||
             this.version.isLessThan('2019.1.0') ||
             (process.platform === 'linux' && !command.args.includes('-nographics')) ||
