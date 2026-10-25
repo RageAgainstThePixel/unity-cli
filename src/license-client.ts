@@ -1122,6 +1122,8 @@ export async function ActivateLicense(options: ActivateOptions): Promise<string 
         (options.licenseType === LicenseType.personal || options.licenseType === LicenseType.professional)) {
         try {
             if (await activateFromLicenseFile(licenseFile)) {
+                // lets a CI step tell whether it needs to store a fresh license
+                logger.CI_setOutput('license-source', 'license-file');
                 return undefined;
             }
         } catch (error) {
@@ -1129,6 +1131,7 @@ export async function ActivateLicense(options: ActivateOptions): Promise<string 
         }
     }
 
+    logger.CI_setOutput('license-source', 'account');
     let cliError: unknown;
 
     try {
