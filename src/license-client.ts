@@ -419,14 +419,31 @@ export class LicensingClient {
             await fs.promises.cp(clientRoot, patchedDirectory, { recursive: true, verbatimSymlinks: true });
             const patchedFiles: string[] = [];
 
-            for (const file of await LicensingClient.listBinaries(patchedDirectory)) {
-                try {
-                    await this.patchBinary(file, file, Buffer.from('6.x', 'utf16le'), Buffer.from(this.licenseVersion, 'utf16le'));
-                    patchedFiles.push(file);
-                } catch (error) {
-                    if (!(error instanceof Error && error.message === 'Could not find the search value')) {
-                        throw error;
+            // Windows and Linux builds hold the value as a UTF-16 string; the macOS build only as the
+            // UTF-8 constant k_UnityLicenseVersionCompatibility, so that one is matched with its name
+            const constantName = Buffer.concat([Buffer.from('k_UnityLicenseVersionCompatibility'), Buffer.from([0x06])]);
+            const patterns: [Buffer, Buffer][] = [
+                [Buffer.from('6.x', 'utf16le'), Buffer.from(this.licenseVersion, 'utf16le')],
+                [Buffer.concat([constantName, Buffer.from('6.x')]), Buffer.concat([constantName, Buffer.from(this.licenseVersion)])],
+            ];
+
+            const binaries = await LicensingClient.listBinaries(patchedDirectory);
+
+            // the UTF-8 constant is only patched when no UTF-16 value exists, which leaves the Windows and Linux patch as it was
+            for (const [searchValue, replaceValue] of patterns) {
+                for (const file of binaries) {
+                    try {
+                        await this.patchBinary(file, file, searchValue, replaceValue);
+                        patchedFiles.push(file);
+                    } catch (error) {
+                        if (!(error instanceof Error && error.message === 'Could not find the search value')) {
+                            throw error;
+                        }
                     }
+                }
+
+                if (patchedFiles.length > 0) {
+                    break;
                 }
             }
 
