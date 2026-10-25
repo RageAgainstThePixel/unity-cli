@@ -572,7 +572,10 @@ export class LicensingClient {
             }
 
             if (!silent || exitCode !== 0) {
-                const maskedOutput = redact(this.maskSerialInOutput(output));
+                // --debug output can carry tokens, so it gets the same sanitizing as the client log
+                const maskedOutput = args.includes('--debug')
+                    ? this.maskSerialInOutput(output).split(/\r?\n/).map(line => LicensingClient.sanitizeLogLine(line, secrets)).join('\n')
+                    : redact(this.maskSerialInOutput(output));
                 const splitLines = maskedOutput.split(/\r?\n/);
 
                 for (const line of splitLines) {
@@ -597,18 +600,25 @@ export class LicensingClient {
      * The log can hold account details and tokens, so only problem lines are printed, with the known secrets,
      * email addresses and long token-like strings redacted.
      */
-    private async printClientLogProblems(offset: number, secrets: string[], maxLines: number = 30): Promise<void> {
+    /**
+     * Redacts the known secrets, email addresses and long token-like strings (JWTs, access and refresh tokens) from a client log line.
+     */
+    private static sanitizeLogLine(line: string, secrets: string[]): string {
+        return redactSensitiveLiterals(line, secrets)
+            .replace(/[^\s@"'<>]+@[^\s@"'<>]+\.[^\s@"'<>]+/g, '*****')
+            .replace(/[A-Za-z0-9+_=.-]{32,}/g, '*****');
+    }
+
+    private async printClientLogProblems(offset: number, secrets: string[], maxLines: number = 40): Promise<void> {
         try {
             const content = await fs.promises.readFile(LicensingClient.ClientLogPath());
             const lines = content.subarray(offset).toString('utf-8').split(/\r?\n/)
-                .filter(line => /\b(error|warn|warning|exception|fail|failed|timeout|denied)\b/i.test(line))
+                .filter(line => line.trim().length > 0)
                 .slice(-maxLines)
-                .map(line => redactSensitiveLiterals(line, secrets)
-                    .replace(/[^\s@"']+@[^\s@"']+\.[^\s@"']+/g, '*****')
-                    .replace(/[A-Za-z0-9+/_=.-]{24,}/g, '*****'));
+                .map(line => LicensingClient.sanitizeLogLine(line, secrets));
 
             if (lines.length > 0) {
-                this.logger.info(`Problems the Unity Licensing Client logged:\n${lines.join('\n')}`);
+                this.logger.info(`Last lines the Unity Licensing Client logged (redacted):\n${lines.join('\n')}`);
             }
         } catch (error) {
             this.logger.debug(`Could not read the Unity Licensing Client log: ${error}`);
@@ -878,6 +888,11 @@ export class LicensingClient {
 
         if (licenseType === LicenseType.personal) {
             args.push(`--include-personal`);
+        }
+
+        if (process.platform === 'darwin') {
+            // macOS activations have hung without logging anything at the default level
+            args.push('--debug');
         }
 
         // keep redacting the account details in every later command's output, such as --showEntitlements
