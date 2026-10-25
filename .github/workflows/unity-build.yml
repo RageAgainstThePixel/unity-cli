@@ -101,11 +101,56 @@ jobs:
               echo "- path: \`${UNITY_EDITOR_PATH:-n/a}\`"
             } >> "$GITHUB_STEP_SUMMARY"
           fi
+      # macOS and Linux runners all report the same machine identity to Unity, so one license per OS serves every job:
+      # those rows reuse a cached license file (encrypted with the existing UNITY_PASSWORD secret) and never return it.
+      # Windows runners are a new machine every job, so Windows rows activate with the account and return the license.
+      - name: Restore cached license
+        if: ${{ matrix.unity-version != 'none' && runner.os != 'Windows' }}
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/unity-license-cache
+          key: unity-license-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
+          restore-keys: unity-license-${{ runner.os }}-
       - name: Activate License
+        id: activate-license
         if: ${{ matrix.unity-version != 'none' }}
+        env:
+          LICENSE_CACHE: ${{ runner.temp }}/unity-license-cache
+          LICENSE_CACHE_KEY: ${{ secrets.UNITY_PASSWORD }}
         run: |
           unity-cli license-context
-          unity-cli activate-license --license personal --email "${{ secrets.UNITY_USERNAME }}" --password "${{ secrets.UNITY_PASSWORD }}"
+          major="${UNITY_EDITOR_VERSION%%.*}"
+          # 4.x and 5.x editors need their own license version, so they always activate with the account
+          use_cache=false
+          if [ "${RUNNER_OS}" != "Windows" ] && [ "${major}" -ge 2017 ]; then
+            use_cache=true
+          fi
+          cached_license="${RUNNER_TEMP}/Unity_lic.ulf"
+          if [ "${use_cache}" = true ] && [ -f "${LICENSE_CACHE}/license.enc" ]; then
+            if openssl enc -d -aes-256-cbc -pbkdf2 -pass env:LICENSE_CACHE_KEY -in "${LICENSE_CACHE}/license.enc" -out "${cached_license}"; then
+              export UNITY_LICENSE="${cached_license}"
+            fi
+          fi
+          activate_rc=0
+          unity-cli activate-license --license personal --email "${{ secrets.UNITY_USERNAME }}" --password "${{ secrets.UNITY_PASSWORD }}" || activate_rc=$?
+          rm -f "${cached_license}"
+          if [ "${activate_rc}" -ne 0 ]; then
+            exit "${activate_rc}"
+          fi
+          if [ "${use_cache}" = true ]; then
+            license_file="$(unity-cli license-file-path)"
+            if [ -f "${license_file}" ]; then
+              mkdir -p "${LICENSE_CACHE}"
+              openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:LICENSE_CACHE_KEY -in "${license_file}" -out "${LICENSE_CACHE}/license.enc"
+              echo "cache-license=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+      - name: Save cached license
+        if: ${{ steps.activate-license.outputs.cache-license == 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/unity-license-cache
+          key: unity-license-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
       - name: Create Unity Project
         if: ${{ matrix.unity-version != 'none' }}
         run: |
