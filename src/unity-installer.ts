@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import { spawn } from 'child_process';
 import { Logger } from './logging';
 import { UnityEditor } from './unity-editor';
@@ -377,7 +378,7 @@ export class UnityInstaller {
                 ];
 
                 for (const url of packages) {
-                    const pkgPath = path.join(GetTempDir(), path.basename(url));
+                    const pkgPath = tempInstallerPath('.pkg');
                     await DownloadFile(url, pkgPath);
 
                     try {
@@ -426,9 +427,9 @@ export class UnityInstaller {
             throw new Error(`Invalid install directory: ${installDir}`);
         }
 
-        const installerPath = path.join(GetTempDir(), path.basename(url));
+        const installerPath = tempInstallerPath('.exe');
         await DownloadFile(url, installerPath);
-        this.logger.info(`Running ${path.basename(installerPath)}...`);
+        this.logger.info(`Running ${path.basename(url)}...`);
 
         try {
             const exitCode = await new Promise<number>((resolve, reject) => {
@@ -442,7 +443,7 @@ export class UnityInstaller {
             });
 
             if (exitCode !== 0) {
-                throw new Error(`${path.basename(installerPath)} failed with exit code ${exitCode}`);
+                throw new Error(`${path.basename(url)} failed with exit code ${exitCode}`);
             }
         } finally {
             await fs.promises.rm(installerPath, { force: true });
@@ -511,7 +512,7 @@ export class UnityInstaller {
             }
             case 'darwin': {
                 const url = `https://beta.unity3d.com/download/unity-${unityVersion.version}.dmg`;
-                const installerPath = path.join(GetTempDir(), `UnitySetup-${unityVersion.version}.dmg`);
+                const installerPath = tempInstallerPath('.dmg');
                 await DownloadFile(url, installerPath);
                 let mountPoint = '';
 
@@ -580,7 +581,7 @@ export class UnityInstaller {
         }
 
         if (debName) {
-            const downloadPath = path.join(GetTempDir(), debName);
+            const downloadPath = tempInstallerPath('.deb');
             await DownloadFile(`https://archive.ubuntu.com/ubuntu/pool/main/o/openssl/${debName}`, downloadPath);
 
             try {
@@ -854,4 +855,13 @@ export function resolveEditorExecutable(location: string | undefined): string | 
     }
 
     return candidates.find(candidate => fs.existsSync(candidate) && fs.statSync(candidate).isFile());
+}
+
+/**
+ * A fresh temp path for a downloaded installer. The name is random rather than taken from the URL,
+ * so nothing from the requested version reaches the installer command line.
+ * @param extension The installer's file extension, e.g. .pkg.
+ */
+function tempInstallerPath(extension: string): string {
+    return path.join(GetTempDir(), `unity-installer-${randomUUID()}${extension}`);
 }
