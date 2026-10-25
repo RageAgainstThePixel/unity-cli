@@ -35,6 +35,45 @@ export interface LogTailResult {
     stopLogTail: () => void;
     /** Collected telemetry objects parsed from lines beginning with '##utp:' */
     telemetry: UTP[];
+    /** Distinct error lines seen in the log, without stack frames, in the order they appeared (capped at {@link MAX_RECAP_STORED_LINES}). */
+    errorLines: string[];
+    /** How many distinct error lines were seen, including any beyond the stored cap. */
+    errorLineCount: () => number;
+}
+
+/** Upper bound on error lines kept in memory for the failure recap. */
+const MAX_RECAP_STORED_LINES = 1000;
+
+/**
+ * True for a stack frame line, which the failure recap leaves out: managed `  at ...` frames,
+ * Unity's `Class:Method (args)` frames, `(Filename: ... Line: N)` trailers and native `#N 0x...` frames.
+ * @param line A log line.
+ */
+export function isStackFrameLine(line: string): boolean {
+    const trimmed = line.trim();
+
+    return /^at\s/.test(trimmed) ||
+        /^\(Filename: .* Line: -?\d+\)$/.test(trimmed) ||
+        /^#\d+\s/.test(trimmed) ||
+        /^0x[0-9a-f]+\s/i.test(trimmed) ||
+        /^[\w.`<>[\]+]+:[\w.`<>[\]+]+ ?\(.*\)( \(at .*\))?$/.test(trimmed);
+}
+
+/**
+ * True for a log line the failure recap lists: an error marker, an exception, a failure or a fatal batch mode message.
+ * @param line A log line.
+ */
+export function isErrorRecapLine(line: string): boolean {
+    if (/\b0 errors?\b/i.test(line)) {
+        return false;
+    }
+
+    return /\berror\b/i.test(line) ||
+        /Exception\b/.test(line) ||
+        /\bfatal\b/i.test(line) ||
+        /\bFailed to\b/i.test(line) ||
+        /^Aborting batchmode/.test(line) ||
+        /No valid Unity Editor license found/.test(line);
 }
 
 // Detects workflow command markers to avoid emitting duplicate annotations
@@ -1153,6 +1192,21 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
     const actionTableRenderer = new ActionTableRenderer(isStdoutTTY());
     const utpLogPath = buildUtpLogPath(logPath);
     let telemetryFlushed = false;
+    const errorLines: string[] = [];
+    const seenErrorLines = new Set<string>();
+    const recordErrorLine = (line: string): void => {
+        const trimmed = line.trim();
+
+        if (trimmed.length === 0 || seenErrorLines.has(trimmed) || isStackFrameLine(trimmed)) {
+            return;
+        }
+
+        seenErrorLines.add(trimmed);
+
+        if (errorLines.length < MAX_RECAP_STORED_LINES) {
+            errorLines.push(trimmed);
+        }
+    };
     const buildIssueKey = (file: string | undefined, lineNo: number | undefined, message: string): string => {
         const normalized = normalizeAnnotationPath(file, projectPath);
         const canonicalFile = (normalized.absoluteFile ?? normalizePathSlashes(file ?? '')).toLowerCase();
@@ -1236,6 +1290,8 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                 }
 
                 if (utp.message && 'severity' in utp && isElevatedUtpSeverity(utp.severity)) {
+                    // the message only; its stack trace stays out of the failure recap
+                    recordErrorLine(utp.message.split(/\r?\n/)[0] ?? '');
                     const normalizedPath = normalizeAnnotationPath(utp.file, projectPath);
                     const stacktrace = sanitizeStackTrace(utp.stackTrace);
                     const message = stacktrace == undefined ? utp.message : `${utp.message}\n${stacktrace}`;
@@ -1278,6 +1334,10 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
                 return;
             }
             const scan = parsePlainLogIssue(line);
+            if (((scan && scan.severity === Severity.Error) || isErrorRecapLine(line)) &&
+                !(scan && utpMessageMatchesBenignRemap(scan.message))) {
+                recordErrorLine(line);
+            }
             if (scan) {
                 if (utpMessageMatchesBenignRemap(scan.message)) {
                     if (Logger.instance.logLevel !== LogLevel.UTP) {
@@ -1444,5 +1504,5 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
         logEnded = true;
     }
 
-    return { tailPromise, stopLogTail, telemetry };
+    return { tailPromise, stopLogTail, telemetry, errorLines, errorLineCount: () => seenErrorLines.size };
 }

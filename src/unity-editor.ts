@@ -169,6 +169,7 @@ export class UnityEditor {
         let logTail: LogTailResult | null = null;
         let unityProcess: ChildProcess;
         let unityRunOutput: string | undefined = undefined;
+        let editorLogPath: string | undefined = undefined;
 
         const editorRootPath = this.editorRootPath;
         // helpers the editor starts from its own folder (licensing client, shader compiler, bee_backend) outlive it as
@@ -241,6 +242,7 @@ export class UnityEditor {
             }
 
             const logPath: string = GetArgumentValueAsString('-logFile', command.args);
+            editorLogPath = logPath;
             logTail = TailLogFile(logPath, command.projectPath);
 
             // Scrub sensitive arguments before logging
@@ -372,12 +374,50 @@ export class UnityEditor {
                     }
                 }
 
+                if (exitCode !== undefined && exitCode !== 0) {
+                    await this.printFailureRecap(logTail, editorLogPath);
+                }
+
                 if (exitCode === undefined) {
                     throw Error('Failed to start Unity!');
                 } else if (exitCode !== 0) {
                     throw Error(`Unity failed with exit code ${exitCode}`);
                 }
             }
+        }
+    }
+
+    /**
+     * After a failed run, lists the error lines from the Editor log outside the collapsed log group, so the cause sits
+     * next to "Unity failed with exit code N". Stack frames are left out and the list is capped; with no error line,
+     * the log's last lines are printed instead. Annotations are not affected.
+     */
+    private async printFailureRecap(logTail: LogTailResult | null, logPath: string | undefined): Promise<void> {
+        const maxLines = 100;
+        const errorLines = logTail?.errorLines ?? [];
+
+        if (errorLines.length > 0) {
+            const total = logTail!.errorLineCount();
+            const shown = errorLines.slice(0, maxLines);
+            const more = total - shown.length;
+            this.logger.info(`Unity reported ${total} error line${total === 1 ? '' : 's'}:\n${shown.map(line => `  ${line}`).join('\n')}` +
+                (more > 0 ? `\n  ... ${more} more in ${logPath ?? 'the Editor log'}` : ''));
+            return;
+        }
+
+        if (!logPath) {
+            return;
+        }
+
+        try {
+            const lines = (await fs.promises.readFile(logPath, 'utf-8')).split(/\r?\n/).filter(line => line.trim().length > 0);
+            const tail = lines.slice(-20);
+
+            if (tail.length > 0) {
+                this.logger.info(`No error lines found; the last ${tail.length} lines of ${logPath}:\n${tail.map(line => `  ${line}`).join('\n')}`);
+            }
+        } catch (error) {
+            this.logger.debug(`Could not read ${logPath}: ${error}`);
         }
     }
 
