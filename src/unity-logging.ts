@@ -56,7 +56,8 @@ export function isStackFrameLine(line: string): boolean {
         /^\(Filename: .* Line: -?\d+\)$/.test(trimmed) ||
         /^#\d+\s/.test(trimmed) ||
         /^0x[0-9a-f]+\s/i.test(trimmed) ||
-        /^[\w.`<>[\]+]+:[\w.`<>[\]+]+ ?\(.*\)( \(at .*\))?$/.test(trimmed);
+        // Class:Method (args) [(at file:line)]: an anchored prefix plus a closing parenthesis keeps this linear
+        (/^[\w.`<>[\]+]+:[\w.`<>[\]+]+ ?\(/.test(trimmed) && trimmed.endsWith(')'));
 }
 
 /**
