@@ -43,7 +43,13 @@ export async function CheckAndroidSdkInstalled(editor: UnityEditor, projectPath:
     const javaSdk = await getJDKPath(editor);
     await execSdkManager(sdkManagerPath, javaSdk, ['--licenses']);
     await execSdkManager(sdkManagerPath, javaSdk, ['--update']);
-    await execSdkManager(sdkManagerPath, javaSdk, ['platform-tools', `platforms;android-${androidTargetSdk}`]);
+    try {
+        await execSdkManager(sdkManagerPath, javaSdk, ['platform-tools', `platforms;android-${androidTargetSdk}`]);
+    } catch (error) {
+        // sdkmanager sometimes fails to unzip a package it just downloaded; a second attempt downloads it again
+        logger.warn(`${error}\nRetrying the Android SDK install...`);
+        await execSdkManager(sdkManagerPath, javaSdk, ['platform-tools', `platforms;android-${androidTargetSdk}`]);
+    }
     sdkPath = await getAndroidSdkPath(editor, androidTargetSdk);
 
     if (!sdkPath) {

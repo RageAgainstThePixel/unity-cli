@@ -507,6 +507,7 @@ export class LicensingClient {
         const secrets = [...this.secrets, ...argSecrets];
         const redact = (text: string) => redactSensitiveLiterals(text, secrets);
         this.logger.startGroup(`\x1b[34m${this.licenseClientPath} ${redact(args.join(' '))}\x1b[0m`);
+        const logOffset = await this.getClientLogSize();
         await fs.promises.access(this.licenseClientPath!, fs.constants.R_OK | fs.constants.X_OK);
 
         try {
@@ -566,8 +567,8 @@ export class LicensingClient {
             });
         } finally {
             if (timedOut) {
-                // the client log can hold account details and tokens, so only its path is printed
                 this.logger.error(`Unity Licensing Client did not finish within ${LICENSING_CLIENT_TIMEOUT_MS / 60000} minutes. Its log: ${LicensingClient.ClientLogPath()}`);
+                await this.printClientLogProblems(logOffset, secrets);
             }
 
             if (!silent || exitCode !== 0) {
@@ -589,6 +590,29 @@ export class LicensingClient {
         }
 
         return output;
+    }
+
+    /**
+     * Prints the warning and error lines the client logged since `offset`, to show why a command hung.
+     * The log can hold account details and tokens, so only problem lines are printed, with the known secrets,
+     * email addresses and long token-like strings redacted.
+     */
+    private async printClientLogProblems(offset: number, secrets: string[], maxLines: number = 30): Promise<void> {
+        try {
+            const content = await fs.promises.readFile(LicensingClient.ClientLogPath());
+            const lines = content.subarray(offset).toString('utf-8').split(/\r?\n/)
+                .filter(line => /\b(error|warn|warning|exception|fail|failed|timeout|denied)\b/i.test(line))
+                .slice(-maxLines)
+                .map(line => redactSensitiveLiterals(line, secrets)
+                    .replace(/[^\s@"']+@[^\s@"']+\.[^\s@"']+/g, '*****')
+                    .replace(/[A-Za-z0-9+/_=.-]{24,}/g, '*****'));
+
+            if (lines.length > 0) {
+                this.logger.info(`Problems the Unity Licensing Client logged:\n${lines.join('\n')}`);
+            }
+        } catch (error) {
+            this.logger.debug(`Could not read the Unity Licensing Client log: ${error}`);
+        }
     }
 
     /**
