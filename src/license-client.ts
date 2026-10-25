@@ -522,9 +522,22 @@ export class LicensingClient {
                     removeListeners();
                     reject(error);
                 });
-                child.on('close', (code) => {
+                // the client can start a background instance that inherits its stdout and stderr,
+                // so 'close' may never fire; settle on 'exit' and stop reading the pipes shortly after
+                let settled = false;
+                const settle = (code: number | null) => {
+                    if (settled) { return; }
+                    settled = true;
                     removeListeners();
                     resolve(timedOut ? -1 : code === null ? 0 : code);
+                };
+                child.on('close', settle);
+                child.on('exit', (code) => {
+                    setTimeout(() => {
+                        child.stdout.destroy();
+                        child.stderr.destroy();
+                        settle(code);
+                    }, 1000);
                 });
             });
         } finally {
