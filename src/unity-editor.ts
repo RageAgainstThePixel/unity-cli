@@ -13,6 +13,7 @@ import {
     KillProcess,
     KillChildProcesses,
     Exec,
+    redactSensitiveLiterals,
 } from './utilities';
 import { UnityCli } from './unity-cli';
 import {
@@ -29,6 +30,9 @@ export interface EditorCommand {
 }
 
 export class UnityEditor {
+    /** Editor flags whose values are never logged. */
+    private static readonly SENSITIVE_FLAGS = ['-username', '-password', '-cloudOrganization', '-serial'];
+
     public readonly editorPath: string;
     public readonly editorRootPath: string;
     public readonly version: UnityVersion;
@@ -119,7 +123,7 @@ export class UnityEditor {
      * @returns A new array with sensitive values redacted.
      */
     public scrubSensitiveArgs(args: string[]): string[] {
-        const sensitiveFlags = ['-username', '-password', '-cloudOrganization', '-serial'];
+        const sensitiveFlags = UnityEditor.SENSITIVE_FLAGS;
         const scrubbedArgs: string[] = [];
 
         for (let i = 0; i < args.length; i++) {
@@ -329,7 +333,10 @@ export class UnityEditor {
                 await tryKillEditorProcesses();
 
                 if (exitCode !== undefined && exitCode !== 0 && unityRunOutput) {
-                    const output = unityRunOutput.split(/\r?\n/).filter(line => line.length > 0 && !line.includes('<claude-code-hint')).join('\n');
+                    // unity run can echo arguments back, so values of sensitive flags are redacted the same way as the logged command
+                    const sensitiveValues = command.args.filter((_, i) => i > 0 && UnityEditor.SENSITIVE_FLAGS.includes(command.args[i - 1]!));
+                    const output = redactSensitiveLiterals(unityRunOutput, sensitiveValues)
+                        .split(/\r?\n/).filter(line => line.length > 0 && !line.includes('<claude-code-hint')).join('\n');
 
                     if (output.includes('conflicts with a reserved Unity flag')) {
                         throw new UnityRunRejectedError(`unity run rejected the editor arguments:\n${output}`);

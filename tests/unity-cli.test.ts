@@ -164,3 +164,23 @@ describe('license activation order', () => {
         expect(fallback).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('licensing client output redaction', () => {
+    it('never logs the email, password or serial from the command or its output', async () => {
+        const client = new LicensingClient('6.x');
+        (client as any).licenseClientPath = process.execPath;
+        const written: string[] = [];
+        jest.spyOn(process.stdout, 'write').mockImplementation((chunk: any) => {
+            written.push(String(chunk));
+            return true;
+        });
+
+        await (client as any).exec(['-e', 'console.log(process.argv.slice(1).join(" "))', '--', '--username', 'user@example.com', '--password', 'hunter2222', '--serial', 'AB-CDEF-1234-5678']);
+
+        const logged = written.join('');
+        expect(logged).not.toContain('user@example.com');
+        expect(logged).not.toContain('hunter2222');
+        expect(logged).not.toContain('AB-CDEF-1234-5678');
+        expect(logged).toContain('*****');
+    });
+});

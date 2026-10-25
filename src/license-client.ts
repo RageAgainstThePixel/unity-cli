@@ -7,6 +7,7 @@ import { UnityCli } from './unity-cli';
 import {
     ResolveGlobToPath,
     ResolvePathCandidates,
+    redactSensitiveLiterals,
     tryParseJson
 } from './utilities';
 
@@ -41,6 +42,7 @@ export class LicensingClient {
     private readonly logger: Logger = Logger.instance;
 
     private licenseClientPath: string | undefined;
+    private readonly secrets: string[] = [];
     private licenseVersion: string | undefined;
 
     /**
@@ -482,7 +484,12 @@ export class LicensingClient {
         let exitCode: number = 0;
         let timedOut = false;
 
-        this.logger.startGroup(`\x1b[34m${this.licenseClientPath} ${args.join(' ')}\x1b[0m`);
+        // values that must never reach a log, even outside CI where ::add-mask:: does nothing
+        const sensitiveFlags = ['--username', '--password', '--serial', '--return-floating'];
+        const argSecrets = args.filter((_, i) => i > 0 && sensitiveFlags.includes(args[i - 1]!));
+        const secrets = [...this.secrets, ...argSecrets];
+        const redact = (text: string) => redactSensitiveLiterals(text, secrets);
+        this.logger.startGroup(`\x1b[34m${this.licenseClientPath} ${redact(args.join(' '))}\x1b[0m`);
         await fs.promises.access(this.licenseClientPath!, fs.constants.R_OK | fs.constants.X_OK);
 
         try {
@@ -542,12 +549,12 @@ export class LicensingClient {
             });
         } finally {
             if (timedOut) {
+                // the client log can hold account details and tokens, so only its path is printed
                 this.logger.error(`Unity Licensing Client did not finish within ${LICENSING_CLIENT_TIMEOUT_MS / 60000} minutes. Its log: ${LicensingClient.ClientLogPath()}`);
-                await this.printClientLogTail();
             }
 
             if (!silent || exitCode !== 0) {
-                const maskedOutput = this.maskSerialInOutput(output);
+                const maskedOutput = redact(this.maskSerialInOutput(output));
                 const splitLines = maskedOutput.split(/\r?\n/);
 
                 for (const line of splitLines) {
@@ -565,16 +572,6 @@ export class LicensingClient {
         }
 
         return output;
-    }
-
-    private async printClientLogTail(lineCount: number = 40): Promise<void> {
-        try {
-            const lines = (await fs.promises.readFile(LicensingClient.ClientLogPath(), 'utf-8')).split(/\r?\n/);
-            const tail = this.maskSerialInOutput(lines.slice(-lineCount).join('\n'));
-            this.logger.info(`Last ${lineCount} lines of the Unity Licensing Client log:\n${tail}`);
-        } catch (error) {
-            this.logger.debug(`Could not read the Unity Licensing Client log: ${error}`);
-        }
     }
 
     /**
@@ -842,6 +839,8 @@ export class LicensingClient {
             args.push(`--include-personal`);
         }
 
+        // keep redacting the account details in every later command's output, such as --showEntitlements
+        this.secrets.push(username, password, ...(serial ? [serial, serial.slice(0, -4) + 'XXXX'] : []));
         await this.exec(args);
 
         const activeLicenses = await this.GetActiveEntitlements();
