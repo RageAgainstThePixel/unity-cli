@@ -695,19 +695,25 @@ export class LicensingClient {
     }
 
     /**
-     * Prints the warning and error lines the client logged since `offset`, to show why a command hung.
-     * The log can hold account details and tokens, so only problem lines are printed, with the known secrets,
-     * email addresses and long token-like strings redacted.
-     */
-    /**
      * Redacts the known secrets, email addresses and long token-like strings (JWTs, access and refresh tokens) from a client log line.
+     * The line is split on separator characters and each piece is checked on its own, which stays linear on any input.
      */
     private static sanitizeLogLine(line: string, secrets: string[]): string {
         return redactSensitiveLiterals(line, secrets)
-            .replace(/[^\s@"'<>]+@[^\s@"'<>]+\.[^\s@"'<>]+/g, '*****')
-            .replace(/[A-Za-z0-9+_=.-]{32,}/g, '*****');
+            .split(/([\s"'<>=,;()[\]]+)/)
+            .map(part => {
+                const at = part.indexOf('@');
+                const isEmail = at > 0 && part.lastIndexOf('.') > at + 1;
+                const isToken = part.length >= 32 && /^[A-Za-z0-9+_.-]+$/.test(part);
+                return isEmail || isToken ? '*****' : part;
+            })
+            .join('');
     }
 
+    /**
+     * Prints the last lines the client logged since `offset`, to show why a command hung.
+     * The log can hold account details and tokens, so every line is sanitized first.
+     */
     private async printClientLogProblems(offset: number, secrets: string[], maxLines: number = 40): Promise<void> {
         try {
             const content = await fs.promises.readFile(LicensingClient.ClientLogPath());
