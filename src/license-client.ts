@@ -6,6 +6,9 @@ import { Logger } from './logging';
 import { UnityCli } from './unity-cli';
 import {
     ResolveGlobToPath,
+    DownloadFile,
+    Exec,
+    GetTempDir,
     ResolvePathCandidates,
     redactSensitiveLiterals,
     tryParseJson
@@ -63,6 +66,12 @@ export class LicensingClient {
     async init() {
         const licensingClientExecutable = process.platform === 'win32' ? 'Unity.Licensing.Client.exe' : 'Unity.Licensing.Client';
         let licenseClientPath: string | undefined = process.env.UNITY_LICENSING_CLIENT_PATH;
+        const legacyVersion = this.licenseVersion ?? GetLegacyLicenseVersion();
+
+        if (!licenseClientPath && process.platform === 'darwin' && (legacyVersion === '4.x' || legacyVersion === '5.x')) {
+            // the macOS client the Unity CLI downloads cannot be patched for 4.x/5.x, so use the one Unity Hub bundled
+            licenseClientPath = await LicensingClient.getHubBundledClient();
+        }
 
         if (!licenseClientPath) {
             try {
@@ -95,6 +104,58 @@ export class LicensingClient {
         await fs.promises.access(this.licenseClientPath, fs.constants.X_OK);
         this.logger.debug(`Using Unity Licensing Client at ${this.licenseClientPath}`);
         return this.licenseClientPath;
+    }
+
+    /**
+     * Extracts the licensing client bundled with Unity Hub 3.12.0 on macOS. Its resolver is a separate assembly that
+     * the 4.x/5.x patch works on, unlike the single-file macOS client the Unity CLI downloads, whose licenses stay 6.x.
+     * Only the client is copied out; the Hub is not installed.
+     * @returns The extracted client executable.
+     */
+    private static async getHubBundledClient(): Promise<string> {
+        const hubVersion = '3.12.0';
+        const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
+        const cacheDirectory = path.join(os.tmpdir(), `UnityHubLicensingClient-${hubVersion}-${arch}`);
+        const findClient = async () => (await fs.promises.readdir(cacheDirectory, { recursive: true }))
+            .map(entry => path.join(cacheDirectory, entry.toString()))
+            .find(entry => path.basename(entry) === 'Unity.Licensing.Client' && fs.statSync(entry).isFile());
+
+        if (fs.existsSync(cacheDirectory)) {
+            const cached = await findClient();
+
+            if (cached) {
+                return cached;
+            }
+        }
+
+        const dmgPath = path.join(GetTempDir(), `UnityHubSetup-${hubVersion}-${arch}.dmg`);
+        const mountPoint = path.join(GetTempDir(), `UnityHub-${hubVersion}-${arch}`);
+        await DownloadFile(`https://public-cdn.cloud.unity3d.com/hub/${hubVersion}/UnityHubSetup-${arch}.dmg`, dmgPath);
+        await fs.promises.mkdir(mountPoint, { recursive: true });
+
+        try {
+            await Exec('hdiutil', ['attach', dmgPath, '-nobrowse', '-readonly', '-mountpoint', mountPoint], { silent: true, showCommand: true });
+
+            try {
+                const client = await ResolveGlobToPath([mountPoint, '**', 'Unity.Licensing.Client']);
+                const sourceDirectory = LicensingClient.clientRootDirectory(client);
+                await fs.promises.rm(cacheDirectory, { recursive: true, force: true });
+                await fs.promises.cp(sourceDirectory, cacheDirectory, { recursive: true, verbatimSymlinks: true });
+            } finally {
+                await Exec('hdiutil', ['detach', mountPoint, '-quiet'], { silent: true, showCommand: true });
+            }
+        } finally {
+            await fs.promises.rm(dmgPath, { force: true });
+        }
+
+        const extracted = await findClient();
+
+        if (!extracted) {
+            throw new Error(`Failed to extract Unity.Licensing.Client from Unity Hub ${hubVersion}`);
+        }
+
+        Logger.instance.info(`Using the Unity Licensing Client bundled with Unity Hub ${hubVersion}: ${extracted}`);
+        return extracted;
     }
 
     /**
