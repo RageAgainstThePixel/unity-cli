@@ -87,10 +87,45 @@ export class LicensingClient {
             throw new Error('Failed to find Unity.Licensing.Client. Install the Unity CLI with "unity-cli setup-cli", or set UNITY_LICENSING_CLIENT_PATH.');
         }
 
+        await LicensingClient.ensureMacLicenseDirectory();
+
         this.licenseClientPath = licenseClientPath;
         await fs.promises.access(this.licenseClientPath, fs.constants.X_OK);
         this.logger.debug(`Using Unity Licensing Client at ${this.licenseClientPath}`);
         return this.licenseClientPath;
+    }
+
+    /**
+     * On macOS the client writes Unity_lic.ulf to /Library/Application Support/Unity. When that folder is missing or not
+     * writable it asks for an administrator password in a dialog, which never returns on a headless runner.
+     * The Unity Hub installer used to create it; without the Hub, it is created here with non-interactive sudo.
+     */
+    private static async ensureMacLicenseDirectory(): Promise<void> {
+        if (process.platform !== 'darwin') {
+            return;
+        }
+
+        const directory = '/Library/Application Support/Unity';
+
+        try {
+            await fs.promises.access(directory, fs.constants.W_OK);
+            return;
+        } catch {
+            // missing or not writable
+        }
+
+        for (const args of [['-n', 'mkdir', '-p', directory], ['-n', 'chmod', '777', directory]]) {
+            const exitCode = await new Promise<number>((resolve) => {
+                const child = spawn('sudo', args, { stdio: 'ignore' });
+                child.on('error', () => resolve(1));
+                child.on('close', (code) => resolve(code ?? 1));
+            });
+
+            if (exitCode !== 0) {
+                Logger.instance.warn(`Could not prepare ${directory} (sudo ${args.slice(1).join(' ')} exited with code ${exitCode}). Activation may wait for an administrator password.`);
+                return;
+            }
+        }
     }
 
     /**
@@ -888,11 +923,6 @@ export class LicensingClient {
 
         if (licenseType === LicenseType.personal) {
             args.push(`--include-personal`);
-        }
-
-        if (process.platform === 'darwin') {
-            // macOS activations have hung without logging anything at the default level
-            args.push('--debug');
         }
 
         // keep redacting the account details in every later command's output, such as --showEntitlements
