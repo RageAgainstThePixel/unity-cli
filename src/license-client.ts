@@ -116,8 +116,10 @@ export class LicensingClient {
             }
 
             const extension = path.extname(entry.name).toLowerCase();
+            // the macOS client is named Unity.Licensing.Client, so its extension reads as ".client"
+            const isClient = entry.name.startsWith('Unity.Licensing.') && !['.md', '.config', '.json', '.plist', '.xml', '.txt'].includes(extension);
 
-            if (['', '.exe', '.dll', '.dylib', '.so'].includes(extension)) {
+            if (isClient || ['', '.exe', '.dll', '.dylib', '.so'].includes(extension)) {
                 results.push(path.join(entry.parentPath, entry.name));
             }
         }
