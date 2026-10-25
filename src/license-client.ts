@@ -33,6 +33,11 @@ export interface ActivateOptions {
     username?: string;
     /** The Unity ID password */
     password?: string;
+    /**
+     * A license file (Unity_lic.ulf) from an earlier activation: a path, the raw XML, or base64. Defaults to UNITY_LICENSE.
+     * It only works on a machine with the same identity it was activated on.
+     */
+    licenseFile?: string;
 }
 
 /**
@@ -1111,6 +1116,19 @@ export async function ActivateLicense(options: ActivateOptions): Promise<string 
         return await new LicensingClient(legacyLicenseVersion).Activate(options);
     }
 
+    const licenseFile = options.licenseFile ?? process.env.UNITY_LICENSE;
+
+    if (licenseFile && licenseFile.trim().length > 0 &&
+        (options.licenseType === LicenseType.personal || options.licenseType === LicenseType.professional)) {
+        try {
+            if (await activateFromLicenseFile(licenseFile)) {
+                return undefined;
+            }
+        } catch (error) {
+            logger.warn(`The license file could not be used, activating with the account instead.\n${error}`);
+        }
+    }
+
     let cliError: unknown;
 
     try {
@@ -1209,6 +1227,80 @@ export async function PrintLicenseContext(): Promise<void> {
     }
 
     await new LicensingClient(GetLegacyLicenseVersion()).Context();
+}
+
+/**
+ * Gets where Unity reads the machine's license file, Unity_lic.ulf.
+ */
+export function GetLicenseFilePath(): string {
+    switch (process.platform) {
+        case 'win32':
+            return path.join(process.env.PROGRAMDATA || 'C:\\ProgramData', 'Unity', 'Unity_lic.ulf');
+        case 'darwin':
+            return path.join('/Library', 'Application Support', 'Unity', 'Unity_lic.ulf');
+        default:
+            return path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share'), 'unity3d', 'Unity', 'Unity_lic.ulf');
+    }
+}
+
+/**
+ * Activates from a cached license file: `unity license activate --file` first, then by placing the file where Unity reads it.
+ * The file's contents are never logged.
+ * @param licenseFile A path to the license file, its raw XML, or base64.
+ * @returns True when a license is active afterwards.
+ */
+async function activateFromLicenseFile(licenseFile: string): Promise<boolean> {
+    const logger = Logger.instance;
+    const trimmed = licenseFile.trim();
+    let content: string;
+
+    if (!trimmed.startsWith('<') && fs.existsSync(trimmed)) {
+        content = await fs.promises.readFile(trimmed, 'utf-8');
+    } else if (trimmed.startsWith('<')) {
+        content = trimmed;
+    } else {
+        content = Buffer.from(trimmed, 'base64').toString('utf-8');
+    }
+
+    if (!content.includes('<License') || !content.includes('</root>')) {
+        throw new Error('The license file is not a Unity license (Unity_lic.ulf).');
+    }
+
+    logger.info('Activating from the cached license file...');
+    const tempDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'unity-license-'));
+    const tempFile = path.join(tempDirectory, 'Unity_lic.ulf');
+
+    try {
+        await fs.promises.writeFile(tempFile, content, { encoding: 'utf-8', mode: 0o600 });
+
+        try {
+            const cli = await UnityCli.Get();
+            const { exitCode, envelope } = await cli.RunJson(['license', 'activate', '--file', tempFile], { timeoutMs: UNITY_CLI_LICENSE_TIMEOUT_MS });
+
+            if (exitCode === 0 && envelope?.success !== false && await isLicenseActive(cli)) {
+                logger.info('Successfully activated from the cached license file with the Unity CLI');
+                return true;
+            }
+
+            logger.warn(`unity license activate --file exited with code ${exitCode}${formatEnvelopeErrors(envelope)}, placing the license file directly...`);
+        } catch (error) {
+            logger.warn(`Unity CLI activation from the license file failed, placing the license file directly...\n${error}`);
+        }
+
+        const licensePath = GetLicenseFilePath();
+        await fs.promises.mkdir(path.dirname(licensePath), { recursive: true });
+        await fs.promises.copyFile(tempFile, licensePath);
+        const active = await new LicensingClient().GetActiveEntitlements();
+
+        if (active.length > 0) {
+            logger.info(`Successfully activated from the cached license file (${active.join(', ')})`);
+            return true;
+        }
+
+        return false;
+    } finally {
+        await fs.promises.rm(tempDirectory, { recursive: true, force: true });
+    }
 }
 
 async function activateWithUnityCli(options: ActivateOptions): Promise<{ activated: boolean; token?: string | undefined; reason?: string | undefined }> {

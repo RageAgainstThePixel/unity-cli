@@ -15,6 +15,7 @@ import { UnityProject } from './unity-project';
 import { CheckAndroidSdkInstalled } from './android-sdk';
 import {
     ActivateLicense,
+    GetLicenseFilePath,
     LicenseType,
     LicensingClient,
     PrintLicenseContext,
@@ -70,6 +71,7 @@ program.command('activate-license')
     .option('-p, --password <password>', 'Password for the Unity account. Used when the Unity CLI cannot activate a personal or professional license.')
     .option('-s, --serial <serial>', 'License serial number. Required when activating a professional license.')
     .option('-c, --config <config>', 'Path to the configuration file, raw JSON, or base64 encoded JSON string. Required when activating a floating license.')
+    .option('-f, --license-file <licenseFile>', 'A cached license file (Unity_lic.ulf) from an earlier activation on a machine with the same identity: a path, the raw XML, or base64. Defaults to the UNITY_LICENSE environment variable. Falls back to the email and password when it cannot be used.')
     .option('--verbose', 'Enable verbose logging.')
     .option('--json', 'Prints the last line of output as JSON string.')
     .action(async (options) => {
@@ -107,7 +109,8 @@ program.command('activate-license')
             servicesConfig: options.config,
             serial: options.serial,
             username: options.email,
-            password: options.password
+            password: options.password,
+            ...(options.licenseFile ? { licenseFile: options.licenseFile } : {}),
         });
 
         if (licenseType === LicenseType.floating && token && options.json) {
@@ -156,6 +159,13 @@ program.command('license-context')
     .description('Print the current license state from the Unity CLI and the Unity Licensing Client.')
     .action(async () => {
         await PrintLicenseContext();
+        process.exit(0);
+    });
+
+program.command('license-file-path')
+    .description('Prints the path to the machine\'s Unity license file (Unity_lic.ulf).')
+    .action(async () => {
+        process.stdout.write(`${GetLicenseFilePath()}\n`);
         process.exit(0);
     });
 

@@ -308,5 +308,7 @@ jobs:
             echo "::error::Licensing Audit log file does not exist at ${LICENSING_AUDIT_LOG_PATH}"
           fi
       - name: Return License
-        if: always()
+        # macOS and Linux runners all report the same machine identity to Unity, so jobs share one activation and a
+        # return revokes it for every other job; Windows runners are a new machine every job, so only they return
+        if: ${{ always() && runner.os == 'Windows' }}
         run: unity-cli return-license --license personal
