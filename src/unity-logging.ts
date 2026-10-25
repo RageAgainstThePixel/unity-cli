@@ -53,7 +53,7 @@ export function isStackFrameLine(line: string): boolean {
     const trimmed = line.trim();
 
     return /^at\s/.test(trimmed) ||
-        /^\(Filename: .* Line: -?\d+\)$/.test(trimmed) ||
+        (trimmed.startsWith('(Filename: ') && / Line: -?\d+\)$/.test(trimmed)) ||
         /^#\d+\s/.test(trimmed) ||
         /^0x[0-9a-f]+\s/i.test(trimmed) ||
         // Class:Method (args) [(at file:line)]: an anchored prefix plus a closing parenthesis keeps this linear
