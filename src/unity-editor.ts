@@ -358,14 +358,16 @@ export class UnityEditor {
 
     /**
      * Decides whether a run goes through the official CLI's `unity run`.
-     * It needs a project, and is skipped for editors and hosts it is not verified with:
+     * It needs a project and a -quit argument, and is skipped for editors and hosts it is not verified with:
      * editors older than 2019.1, Linux runs that need xvfb, and x86_64 editors under Rosetta.
      * Set UNITY_CLI_DIRECT_LAUNCH=true to always launch the editor directly.
      */
     private async getUnityCliForRun(command: EditorCommand): Promise<UnityCli | undefined> {
         const directLaunch = process.env.UNITY_CLI_DIRECT_LAUNCH?.trim().toLowerCase();
 
+        // unity run always quits the editor, so commands that manage their own shutdown launch directly
         if (!command.projectPath ||
+            !command.args.includes('-quit') ||
             directLaunch === 'true' || directLaunch === '1' ||
             this.version.isLessThan('2019.1.0') ||
             (process.platform === 'linux' && !command.args.includes('-nographics')) ||

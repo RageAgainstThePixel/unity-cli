@@ -263,10 +263,22 @@ export class UnityInstaller {
     private async findCliEditor(cli: UnityCli, unityVersion: UnityVersion): Promise<string | undefined> {
         const { exitCode, envelope } = await cli.RunJson(['editors', 'path', unityVersion.version]);
 
+        // editors path takes no architecture, so the binary is checked to not return another architecture's install
+        const matchesArchitecture = (editorPath: string) => {
+            const architectures = getExecutableArchitectures(editorPath);
+            const matches = !architectures || architectures.includes(unityVersion.architecture);
+
+            if (!matches) {
+                this.logger.debug(`Skipping ${editorPath}: built for ${architectures!.join(', ')}, not ${unityVersion.architecture}`);
+            }
+
+            return matches;
+        };
+
         if (exitCode === 0 && envelope?.success !== false) {
             const editorPath = resolveEditorExecutable(FindAbsolutePath(envelope?.data));
 
-            if (editorPath) {
+            if (editorPath && matchesArchitecture(editorPath)) {
                 this.logger.debug(`Found installed editor: "${editorPath}"`);
                 return editorPath;
             }
@@ -281,15 +293,16 @@ export class UnityInstaller {
             return undefined;
         }
 
+        // the architecture-specific folder first; the plain one only when its binary is the requested architecture
         const candidates = [
-            path.join(installPath, unityVersion.version),
             path.join(installPath, `${unityVersion.version}-${unityVersion.architecture.toLowerCase()}`),
+            path.join(installPath, unityVersion.version),
         ];
 
         for (const candidate of candidates) {
             const editorPath = resolveEditorExecutable(candidate);
 
-            if (editorPath) {
+            if (editorPath && matchesArchitecture(editorPath)) {
                 this.logger.info(`Registering existing Unity ${unityVersion.version} at ${editorPath}`);
                 const result = await cli.Run(['editors', 'add', editorPath]);
 
@@ -362,32 +375,21 @@ export class UnityInstaller {
             }
             case 'darwin': {
                 let editorPath = resolveEditorExecutable(installDir);
+                const modulePackages = moduleNames.map(name => `${baseUrl}/MacEditorTargetInstaller/UnitySetup-${name}-Support-for-Editor-${unityVersion.version}.pkg`);
 
                 if (editorPath) {
-                    if (moduleNames.length > 0) {
-                        this.logger.warn(`Unity ${unityVersion.version} is already installed; add modules to it with its own installers`);
+                    if (modulePackages.length > 0) {
+                        // the target support packages install into /Applications/Unity/PlaybackEngines, so they are moved into this editor afterwards
+                        this.logger.ci(`Installing modules for Unity ${unityVersion.toString()}: ${moduleNames.join(', ')}`);
+                        await this.installMacPackages(modulePackages);
+                        await this.moveMacPlaybackEngines(installDir);
                     }
 
                     return editorPath;
                 }
 
                 this.logger.ci(`Installing Unity ${unityVersion.toString()}...`);
-                const packages = [
-                    `${baseUrl}/MacEditorInstaller/Unity-${unityVersion.version}.pkg`,
-                    ...moduleNames.map(name => `${baseUrl}/MacEditorTargetInstaller/UnitySetup-${name}-Support-for-Editor-${unityVersion.version}.pkg`),
-                ];
-
-                for (const url of packages) {
-                    const pkgPath = tempInstallerPath('.pkg');
-                    await DownloadFile(url, pkgPath);
-
-                    try {
-                        await Exec('sudo', ['installer', '-pkg', pkgPath, '-target', '/'], { silent: true, showCommand: true });
-                    } finally {
-                        await fs.promises.rm(pkgPath, { force: true });
-                    }
-                }
-
+                await this.installMacPackages([`${baseUrl}/MacEditorInstaller/Unity-${unityVersion.version}.pkg`, ...modulePackages]);
                 await this.moveMacApplicationsUnity(installDir);
                 editorPath = resolveEditorExecutable(installDir);
 
@@ -448,6 +450,40 @@ export class UnityInstaller {
         } finally {
             await fs.promises.rm(installerPath, { force: true });
         }
+    }
+
+    private async installMacPackages(urls: string[]): Promise<void> {
+        for (const url of urls) {
+            const pkgPath = tempInstallerPath('.pkg');
+            await DownloadFile(url, pkgPath);
+
+            try {
+                await Exec('sudo', ['installer', '-pkg', pkgPath, '-target', '/'], { silent: true, showCommand: true });
+            } finally {
+                await fs.promises.rm(pkgPath, { force: true });
+            }
+        }
+    }
+
+    /**
+     * Moves target support that macOS packages installed to /Applications/Unity/PlaybackEngines into an existing versioned editor.
+     */
+    private async moveMacPlaybackEngines(targetPath: string): Promise<void> {
+        const sourcePath = path.join('/Applications', 'Unity', 'PlaybackEngines');
+
+        if (!fs.existsSync(sourcePath)) {
+            throw new Error(`The module packages did not install anything into ${sourcePath}`);
+        }
+
+        const destinationPath = path.join(targetPath, 'PlaybackEngines');
+        await fs.promises.mkdir(destinationPath, { recursive: true });
+
+        for (const item of await fs.promises.readdir(sourcePath)) {
+            await fs.promises.rm(path.join(destinationPath, item), { recursive: true, force: true });
+            await fs.promises.cp(path.join(sourcePath, item), path.join(destinationPath, item), { recursive: true, verbatimSymlinks: true });
+        }
+
+        await fs.promises.rm(sourcePath, { recursive: true, force: true });
     }
 
     /**
@@ -864,4 +900,57 @@ export function resolveEditorExecutable(location: string | undefined): string | 
  */
 function tempInstallerPath(extension: string): string {
     return path.join(GetTempDir(), `unity-installer-${randomUUID()}${extension}`);
+}
+
+/**
+ * Reads the CPU architectures of a macOS editor binary from its Mach-O header.
+ * @param executablePath The editor executable.
+ * @returns The architectures, or undefined off macOS or when the header is not recognized, in which case callers accept the editor.
+ */
+export function getExecutableArchitectures(executablePath: string): ('X86_64' | 'ARM64')[] | undefined {
+    if (process.platform !== 'darwin') {
+        return undefined;
+    }
+
+    const cpuTypes: { [cpuType: number]: 'X86_64' | 'ARM64' } = { 0x01000007: 'X86_64', 0x0100000c: 'ARM64' };
+    let header: Buffer;
+
+    try {
+        const fd = fs.openSync(executablePath, 'r');
+
+        try {
+            header = Buffer.alloc(4096);
+            fs.readSync(fd, header, 0, header.length, 0);
+        } finally {
+            fs.closeSync(fd);
+        }
+    } catch {
+        return undefined;
+    }
+
+    const magic = header.readUInt32BE(0);
+
+    if (magic === 0xcafebabe) {
+        // fat binary: big-endian count, then 20 bytes per architecture with the CPU type first
+        const count = header.readUInt32BE(4);
+        const architectures: ('X86_64' | 'ARM64')[] = [];
+
+        for (let i = 0; i < count && 8 + i * 20 + 4 <= header.length; i++) {
+            const architecture = cpuTypes[header.readUInt32BE(8 + i * 20)];
+
+            if (architecture && !architectures.includes(architecture)) {
+                architectures.push(architecture);
+            }
+        }
+
+        return architectures.length > 0 ? architectures : undefined;
+    }
+
+    if (magic === 0xcffaedfe) {
+        // thin 64-bit binary, little-endian
+        const architecture = cpuTypes[header.readUInt32LE(4)];
+        return architecture ? [architecture] : undefined;
+    }
+
+    return undefined;
 }

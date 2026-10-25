@@ -1092,9 +1092,19 @@ async function activateWithUnityCli(options: ActivateOptions): Promise<{ activat
     return { activated: true, token };
 }
 
+/**
+ * Reads whether a license is active. Throws when the CLI gives no clear answer (a timeout or an unparseable result),
+ * so callers fall back instead of assuming the license is gone. LICENSE_NOT_ACTIVE exits 4 with active: false.
+ */
 async function isLicenseActive(cli: UnityCli): Promise<boolean> {
-    const { envelope } = await cli.RunJson<{ active?: boolean }>(['license', 'status'], { timeoutMs: UNITY_CLI_LICENSE_TIMEOUT_MS });
-    return envelope?.data?.active === true;
+    const { exitCode, envelope } = await cli.RunJson<{ active?: boolean }>(['license', 'status'], { timeoutMs: UNITY_CLI_LICENSE_TIMEOUT_MS });
+    const active = envelope?.data?.active;
+
+    if ((exitCode === 0 || exitCode === 4) && typeof active === 'boolean') {
+        return active;
+    }
+
+    throw new Error(`unity license status exited with code ${exitCode} without a license state${formatEnvelopeErrors(envelope)}`);
 }
 
 function findToken(value: unknown): string | undefined {

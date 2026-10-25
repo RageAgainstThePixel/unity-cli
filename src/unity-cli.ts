@@ -67,9 +67,15 @@ export class UnityCli {
     public static async Get(version: string | undefined = undefined): Promise<UnityCli> {
         configureEnvironment();
         const requested = version ? normalizeVersion(version) : undefined;
+
+        // latest resolves the manifest first, so an outdated CLI is not reused
+        if (requested === 'latest') {
+            return await UnityCli.Install('latest');
+        }
+
         const existing = await UnityCli.Find();
 
-        if (existing && (!requested || requested === 'latest' || existing.version === requested)) {
+        if (existing && (!requested || existing.version === requested)) {
             Logger.instance.debug(`Using Unity CLI ${existing.version} at ${existing.executable}`);
             return exportCli(existing);
         }
@@ -284,7 +290,7 @@ export class UnityCli {
     public async RunJson<T = unknown>(args: string[], options: UnityCliRunOptions = {}): Promise<{ exitCode: number; envelope: UnityCliEnvelope<T> | undefined; stdout: string; stderr: string }> {
         const result = await this.Run([...args, '--format', 'json'], { ...options, stream: false });
         const envelope = parseEnvelope<T>(result.stdout);
-        this.logger.debug(`unity ${args.join(' ')} [${result.exitCode}]:\n${result.stdout}${stripHint(result.stderr)}`);
+        this.logger.debug(`unity ${redactSensitiveLiterals(args.join(' '), options.redactLiterals)} [${result.exitCode}]:\n${result.stdout}${stripHint(result.stderr)}`);
         return { exitCode: result.exitCode, envelope, stdout: result.stdout, stderr: result.stderr };
     }
 
