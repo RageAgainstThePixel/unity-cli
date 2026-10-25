@@ -118,13 +118,24 @@ jobs:
               if [ "${RUNNER_ARCH}" = "ARM64" ] && [ "${major}" -ge 2021 ]; then
                 arch="arm64"
               fi
-              unity projects create "Unity Project" --path "${project_root}" --editor-version "${UNITY_EDITOR_VERSION}" --architecture "${arch}" --template 3d --no-cloud
+              unity projects create "Unity Project" --path "${project_root}" --editor-version "${UNITY_EDITOR_VERSION}" --architecture "${arch}" --template "${template}" --no-cloud
             else
               unity-cli run --unity-editor "${UNITY_EDITOR_PATH}" -quit -createProject "${project_path}"
             fi
           }
+          # prefer the built-in 3D template like v3 did; the CLI's "3d" means URP, which older editors don't offer
+          template="3d"
           if [ "${major}" -ge 2019 ]; then
-            unity templates list --editor "${UNITY_EDITOR_VERSION}" --json || true
+            templates_json="$(unity templates list --editor "${UNITY_EDITOR_VERSION}" --json || true)"
+            echo "${templates_json}"
+            template="$(printf '%s' "${templates_json}" | node -e '
+              let input = ""; process.stdin.on("data", c => input += c).on("end", () => {
+                let names = [];
+                try { names = (JSON.parse(input).data || []).map(t => t.name || t.id).filter(Boolean); } catch {}
+                const preferred = ["com.unity.template.3d", "com.unity.template.3d-cross-platform", "com.unity.template.universal", "com.unity.template.urp-blank"];
+                process.stdout.write(preferred.find(p => names.includes(p)) || "3d");
+              });')"
+            echo "Using project template: ${template}"
           fi
           create_rc=1
           for attempt in 1 2 3; do
