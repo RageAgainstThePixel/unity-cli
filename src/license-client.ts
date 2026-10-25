@@ -8,6 +8,8 @@ import {
     ResolveGlobToPath,
     DownloadFile,
     Exec,
+    FindProcessesUnder,
+    KillProcess,
     GetTempDir,
     ResolvePathCandidates,
     redactSensitiveLiterals,
@@ -1140,6 +1142,30 @@ export async function ActivateLicense(options: ActivateOptions): Promise<string 
  * @param token The floating license token from activation. A floating license with a token is returned by the Unity Licensing Client.
  */
 export async function ReturnLicense(licenseType: LicenseType, token: string | undefined = undefined): Promise<void> {
+    try {
+        await returnLicense(licenseType, token);
+    } finally {
+        // returning is the last licensing step of a job, so stop what the licensing calls left running in the background
+        await LicensingClient.StopBackgroundClients();
+        await stopUnityCliHelpers();
+    }
+}
+
+/**
+ * Stops background processes the official Unity CLI left running from its own folder. Only done in CI.
+ */
+async function stopUnityCliHelpers(): Promise<void> {
+    const cliPath = process.env.UNITY_CLI_PATH;
+
+    if (process.env.CI !== 'true' || !cliPath) {
+        return;
+    }
+
+    const helpers = await FindProcessesUnder(path.dirname(cliPath));
+    await Promise.all(helpers.map(helper => KillProcess(helper).catch(() => undefined)));
+}
+
+async function returnLicense(licenseType: LicenseType, token: string | undefined): Promise<void> {
     const logger = Logger.instance;
     const legacyLicenseVersion = GetLegacyLicenseVersion();
 

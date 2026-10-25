@@ -13,6 +13,7 @@ import {
     KillProcess,
     KillChildProcesses,
     Exec,
+    FindProcessesUnder,
     redactSensitiveLiterals,
 } from './utilities';
 import { UnityCli } from './unity-cli';
@@ -169,12 +170,20 @@ export class UnityEditor {
         let unityProcess: ChildProcess;
         let unityRunOutput: string | undefined = undefined;
 
+        const editorRootPath = this.editorRootPath;
+        // helpers the editor starts from its own folder (licensing client, shader compiler, bee_backend) outlive it as
+        // orphans, out of reach of a parent-pid search; anything new under the editor folder after the run is ours
+        const preexistingEditorProcesses = new Set((await FindProcessesUnder(editorRootPath)).map(proc => proc.pid));
+
         async function tryKillEditorProcesses(): Promise<void> {
             try {
                 if (procInfo) {
                     await KillProcess(procInfo);
                     await KillChildProcesses(procInfo);
                 }
+
+                const leftovers = (await FindProcessesUnder(editorRootPath)).filter(proc => !preexistingEditorProcesses.has(proc.pid));
+                await Promise.all(leftovers.map(proc => KillProcess(proc)));
             } catch (error) {
                 Logger.instance.error(`Failed to kill Unity process: ${error}`);
             }

@@ -708,6 +708,49 @@ export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
 }
 
 /**
+ * Lists running processes whose executable lives under a directory, such as an editor's own helpers
+ * (Unity.Licensing.Client, UnityShaderCompiler, bee_backend and the like).
+ * @param directory The directory the executables live under.
+ * @returns The matching processes.
+ */
+export async function FindProcessesUnder(directory: string): Promise<ProcInfo[]> {
+    const root = path.resolve(directory).toLowerCase();
+    const results: ProcInfo[] = [];
+
+    try {
+        if (process.platform === 'win32') {
+            const output = await Exec('powershell', [
+                '-NoProfile',
+                '-Command',
+                'Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath } | ForEach-Object { "$($_.ProcessId)`t$($_.ParentProcessId)`t$($_.ExecutablePath)" }'
+            ], { silent: true, showCommand: false });
+
+            for (const line of output.split(/\r?\n/)) {
+                const [pid, ppid, executable] = line.split('\t');
+
+                if (pid && ppid && executable && path.resolve(executable).toLowerCase().startsWith(root)) {
+                    results.push({ pid: parseInt(pid, 10), ppid: parseInt(ppid, 10), name: executable });
+                }
+            }
+        } else {
+            const output = await Exec('ps', ['-axo', 'pid=,ppid=,args='], { silent: true, showCommand: false });
+
+            for (const line of output.split('\n')) {
+                const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/);
+
+                if (match && match[3]!.toLowerCase().startsWith(root)) {
+                    results.push({ pid: parseInt(match[1]!, 10), ppid: parseInt(match[2]!, 10), name: match[3]! });
+                }
+            }
+        }
+    } catch (error) {
+        logger.debug(`Failed to list processes under ${directory}: ${error}`);
+    }
+
+    return results.filter(proc => proc.pid !== process.pid);
+}
+
+/**
  * Checks if the current process is running with elevated (administrator) privileges.
  * @returns True if the process is elevated, false otherwise.
  */
