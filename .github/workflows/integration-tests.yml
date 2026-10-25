@@ -13,6 +13,7 @@ jobs:
   utp-batch-contract:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -28,6 +29,7 @@ jobs:
   setup:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       checks: write # to publish unit test results via checks github api
@@ -73,6 +75,7 @@ jobs:
     needs: [setup, validate, validate-negative-scenarios]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:

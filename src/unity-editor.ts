@@ -306,9 +306,22 @@ export class UnityEditor {
             procInfo = { pid: unityProcess.pid, ppid: process.pid, name: this.editorPath };
             this.logger.debug(`Unity process started with pid: ${procInfo.pid}`);
             exitCode = await new Promise((resolve, reject) => {
-                unityProcess.on('close', (code) => {
+                // the editor can start a licensing client that outlives it and inherits unity run's piped
+                // stdout and stderr, so 'close' may never fire; settle on 'exit' and stop reading the pipes shortly after
+                let settled = false;
+                const settle = (code: number | null) => {
+                    if (settled) { return; }
+                    settled = true;
                     logTail?.stopLogTail();
                     resolve(code === null ? 1 : code);
+                };
+                unityProcess.on('close', settle);
+                unityProcess.on('exit', (code) => {
+                    setTimeout(() => {
+                        unityProcess.stdout?.destroy();
+                        unityProcess.stderr?.destroy();
+                        settle(code);
+                    }, 1000);
                 });
                 unityProcess.on('error', (error) => {
                     this.logger.error(`Unity process error: ${error}`);
