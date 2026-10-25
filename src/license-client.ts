@@ -34,6 +34,9 @@ export interface ActivateOptions {
  * v4 uses it as the fallback when the official Unity CLI cannot activate or return a license,
  * for example a personal license on a headless runner, and for Unity 4.x and 5.x editors.
  */
+/** How long one Unity Licensing Client command may run. */
+const LICENSING_CLIENT_TIMEOUT_MS = 10 * 60 * 1000;
+
 export class LicensingClient {
     private readonly logger: Logger = Logger.instance;
 
@@ -475,6 +478,7 @@ export class LicensingClient {
 
         let output: string = '';
         let exitCode: number = 0;
+        let timedOut = false;
 
         this.logger.startGroup(`\x1b[34m${this.licenseClientPath} ${args.join(' ')}\x1b[0m`);
         await fs.promises.access(this.licenseClientPath!, fs.constants.R_OK | fs.constants.X_OK);
@@ -490,11 +494,17 @@ export class LicensingClient {
                 const sigtermHandler = () => child.kill('SIGTERM');
                 process.once('SIGINT', sigintHandler);
                 process.once('SIGTERM', sigtermHandler);
+                // a client that waits on something that never comes must not hold a CI job until it times out
+                const timer = setTimeout(() => {
+                    timedOut = true;
+                    child.kill('SIGKILL');
+                }, LICENSING_CLIENT_TIMEOUT_MS);
 
                 let hasCleanedUpListeners = false;
                 function removeListeners() {
                     if (hasCleanedUpListeners) { return; }
                     hasCleanedUpListeners = true;
+                    clearTimeout(timer);
                     process.removeListener('SIGINT', sigintHandler);
                     process.removeListener('SIGTERM', sigtermHandler);
                 }
@@ -512,10 +522,15 @@ export class LicensingClient {
                 });
                 child.on('close', (code) => {
                     removeListeners();
-                    resolve(code === null ? 0 : code);
+                    resolve(timedOut ? -1 : code === null ? 0 : code);
                 });
             });
         } finally {
+            if (timedOut) {
+                this.logger.error(`Unity Licensing Client did not finish within ${LICENSING_CLIENT_TIMEOUT_MS / 60000} minutes. Its log: ${LicensingClient.ClientLogPath()}`);
+                await this.printClientLogTail();
+            }
+
             if (!silent || exitCode !== 0) {
                 const maskedOutput = this.maskSerialInOutput(output);
                 const splitLines = maskedOutput.split(/\r?\n/);
@@ -529,12 +544,45 @@ export class LicensingClient {
             this.logger.endGroup();
 
             if (exitCode !== 0) {
-                const message = this.getExitCodeMessage(exitCode);
+                const message = timedOut ? 'Timed out' : this.getExitCodeMessage(exitCode);
                 throw new Error(`License command failed with exit code ${exitCode}: ${message}`);
             }
         }
 
         return output;
+    }
+
+    private async printClientLogTail(lineCount: number = 40): Promise<void> {
+        try {
+            const lines = (await fs.promises.readFile(LicensingClient.ClientLogPath(), 'utf-8')).split(/\r?\n/);
+            const tail = this.maskSerialInOutput(lines.slice(-lineCount).join('\n'));
+            this.logger.info(`Last ${lineCount} lines of the Unity Licensing Client log:\n${tail}`);
+        } catch (error) {
+            this.logger.debug(`Could not read the Unity Licensing Client log: ${error}`);
+        }
+    }
+
+    /**
+     * Stops Unity.Licensing.Client instances left running in the background, such as the one the official Unity CLI starts.
+     * A command line activation can wait on that instance indefinitely. Only done in CI, so a developer's own session is left alone.
+     */
+    public static async StopBackgroundClients(): Promise<void> {
+        if (process.env.CI !== 'true') {
+            return;
+        }
+
+        const [command, args] = process.platform === 'win32'
+            ? ['taskkill', ['/F', '/IM', 'Unity.Licensing.Client.exe']]
+            : ['pkill', ['-f', 'Unity.Licensing.Client']];
+
+        await new Promise<void>((resolve) => {
+            const child = spawn(command, args, { stdio: 'ignore' });
+            child.on('error', () => resolve());
+            child.on('close', (code) => {
+                Logger.instance.debug(`${command} exited with code ${code}`);
+                resolve();
+            });
+        });
     }
 
     private maskSerialInOutput(output: string): string {
@@ -861,6 +909,7 @@ export async function ActivateLicense(options: ActivateOptions): Promise<string 
 
     if (legacyLicenseVersion) {
         logger.info(`Unity ${legacyLicenseVersion} editors read their own license file, activating with the Unity Licensing Client...`);
+        await LicensingClient.StopBackgroundClients();
         return await new LicensingClient(legacyLicenseVersion).Activate(options);
     }
 
@@ -885,6 +934,7 @@ export async function ActivateLicense(options: ActivateOptions): Promise<string 
         throw new Error(`Unity CLI license activation failed, and no Unity ID email and password were given for the fallback.\n${cliError}`);
     }
 
+    await LicensingClient.StopBackgroundClients();
     return await new LicensingClient().Activate(options);
 }
 
@@ -898,6 +948,7 @@ export async function ReturnLicense(licenseType: LicenseType, token: string | un
     const legacyLicenseVersion = GetLegacyLicenseVersion();
 
     if (legacyLicenseVersion || (licenseType === LicenseType.floating && token)) {
+        await LicensingClient.StopBackgroundClients();
         await new LicensingClient(legacyLicenseVersion).Deactivate(licenseType, token);
         return;
     }
@@ -920,6 +971,7 @@ export async function ReturnLicense(licenseType: LicenseType, token: string | un
         throw new Error('The Unity CLI could not return the floating license. Pass the token from activation to return it with the Unity Licensing Client.');
     }
 
+    await LicensingClient.StopBackgroundClients();
     await new LicensingClient().Deactivate(licenseType);
 }
 
