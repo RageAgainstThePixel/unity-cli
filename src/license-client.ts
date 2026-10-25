@@ -43,6 +43,8 @@ export class LicensingClient {
 
     private licenseClientPath: string | undefined;
     private readonly secrets: string[] = [];
+    /** Where the 4.x/5.x license link lives, and the folders the client may have written Unity_lic.ulf to. */
+    private legacyLicense: { linkPath: string; commonDirectory: string; patchedDirectory: string } | undefined;
     private licenseVersion: string | undefined;
 
     /**
@@ -509,6 +511,7 @@ export class LicensingClient {
         this.licenseClientPath = patchedClientPath;
         const unityCommonDir = this.getUnityCommonDir();
         const legacyLicenseFile = path.join(unityCommonDir, `Unity_v${this.licenseVersion}.ulf`);
+        this.legacyLicense ??= { linkPath: legacyLicenseFile, commonDirectory: unityCommonDir, patchedDirectory };
         await fs.promises.mkdir(unityCommonDir, { recursive: true });
 
         try {
@@ -935,7 +938,33 @@ export class LicensingClient {
             throw new Error(`Failed to activate license of type '${licenseType}'`);
         }
 
+        await this.linkLegacyLicenseFile();
         this.logger.info(`Successfully activated license of type '${licenseType}'`);
+    }
+
+    /**
+     * Points Unity_v4.x.ulf or Unity_v5.x.ulf at the license the client actually wrote. Clients that ignore
+     * UNITY_COMMON_DIR, such as the macOS one, write Unity_lic.ulf to the regular folder instead of the patched one.
+     */
+    private async linkLegacyLicenseFile(): Promise<void> {
+        if (!this.legacyLicense) {
+            return;
+        }
+
+        const { linkPath, commonDirectory, patchedDirectory } = this.legacyLicense;
+        const candidates = [path.join(patchedDirectory, 'Unity_lic.ulf'), path.join(commonDirectory, 'Unity_lic.ulf')];
+        const licensePath = candidates.find(candidate => fs.existsSync(candidate));
+
+        if (!licensePath) {
+            this.logger.warn(`No Unity_lic.ulf was written to ${candidates.join(' or ')}`);
+            return;
+        }
+
+        await fs.promises.rm(linkPath, { force: true });
+        await fs.promises.symlink(licensePath, linkPath);
+        // the license version decides whether a 4.x or 5.x editor accepts the file
+        const licenseVersion = (await fs.promises.readFile(licensePath, 'utf-8')).match(/<LicenseVersion Value="([^"]+)"/)?.[1];
+        this.logger.info(`Linked ${linkPath} to ${licensePath} (license version ${licenseVersion ?? 'unknown'})`);
     }
 
     private async returnLicense(licenseType: LicenseType, token?: string): Promise<void> {
