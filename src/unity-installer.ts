@@ -37,9 +37,10 @@ export DEBIAN_FRONTEND=noninteractive
 # a stalled mirror must not hold the job: apt retries slow requests, and each step has a hard limit
 APT_OPTS="-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 -o DPkg::Lock::Timeout=120"
 timeout 300 apt-get $APT_OPTS update
-# what the editor cannot start without comes first; ffmpeg and pulseaudio pull in about 70 MB more and are only for video and audio
-timeout 600 apt-get $APT_OPTS install -y --no-install-recommends xvfb libgtk2.0-0 libglu1-mesa libgconf-2-4 libncurses5
-timeout 900 apt-get $APT_OPTS install -y --no-install-recommends ffmpeg pulseaudio || echo "Skipped ffmpeg and pulseaudio: the install did not finish"
+# what the editor needs comes first: without pulseaudio, FMOD logs audio device errors on 2019 and 2020 editors;
+# ffmpeg pulls in about 60 MB more and is only for video, so a slow mirror may skip it
+timeout 600 apt-get $APT_OPTS install -y --no-install-recommends xvfb libgtk2.0-0 libglu1-mesa libgconf-2-4 libncurses5 pulseaudio
+timeout 900 apt-get $APT_OPTS install -y --no-install-recommends ffmpeg || echo "Skipped ffmpeg: the install did not finish"
 apt-get clean
 `;
 
