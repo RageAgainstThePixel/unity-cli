@@ -24,7 +24,7 @@ jobs:
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45 # successful rows take about 10 minutes; a hung editor or licensing call must not hold the matrix
+    timeout-minutes: 60 # successful rows take about 10 minutes, Linux rows up to 30 on a slow apt mirror; a hung editor or licensing call must not hold the matrix
     strategy:
       matrix: ${{ fromJSON(inputs.matrix) }}
       fail-fast: false
@@ -63,7 +63,7 @@ jobs:
           npm run link
           unity-cli --version
       - name: Setup Unity
-        timeout-minutes: 30
+        timeout-minutes: 40 # Linux editor packages alone may take 25 minutes on a slow apt mirror
         run: |
           unity-cli upm-install --json
           UPM_VER=$(unity-cli upm-version | tr -d '\n\r')

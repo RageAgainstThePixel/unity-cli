@@ -39,8 +39,9 @@ APT_OPTS="-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire:
 timeout 300 apt-get $APT_OPTS update
 # what the editor needs comes first: without pulseaudio, FMOD logs audio device errors on 2019 and 2020 editors;
 # ffmpeg pulls in about 60 MB more and is only for video, so a slow mirror may skip it
-timeout 600 apt-get $APT_OPTS install -y --no-install-recommends xvfb libgtk2.0-0 libglu1-mesa libgconf-2-4 libncurses5 pulseaudio
-timeout 900 apt-get $APT_OPTS install -y --no-install-recommends ffmpeg || echo "Skipped ffmpeg: the install did not finish"
+# pulseaudio alone pulls in about 38 MB, which the runners' Azure mirror has taken over 10 minutes to serve
+timeout 1200 apt-get $APT_OPTS install -y --no-install-recommends xvfb libgtk2.0-0 libglu1-mesa libgconf-2-4 libncurses5 pulseaudio
+timeout 300 apt-get $APT_OPTS install -y --no-install-recommends ffmpeg || echo "Skipped ffmpeg: the install did not finish"
 apt-get clean
 `;
 
