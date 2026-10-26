@@ -254,7 +254,7 @@ unity-cli editor-logs
 
 ### Deprecated Commands
 
-`uninstall-unity`, `list-project-templates`, `create-project` and `open-project` keep their v3 options, print a deprecation warning that names the replacement, and forward to the official Unity CLI (see [Upgrading from v3](#upgrading-from-v3)). `create-project` still accepts a template regex and picks the first matching template id. Run `unity-cli <command> --help` for the options.
+`uninstall-unity`, `list-project-templates`, `create-project` and `open-project` keep their v3 options, print a deprecation warning that names the replacement, and forward to the official Unity CLI (see [Upgrading from v3](#upgrading-from-v3)). `create-project --template` takes a template id or id prefix; v3 regex patterns are no longer compiled, and only their leading literal part is matched. Run `unity-cli <command> --help` for the options.
 
 ### Unity Package Manager
 

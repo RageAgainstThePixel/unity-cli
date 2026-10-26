@@ -480,7 +480,7 @@ program.command('create-project')
     .description('[Deprecated] Create a new Unity project. Forwards to: unity projects create <name> --path <path> --editor-version <version> --template <id> --no-cloud')
     .option('-n, --name <projectName>', 'The name of the new Unity project. If unspecified, the project will be created in the specified path or the current working directory.')
     .option('-p, --path <projectPath>', 'The path to create the new Unity project. If unspecified, the current working directory will be used.')
-    .option('-t, --template <projectTemplate>', 'The name of the template package to use for creating the unity project. Supports regex patterns.', 'com.unity.template.3d(-cross-platform)?')
+    .option('-t, --template <projectTemplate>', 'The template package id to create the project from; an id prefix picks the first matching template.', 'com.unity.template.3d')
     .option('-u, --unity-version <unityVersion>', 'The Unity version to create the project with (e.g. 2022.3.1f1, 6000.2). If unspecified, then --unity-editor must be specified.')
     .option('-e, --unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, -u, --unity-version, or the UNITY_EDITOR_PATH environment variable must be set.')
     .option('--verbose', 'Enable verbose logging.')
@@ -501,22 +501,27 @@ program.command('create-project')
         }
 
         const template = options.template.toString().trim();
-        let templateId = template;
+        // v3 took a regex here; a pattern is never compiled from the argument, so its leading literal part
+        // (com.unity.template.3d for the v3 default) is matched as an exact id, then as an id prefix
+        const prefix = /^[\w.-]+/.exec(template)?.[0];
 
-        // v3 matched templates with a regex; the official CLI takes an exact template id
-        if (!/^[\w.-]+$/.test(template)) {
-            const cli = await UnityCli.Get();
-            const { envelope } = await cli.RunJson<{ name?: string; id?: string }[]>(['templates', 'list', ...(version ? ['--editor', version] : [])]);
-            const pattern = new RegExp(`^(?:${template})$`);
-            const ids = (envelope?.data ?? []).map(t => t.name || t.id).filter((id): id is string => !!id);
-            const match = ids.find(id => pattern.test(id));
+        if (!prefix) {
+            Logger.instance.error(`Invalid project template: ${template}. Use a template id such as com.unity.template.3d.`);
+            process.exit(1);
+        }
 
-            if (!match) {
-                Logger.instance.error(`No project template matches ${template}. Available: ${ids.join(', ')}`);
-                process.exit(1);
-            }
+        if (prefix !== template) {
+            Logger.instance.warn(`Template patterns are no longer supported; matching templates that start with ${prefix}.`);
+        }
 
-            templateId = match;
+        const cli = await UnityCli.Get();
+        const { envelope } = await cli.RunJson<{ name?: string; id?: string }[]>(['templates', 'list', ...(version ? ['--editor', version] : [])]);
+        const ids = (envelope?.data ?? []).map(t => t.name || t.id).filter((id): id is string => !!id);
+        const templateId = ids.find(id => id === prefix) ?? ids.find(id => id.startsWith(prefix));
+
+        if (!templateId) {
+            Logger.instance.error(`No project template matches ${prefix}. Available: ${ids.join(', ')}`);
+            process.exit(1);
         }
 
         args.push('--template', templateId, '--no-cloud');

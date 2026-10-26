@@ -102,11 +102,11 @@ export class UnityProject {
                     continue;
                 }
 
-                if (!entry.isFile() || !entry.name.endsWith('.asset') || fs.statSync(entryPath).size > 1024 * 1024) {
+                if (!entry.isFile() || !entry.name.endsWith('.asset')) {
                     continue;
                 }
 
-                const target = UnityProject.readBuildProfileTarget(fs.readFileSync(entryPath, 'utf-8'));
+                const target = UnityProject.readBuildProfileTarget(UnityProject.readSmallFile(entryPath));
 
                 if (target) {
                     targets.add(target);
@@ -115,6 +115,27 @@ export class UnityProject {
         }
 
         return [...targets];
+    }
+
+    /** Reads a file of up to 1 MB through one open handle, so the size check and the read see the same file. Larger or unreadable files read as empty. */
+    private static readSmallFile(filePath: string): string {
+        let fd: number | undefined;
+
+        try {
+            fd = fs.openSync(filePath, 'r');
+
+            if (fs.fstatSync(fd).size > 1024 * 1024) {
+                return '';
+            }
+
+            return fs.readFileSync(fd, 'utf-8');
+        } catch {
+            return '';
+        } finally {
+            if (fd !== undefined) {
+                fs.closeSync(fd);
+            }
+        }
     }
 
     /** BuildTarget enum values a build profile stores, by name. */
