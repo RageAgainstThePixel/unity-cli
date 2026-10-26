@@ -1,5 +1,5 @@
 /**
- * Weekly Unity release discovery: compare Releases API tips to CI matrix + canary pin.
+ * Weekly Unity release discovery: compare Releases API tips to the CI matrix.
  * Usage: node .github/scripts/unity-release-discovery.cjs
  * Env: GITHUB_STEP_SUMMARY (optional), OPEN_ISSUE=1 + GH_TOKEN/GITHUB_TOKEN to open/update drift issue.
  */
@@ -9,8 +9,8 @@ const { execFileSync } = require('child_process');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const apiBase = 'https://services.api.unity.com/unity/editor/release/v1/releases';
-const minors = ['6000.0', '6000.1', '6000.2', '6000.3', '6000.4', '6000.5', '6000.6', '6000.7'];
-const ISSUE_TITLE = 'unity-release-drift: matrix / canary vs Unity Releases API';
+const minors = ['6000.0', '6000.1', '6000.2', '6000.3', '6000.4', '6000.5', '6000.6', '6000.7', '6000.8', '7000.0', '7000.1'];
+const ISSUE_TITLE = 'unity-release-drift: matrix vs Unity Releases API';
 const ISSUE_LABEL = 'unity-release-drift';
 
 async function fetchLatest(versionPrefix) {
@@ -36,17 +36,6 @@ function loadMatrixVersions() {
     return buildOptions['unity-version'] || [];
 }
 
-function loadCanaryPin() {
-    const yml = fs.readFileSync(
-        path.join(repoRoot, '.github', 'workflows', 'unity-preview-canary.yml'),
-        'utf8'
-    );
-    const version = (yml.match(/"unity-version":\s*"([^"]+)"/) || [])[1];
-    const changeset = (yml.match(/"changeset":\s*"([^"]+)"/) || [])[1];
-    const channel = (yml.match(/"channel":\s*"([^"]+)"/) || [])[1];
-    return { version, changeset, channel };
-}
-
 function pickTip(rows, preferStreams) {
     for (const stream of preferStreams) {
         const hit = rows.find(r => String(r.stream).toUpperCase() === stream);
@@ -57,12 +46,12 @@ function pickTip(rows, preferStreams) {
 
 async function main() {
     const matrixVersions = loadMatrixVersions();
-    const canary = loadCanaryPin();
     const tips = [];
 
     for (const minor of minors) {
         try {
             const rows = await fetchLatest(minor);
+            if (rows.length === 0) continue; // the stream has no release yet
             const tip = pickTip(rows, ['LTS', 'SUPPORTED', 'BETA', 'ALPHA']);
             tips.push({ minor, tip, count: rows.length });
         } catch (err) {
@@ -78,12 +67,6 @@ async function main() {
     for (const v of matrixVersions) {
         lines.push(`- \`${v}\``);
     }
-    lines.push('');
-    lines.push('### Preview canary pin');
-    lines.push('');
-    lines.push(`- version: \`${canary.version || 'n/a'}\``);
-    lines.push(`- changeset: \`${canary.changeset || 'n/a'}\``);
-    lines.push(`- channel: \`${canary.channel || 'n/a'}\``);
     lines.push('');
     lines.push('### API tips by minor');
     lines.push('');
@@ -101,16 +84,10 @@ async function main() {
     lines.push('');
 
     const drifts = [];
-    const tip60006 = tips.find(t => t.minor === '6000.6')?.tip;
-    if (tip60006 && canary.version && tip60006.version !== canary.version) {
-        drifts.push(
-            `Canary pin ${canary.version} is behind API tip ${tip60006.version} (${tip60006.stream}, ${tip60006.shortRevision}).`
-        );
-    }
+    // every stream is tracked, alphas and betas included: the matrix resolves each row to the newest build of its stream
     for (const row of tips) {
         if (!row.tip) continue;
         const stream = String(row.tip.stream || '').toUpperCase();
-        if (stream !== 'LTS' && stream !== 'SUPPORTED') continue;
         const minorKey = row.minor; // e.g. 6000.5
         const covered = matrixVersions.some(v => {
             if (v === minorKey) return true;
@@ -130,7 +107,7 @@ async function main() {
     if (drifts.length === 0) {
         lines.push('### Drift');
         lines.push('');
-        lines.push('No matrix/canary drift detected against API tips.');
+        lines.push('No matrix drift detected against API tips.');
     } else {
         lines.push('### Drift');
         lines.push('');
@@ -142,7 +119,7 @@ async function main() {
     const body = lines.join('\n');
     console.log(body);
 
-    // Step summary: local matrix/canary + drift count only (no HTTP-tainted API tip fields).
+    // Step summary: local matrix + drift count only (no HTTP-tainted API tip fields).
     if (process.env.GITHUB_STEP_SUMMARY) {
         const summaryPath = path.resolve(process.env.GITHUB_STEP_SUMMARY);
         const runnerTemp = process.env.RUNNER_TEMP ? path.resolve(process.env.RUNNER_TEMP) : '';
@@ -157,16 +134,10 @@ async function main() {
                 '',
                 ...matrixVersions.map(v => `- \`${v}\``),
                 '',
-                '### Preview canary pin',
-                '',
-                `- version: \`${canary.version || 'n/a'}\``,
-                `- changeset: \`${canary.changeset || 'n/a'}\``,
-                `- channel: \`${canary.channel || 'n/a'}\``,
-                '',
                 '### Drift',
                 '',
                 drifts.length === 0
-                    ? 'No matrix/canary drift detected against API tips.'
+                    ? 'No matrix drift detected against API tips.'
                     : `${drifts.length} drift item(s) detected. See the job log for API tip details.`,
                 '',
             ].join('\n');

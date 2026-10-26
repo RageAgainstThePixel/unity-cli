@@ -73,7 +73,9 @@ jobs:
               --build-targets "${MATRIX_BUILD_TARGET}"
               --json
             )
-            CHANNEL="${MATRIX_CHANNEL}"
+            # each row tests the newest build of its stream: a final release still wins once the stream has one,
+            # while streams that only have betas or alphas so far (such as 6000.7 and 7000.0) resolve to those
+            CHANNEL="${MATRIX_CHANNEL:-f,b,a}"
             CHANGESET="${MATRIX_CHANGESET}"
             if [ -n "${CHANNEL}" ]; then
               setup_cmd+=(--channel "${CHANNEL}")
@@ -236,6 +238,25 @@ jobs:
           sed -i 's/AndroidTargetSdkVersion: [0-9]*/AndroidTargetSdkVersion: 32/' "${UNITY_PROJECT_PATH}/ProjectSettings/ProjectSettings.asset"
           # ensure android dependencies are installed before UTP/build batches
           unity-cli setup-unity -p "${UNITY_PROJECT_PATH}" -m android
+      # 6000.0.85f1 and 6000.3.27f1 generate Gradle projects that list Unity's internal Artifactory first; its host does not
+      # resolve outside Unity, and Gradle fails the plugin lookup instead of moving on to Google's repository
+      - name: Drop Unity-internal Gradle repositories
+        if: ${{ matrix.build-target == 'Android' && matrix.unity-version != 'none' }}
+        run: |
+          mkdir -p "${HOME}/.gradle/init.d"
+          cat > "${HOME}/.gradle/init.d/drop-unity-internal-repos.gradle" <<'EOF'
+          def isInternal = { repo -> repo instanceof MavenArtifactRepository && (repo.url?.host ?: '').endsWith('.bf.unity3d.com') }
+          def drop = { repos, where ->
+              repos.findAll(isInternal).each { repo ->
+                  println "Dropped the Unity-internal repository ${repo.url} from ${where}"
+                  repos.remove(repo)
+              }
+          }
+          settingsEvaluated { settings ->
+              drop(settings.pluginManagement.repositories, 'pluginManagement')
+              drop(settings.dependencyResolutionManagement.repositories, 'dependencyResolutionManagement')
+          }
+          EOF
       - name: Compute safe artifact name
         id: artifact-name
         env:
