@@ -546,7 +546,7 @@ export class LicensingClient {
         const patchedClientPath = path.join(patchedDirectory, path.relative(clientRoot, this.licenseClientPath));
         const sourceMarker = path.join(patchedDirectory, '.source-sha256');
         const sourceHash = await Sha256FileHex(this.licenseClientPath);
-        const isCurrent = fs.existsSync(sourceMarker) && (await fs.promises.readFile(sourceMarker, 'utf-8')).trim() === sourceHash;
+        const isCurrent = (await fs.promises.readFile(sourceMarker, 'utf-8').catch(() => '')).trim() === sourceHash;
 
         if (isCurrent) {
             this.logger.debug('Unity Licensing Client was already patched from the same client, reusing');
