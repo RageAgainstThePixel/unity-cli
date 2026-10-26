@@ -5,7 +5,6 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-  issues: write
 jobs:
   discover:
     runs-on: ubuntu-latest
@@ -16,7 +15,4 @@ jobs:
         with:
           node-version: '24'
       - name: Discover Unity releases vs matrix
-        env:
-          OPEN_ISSUE: '1'
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node .github/scripts/unity-release-discovery.cjs

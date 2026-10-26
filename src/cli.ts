@@ -220,6 +220,15 @@ program.command('setup-unity')
 
         const modules: string[] = options.modules ? options.modules.split(/[ ,]+/).filter(Boolean) : [];
         const buildTargets: string[] = options.buildTargets ? options.buildTargets.split(/[ ,]+/).filter(Boolean) : [];
+
+        // with only a project, its saved build profiles pick the modules; --modules or --build-targets override them
+        if (unityProject && modules.length === 0 && buildTargets.length === 0) {
+            buildTargets.push(...unityProject.GetBuildProfileTargets());
+
+            if (buildTargets.length > 0) {
+                Logger.instance.info(`Installing modules for the project's build profiles: ${buildTargets.join(', ')}`);
+            }
+        }
         const moduleBuildTargetMap = UnityInstaller.GetPlatformTargetModuleMap();
 
         for (const target of buildTargets) {

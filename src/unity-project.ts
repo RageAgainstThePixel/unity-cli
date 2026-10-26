@@ -77,6 +77,72 @@ export class UnityProject {
     }
 
     /**
+     * The build targets of the build profiles saved under the project's Assets folder (Unity 6 and newer).
+     * @returns Build target names such as Android or StandaloneWindows64, without duplicates.
+     */
+    public GetBuildProfileTargets(): string[] {
+        const targets = new Set<string>();
+        const pending = [path.join(this.projectPath, 'Assets')];
+
+        while (pending.length > 0) {
+            const dir = pending.pop()!;
+            let entries: fs.Dirent[];
+
+            try {
+                entries = fs.readdirSync(dir, { withFileTypes: true });
+            } catch {
+                continue;
+            }
+
+            for (const entry of entries) {
+                const entryPath = path.join(dir, entry.name);
+
+                if (entry.isDirectory()) {
+                    pending.push(entryPath);
+                    continue;
+                }
+
+                if (!entry.isFile() || !entry.name.endsWith('.asset') || fs.statSync(entryPath).size > 1024 * 1024) {
+                    continue;
+                }
+
+                const target = UnityProject.readBuildProfileTarget(fs.readFileSync(entryPath, 'utf-8'));
+
+                if (target) {
+                    targets.add(target);
+                }
+            }
+        }
+
+        return [...targets];
+    }
+
+    /** BuildTarget enum values a build profile stores, by name. */
+    private static readonly BuildTargetNames: { [value: number]: string } = {
+        2: 'StandaloneOSX',
+        5: 'StandaloneWindows',
+        9: 'iOS',
+        13: 'Android',
+        19: 'StandaloneWindows64',
+        20: 'WebGL',
+        21: 'WSAPlayer',
+        24: 'StandaloneLinux64',
+        37: 'tvOS',
+        47: 'VisionOS',
+    };
+
+    /** The build target of a BuildProfile asset, or undefined for any other asset. */
+    private static readBuildProfileTarget(asset: string): string | undefined {
+        // BuildProfile is a built-in MonoBehaviour: script fileID 15003 in the editor's built-in guid
+        if (!asset.includes('fileID: 15003, guid: 0000000000000000e000000000000000') || !asset.includes('m_PlatformBuildProfile:')) {
+            return undefined;
+        }
+
+        const match = /^ {2}m_BuildTarget: (\d+)\r?$/m.exec(asset);
+        return match ? UnityProject.BuildTargetNames[Number(match[1])] ?? `BuildTarget(${match[1]})` : undefined;
+    }
+
+    /**
      * Gets the Unity project located at the specified path, or the current working directory if no path is provided.
      * @param projectPath The path to the Unity project. If undefined, the current working directory is used.
      * @returns The UnityProject instance representing the project at the specified path.

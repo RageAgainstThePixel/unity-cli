@@ -1,17 +1,14 @@
 /**
  * Weekly Unity release discovery: compare Releases API tips to the CI matrix.
  * Usage: node .github/scripts/unity-release-discovery.cjs
- * Env: GITHUB_STEP_SUMMARY (optional), OPEN_ISSUE=1 + GH_TOKEN/GITHUB_TOKEN to open/update drift issue.
+ * Env: GITHUB_STEP_SUMMARY (optional): the report is appended to the run summary, and drift is a warning annotation.
  */
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const apiBase = 'https://services.api.unity.com/unity/editor/release/v1/releases';
 const minors = ['6000.0', '6000.1', '6000.2', '6000.3', '6000.4', '6000.5', '6000.6', '6000.7', '6000.8', '7000.0', '7000.1'];
-const ISSUE_TITLE = 'unity-release-drift: matrix vs Unity Releases API';
-const ISSUE_LABEL = 'unity-release-drift';
 
 async function fetchLatest(versionPrefix) {
     const url = `${apiBase}?version=${encodeURIComponent(versionPrefix)}&limit=10`;
@@ -21,12 +18,24 @@ async function fetchLatest(versionPrefix) {
     }
     const data = await res.json();
     const results = Array.isArray(data.results) ? data.results : [];
-    return results.map(r => ({
-        version: r.version,
-        stream: r.stream,
-        shortRevision: r.shortRevision,
-        releaseDate: r.releaseDate,
-    }));
+    // the report is markdown in the run summary, so only fields rebuilt from validated parts reach it
+    return results.map(normalizeRelease).filter(Boolean);
+}
+
+const STREAMS = { LTS: 'LTS', SUPPORTED: 'SUPPORTED', TECH: 'TECH', BETA: 'BETA', ALPHA: 'ALPHA' };
+const CHANNELS = { a: 'a', b: 'b', c: 'c', f: 'f', p: 'p', x: 'x' };
+
+function normalizeRelease(r) {
+    const version = /^(\d{1,4})\.(\d{1,3})\.(\d{1,3})([abcfpx])(\d{1,3})$/.exec(String(r?.version ?? ''));
+    const revision = /^[0-9a-f]{12}$/.exec(String(r?.shortRevision ?? ''));
+    const stream = STREAMS[String(r?.stream ?? '').toUpperCase()] ?? 'OTHER';
+    if (!version) return null;
+    const [, major, minor, patch, channel, build] = version;
+    return {
+        version: `${Number(major)}.${Number(minor)}.${Number(patch)}${CHANNELS[channel]}${Number(build)}`,
+        stream,
+        shortRevision: revision ? revision[0] : '',
+    };
 }
 
 function loadMatrixVersions() {
@@ -74,7 +83,7 @@ async function main() {
     lines.push('|-------|-------------|--------|-----------|');
     for (const row of tips) {
         if (!row.tip) {
-            lines.push(`| ${row.minor} | _(error)_ | | ${row.error || ''} |`);
+            lines.push(`| ${row.minor} | _(error)_ | | |`);
             continue;
         }
         lines.push(
@@ -119,83 +128,13 @@ async function main() {
     const body = lines.join('\n');
     console.log(body);
 
-    // Step summary: local matrix + drift count only (no HTTP-tainted API tip fields).
-    if (process.env.GITHUB_STEP_SUMMARY) {
-        const summaryPath = path.resolve(process.env.GITHUB_STEP_SUMMARY);
-        const runnerTemp = process.env.RUNNER_TEMP ? path.resolve(process.env.RUNNER_TEMP) : '';
-        const underTemp =
-            runnerTemp &&
-            (summaryPath === runnerTemp || summaryPath.startsWith(runnerTemp + path.sep));
-        if (underTemp || process.env.GITHUB_ACTIONS === 'true') {
-            const localSummary = [
-                '## Unity release discovery',
-                '',
-                '### Blocking matrix (`build-options.json`)',
-                '',
-                ...matrixVersions.map(v => `- \`${v}\``),
-                '',
-                '### Drift',
-                '',
-                drifts.length === 0
-                    ? 'No matrix drift detected against API tips.'
-                    : `${drifts.length} drift item(s) detected. See the job log for API tip details.`,
-                '',
-            ].join('\n');
-            fs.appendFileSync(summaryPath, localSummary);
-        }
+    // drift shows as a warning on the run; the report itself only goes to the run summary
+    for (const d of drifts) {
+        console.log(`::warning title=Unity release drift::${d}`);
     }
 
-    if (process.env.OPEN_ISSUE === '1' && drifts.length > 0) {
-        const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
-        if (!token) {
-            console.error('OPEN_ISSUE=1 but no GH_TOKEN/GITHUB_TOKEN');
-            process.exitCode = 1;
-            return;
-        }
-        try {
-            const existing = execFileSync(
-                'gh',
-                ['issue', 'list', '--label', ISSUE_LABEL, '--state', 'open', '--json', 'number,title', '--limit', '5'],
-                { encoding: 'utf8' }
-            );
-            const issues = JSON.parse(existing || '[]');
-            const hit = issues.find(i => i.title === ISSUE_TITLE);
-            const issueBody = [
-                'Automated drift report from `unity-release-discovery`.',
-                '',
-                ...drifts.map(d => `- ${d}`),
-                '',
-                body,
-            ].join('\n');
-            try {
-                execFileSync('gh', ['label', 'create', ISSUE_LABEL, '--force'], { stdio: 'ignore' });
-            } catch {
-                // label may already exist or lack permission; issue create can omit it
-            }
-            if (hit) {
-                execFileSync('gh', ['issue', 'comment', String(hit.number), '--body', issueBody], {
-                    stdio: 'inherit',
-                });
-                console.log(`Updated issue #${hit.number}`);
-            } else {
-                try {
-                    execFileSync(
-                        'gh',
-                        ['issue', 'create', '--title', ISSUE_TITLE, '--label', ISSUE_LABEL, '--body', issueBody],
-                        { stdio: 'inherit' }
-                    );
-                } catch {
-                    execFileSync(
-                        'gh',
-                        ['issue', 'create', '--title', ISSUE_TITLE, '--body', issueBody],
-                        { stdio: 'inherit' }
-                    );
-                }
-            }
-        } catch (err) {
-            console.error(`Issue upsert failed: ${err.message || err}`);
-            process.exitCode = 1;
-        }
+    if (process.env.GITHUB_STEP_SUMMARY) {
+        fs.appendFileSync(path.resolve(process.env.GITHUB_STEP_SUMMARY), `${body}\n`);
     }
 }
 

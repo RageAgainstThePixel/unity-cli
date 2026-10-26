@@ -212,6 +212,8 @@ unity-cli licensing-audit-logs
 - `--verbose` Enable verbose logging.
 - `--json` Prints the last line of output as JSON string.
 
+With only `--unity-project`, it installs the modules for every build profile saved under the project's `Assets` folder (Unity 6 and newer). `--modules` or `--build-targets` replace that list.
+
 It exports `UNITY_CLI_PATH`, `UNITY_EDITOR_PATH`, `UNITY_EDITOR_VERSION`, `UNITY_EDITOR_CHANGESET`, `UNITY_EDITOR_CHANNELS` and, with a project, `UNITY_PROJECT_PATH`. With a project and the `android` module, it also installs the project's Android target SDK.
 
 Installs the latest Unity 6 version with Android and iOS modules:
