@@ -33,8 +33,11 @@ if [ ! -f /etc/apt/sources.list.d/jammy.list ]; then
 fi
 # jammy only supplies packages the host release lacks; it never replaces the host's own packages
 printf 'Package: *\\nPin: release n=jammy\\nPin-Priority: 100\\n' > /etc/apt/preferences.d/unity-cli-jammy
-apt-get update
-apt-get install -y --no-install-recommends xvfb ffmpeg libgtk2.0-0 libglu1-mesa libgconf-2-4 libncurses5 pulseaudio
+export DEBIAN_FRONTEND=noninteractive
+# a stalled mirror must not hold the job: apt retries slow requests, and each step has a hard limit
+APT_OPTS="-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 -o DPkg::Lock::Timeout=120"
+timeout 300 apt-get $APT_OPTS update
+timeout 600 apt-get $APT_OPTS install -y --no-install-recommends xvfb ffmpeg libgtk2.0-0 libglu1-mesa libgconf-2-4 libncurses5 pulseaudio
 apt-get clean
 `;
 
@@ -680,7 +683,8 @@ export class UnityInstaller {
     private async installLinuxDependencies(unityVersion: UnityVersion): Promise<void> {
         if (process.env.UNITY_CLI_LINUX_DEPENDENCIES_INSTALLED !== 'true') {
             try {
-                await Exec('sudo', ['sh', '-c', LINUX_EDITOR_DEPENDENCIES_SCRIPT], { silent: true, showCommand: true });
+                // streamed, so a slow mirror shows where it stalls
+                await Exec('sudo', ['sh', '-c', LINUX_EDITOR_DEPENDENCIES_SCRIPT], { silent: false, showCommand: true });
                 process.env.UNITY_CLI_LINUX_DEPENDENCIES_INSTALLED = 'true';
                 this.logger.CI_setEnvironmentVariable('UNITY_CLI_LINUX_DEPENDENCIES_INSTALLED', 'true');
             } catch (error) {
