@@ -243,7 +243,10 @@ export class UnityEditor {
 
             const logPath: string = GetArgumentValueAsString('-logFile', command.args);
             editorLogPath = logPath;
-            logTail = TailLogFile(logPath, command.projectPath);
+            // values of sensitive flags are masked in CI and redacted from everything printed from the Editor log
+            const sensitiveValues = command.args.filter((_, i) => i > 0 && UnityEditor.SENSITIVE_FLAGS.includes(command.args[i - 1]!));
+            sensitiveValues.forEach(value => this.logger.maskCredential(value));
+            logTail = TailLogFile(logPath, command.projectPath, sensitiveValues);
 
             // Scrub sensitive arguments before logging
             const scrubbedArgs = this.scrubSensitiveArgs(command.args);
@@ -482,7 +485,8 @@ export class UnityEditor {
 
         return [
             'run', projectPath,
-            '--editor-path', editorPath,
+            // on macOS unity run wants the .app bundle, not the executable inside it
+            '--editor-path', editorPath.replace(/(\.app)[\\/]Contents[\\/]MacOS[\\/][^\\/]+$/, '$1'),
             '--log-file', logPath,
             '--no-tail',
             '--',

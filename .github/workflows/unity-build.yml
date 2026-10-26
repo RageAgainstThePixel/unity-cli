@@ -37,6 +37,13 @@ jobs:
     env:
       UNITY_PROJECT_PATH: '' # Create Unity Project step will set this if needed
       UNITY_CLI_WORKFLOW_SUMMARY: 'true' # opt-in: append rich markdown to GITHUB_STEP_SUMMARY from unity-cli log parsing
+      # matrix values reach run scripts through the environment, never by expression interpolation
+      MATRIX_OS: ${{ matrix.os }}
+      MATRIX_UNITY_VERSION: ${{ matrix.unity-version }}
+      MATRIX_BUILD_TARGET: ${{ matrix.build-target }}
+      MATRIX_BUILD_ARGS: ${{ matrix.build-args }}
+      MATRIX_CHANNEL: ${{ matrix.channel }}
+      MATRIX_CHANGESET: ${{ matrix.changeset }}
     steps:
       - name: Free Disk Space
         if: ${{ matrix.os == 'ubuntu-latest' && (matrix.unity-version != '2018' && matrix.unity-version != '2017.4.40f1') }}
@@ -59,15 +66,15 @@ jobs:
         timeout-minutes: 30
         run: |
           unity-cli setup-cli --json
-          if [ "${{ matrix.unity-version }}" != "none" ]; then
+          if [ "${MATRIX_UNITY_VERSION}" != "none" ]; then
             setup_cmd=(
               unity-cli setup-unity
-              --unity-version "${{ matrix.unity-version }}"
-              --build-targets "${{ matrix.build-target }}"
+              --unity-version "${MATRIX_UNITY_VERSION}"
+              --build-targets "${MATRIX_BUILD_TARGET}"
               --json
             )
-            CHANNEL="${{ matrix.channel }}"
-            CHANGESET="${{ matrix.changeset }}"
+            CHANNEL="${MATRIX_CHANNEL}"
+            CHANGESET="${MATRIX_CHANGESET}"
             if [ -n "${CHANNEL}" ]; then
               setup_cmd+=(--channel "${CHANNEL}")
             fi
@@ -92,12 +99,12 @@ jobs:
           fi
           unity --version
 
-          if [ "${{ matrix.unity-version }}" != "none" ] && [ -z "${UNITY_EDITOR_PATH}" ]; then
+          if [ "${MATRIX_UNITY_VERSION}" != "none" ] && [ -z "${UNITY_EDITOR_PATH}" ]; then
             echo "::error::UNITY_EDITOR_PATH is not set"
             exit 1
           fi
 
-          if [ "${{ matrix.unity-version }}" != "none" ]; then
+          if [ "${MATRIX_UNITY_VERSION}" != "none" ]; then
             {
               echo "### Resolved Unity editor"
               echo ""
@@ -117,6 +124,9 @@ jobs:
         if: ${{ matrix.unity-version != 'none' }}
         env:
           UNITY_LICENSE: ${{ runner.os == 'macOS' && secrets.UNITY_LICENSE_MACOS || runner.os == 'Linux' && secrets.UNITY_LICENSE_LINUX || '' }}
+          # read by activate-license from the environment, so the credentials never sit on a command line
+          UNITY_USERNAME: ${{ secrets.UNITY_USERNAME }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
         run: |
           unity-cli license-context
           major="${UNITY_EDITOR_VERSION%%.*}"
@@ -129,10 +139,11 @@ jobs:
           fi
           echo "shared-identity=${shared_identity}" >> "$GITHUB_OUTPUT"
           # activate-license writes license-source=license-file|account to this step's outputs
-          unity-cli activate-license --license personal --email "${{ secrets.UNITY_USERNAME }}" --password "${{ secrets.UNITY_PASSWORD }}"
+          unity-cli activate-license --license personal
       - name: Store license secret
-        # only when a shared-identity row had to activate with the account, i.e. the stored license was missing or stale
-        if: ${{ steps.activate-license.outputs.shared-identity == 'true' && steps.activate-license.outputs.license-source == 'account' }}
+        # only when a shared-identity row had to activate with the account, i.e. the stored license was missing or stale,
+        # and never in a pull_request run, so a token that can write secrets is only exposed to pushes and manual runs
+        if: ${{ github.event_name != 'pull_request' && steps.activate-license.outputs.shared-identity == 'true' && steps.activate-license.outputs.license-source == 'account' }}
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.CI_TOKEN }}
@@ -204,7 +215,7 @@ jobs:
             exit 1
           fi
           # check if the project can be built. Only Unity 2019.4+ and newer majors support the build pipeline package
-          version="${{ matrix.unity-version }}"
+          version="${MATRIX_UNITY_VERSION}"
           # extract major and minor (minor may be empty if version is just '2019' etc.)
           major=$(echo "$version" | cut -d'.' -f1)
           minor=$(echo "$version" | cut -d'.' -f2)
@@ -231,13 +242,13 @@ jobs:
           MATRIX_NAME: ${{ matrix.name }}
         run: |
           set -euo pipefail
-          unity_version="${{ matrix.unity-version }}"
+          unity_version="${MATRIX_UNITY_VERSION}"
           unity_version="${unity_version//'*'/x}"
-          bt="${{ matrix.build-target }}"
+          bt="${MATRIX_BUILD_TARGET}"
           bt="${bt:-none}"
           # Per-job slug so parallel matrix rows never collide (name encodes the job-builder row).
-          base="${{ matrix.os }}-${unity_version}-${bt}"
-          ba="${{ matrix.build-args }}"
+          base="${MATRIX_OS}-${unity_version}-${bt}"
+          ba="${MATRIX_BUILD_ARGS}"
           if [ -n "${ba}" ]; then
             if command -v sha256sum >/dev/null 2>&1; then
               bah=$(printf '%s' "$ba" | sha256sum | awk '{print $1}' | cut -c1-12)
@@ -337,7 +348,6 @@ jobs:
 
           echo "Licensing Client Log Path: ${LICENSING_CLIENT_LOG_PATH}"
           echo "Licensing Audit Log Path: ${LICENSING_AUDIT_LOG_PATH}"
-          unity logs || true
 
           if [ ! -f "${LICENSING_CLIENT_LOG_PATH}" ]; then
             echo "::error::Licensing Client log file does not exist at ${LICENSING_CLIENT_LOG_PATH}"

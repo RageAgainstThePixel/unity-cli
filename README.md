@@ -132,16 +132,20 @@ unity-cli license-version
 `activate-license [options]`: Activate a Unity license.
 
 - `-l`, `--license`: License type (personal, professional, floating). Required.
-- `-e`, `--email`: Email associated with the Unity account. Used when the official CLI cannot activate a personal or professional license.
-- `-p`, `--password`: Password for the Unity account. Used when the official CLI cannot activate a personal or professional license.
-- `-s`, `--serial`: License serial number. Required when activating a professional license.
+- `-e`, `--email`: Email associated with the Unity account. Used when the official CLI cannot activate a personal or professional license. Defaults to `UNITY_USERNAME`.
+- `-p`, `--password`: Password for the Unity account. Used when the official CLI cannot activate a personal or professional license. Defaults to `UNITY_PASSWORD`.
+- `-s`, `--serial`: License serial number. Required when activating a professional license. Defaults to `UNITY_SERIAL`.
+- `-f`, `--license-file`: A cached license file (`Unity_lic.ulf`) from an earlier activation on a machine with the same identity: a path, the raw XML, or base64. Defaults to `UNITY_LICENSE`. Falls back to the email and password when it cannot be used.
 - `-c`, `--config`: Path to the configuration file, raw JSON, or base64 encoded JSON string. Required when activating a floating license.
 - `--json`: Prints the last line of output as JSON string.
 - `--verbose`: Enable verbose logging.
 
 ```bash
-unity-cli activate-license --license personal --email <your-email> --password <your-password>
+UNITY_USERNAME=<your-email> UNITY_PASSWORD=<your-password> unity-cli activate-license --license personal
 ```
+
+> [!NOTE]
+> Prefer the environment variables over `--email` and `--password`: values on a command line are visible to other processes on the machine. The Unity Licensing Client fallback still receives them as arguments, which Unity's client requires, so the official CLI stays the first choice.
 
 ##### Return License
 
@@ -161,6 +165,14 @@ unity-cli return-license --license personal
 
 ```bash
 unity-cli license-context
+```
+
+#### License File Path
+
+`license-file-path`: Prints the path to the machine's Unity license file (`Unity_lic.ulf`).
+
+```bash
+unity-cli license-file-path
 ```
 
 #### Licensing Client Logs

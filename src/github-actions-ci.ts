@@ -69,7 +69,12 @@ export class GitHubActionsLoggerProvider implements ILoggerProvider {
     }
 
     public mask(message: string): void {
-        process.stdout.write(`::add-mask::${message}\n`);
+        // add-mask covers one line, so a multi-line value is masked line by line
+        for (const line of message.split(/\r?\n/)) {
+            if (line.length > 0) {
+                process.stdout.write(`::add-mask::${line}\n`);
+            }
+        }
     }
 
     public setEnvironmentVariable(name: string, value: string): void {
@@ -82,7 +87,8 @@ export class GitHubActionsLoggerProvider implements ILoggerProvider {
 
     public setOutput(name: string, value: string): void {
         const githubOutput = process.env.GITHUB_OUTPUT;
-        if (githubOutput) {
+        // a line break would let the value set other outputs
+        if (githubOutput && !/[\r\n]/.test(`${name}${value}`)) {
             fs.appendFileSync(githubOutput, `${name}=${value}\n`, { encoding: 'utf8' });
         }
     }

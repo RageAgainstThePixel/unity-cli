@@ -9,6 +9,7 @@ import { UnityVersion } from './unity-version';
 import { FindAbsolutePath, UnityCli } from './unity-cli';
 import {
     DownloadFile,
+    DownloadOptions,
     Exec,
     GetTempDir,
 } from './utilities';
@@ -30,10 +31,23 @@ set -e
 if [ ! -f /etc/apt/sources.list.d/jammy.list ]; then
   echo "deb https://archive.ubuntu.com/ubuntu jammy main universe" > /etc/apt/sources.list.d/jammy.list
 fi
+# jammy only supplies packages the host release lacks; it never replaces the host's own packages
+printf 'Package: *\\nPin: release n=jammy\\nPin-Priority: 100\\n' > /etc/apt/preferences.d/unity-cli-jammy
 apt-get update
 apt-get install -y --no-install-recommends xvfb ffmpeg libgtk2.0-0 libglu1-mesa libgconf-2-4 libncurses5 pulseaudio
 apt-get clean
 `;
+
+/**
+ * SHA-256 of the fixed installers unity-cli downloads, recorded from the files Unity and Ubuntu serve today.
+ * A download that does not match is deleted instead of installed.
+ */
+const PINNED_DOWNLOAD_SHA256: { [url: string]: string } = {
+    'https://beta.unity3d.com/download/UnitySetup-4.7.2.exe': '30e462dfe9c2ef176e4d1c78742ab777099ae5cfab3b46502af6c426b7e4e8a7',
+    'https://beta.unity3d.com/download/unity-4.7.2.dmg': '2fcaa916624b2eecc1686a943d5b7806fb5bdaf01df7b4a544103f114b85f40b',
+    'https://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.0.0_1.0.2g-1ubuntu4.20_amd64.deb': '8003f9866297dd0fe77cc771470a06803d1d1b860350ad91dd212e38c36a20d2',
+    'https://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.0g-2ubuntu4_amd64.deb': '82e424d50e144320319414a1964d3a980abde4bc39fc7d8c2885819328cb5cb4',
+};
 
 /** Unity 5.x target support installer names, keyed by module id. */
 const ARCHIVE_MODULE_NAMES: { [module: string]: string } = {
@@ -62,6 +76,9 @@ const ARCHIVE_MODULE_NAMES: { [module: string]: string } = {
 export class UnityInstaller {
     private readonly logger: Logger = Logger.instance;
     private cli: UnityCli | undefined;
+    /** The 5.x release being installed from the archive, and its installers' published integrity values. */
+    private archiveVersion: UnityVersion | undefined;
+    private archiveIntegrity: Map<string, string> | undefined;
 
     /**
      * @param cli The official Unity CLI to use. Installed on demand when omitted.
@@ -343,6 +360,8 @@ export class UnityInstaller {
         }
 
         UnityInstaller.assertArchiveVersion(unityVersion);
+        this.archiveVersion = unityVersion;
+        this.archiveIntegrity = undefined;
         const installPath = await this.getLegacyInstallPath();
         const installDir = path.join(installPath, unityVersion.version);
         const baseUrl = `https://download.unity3d.com/download_unity/${unityVersion.changeset}`;
@@ -404,6 +423,72 @@ export class UnityInstaller {
         }
     }
 
+    /**
+     * Gets the checksum a download must match before it is installed: a pinned SHA-256 for the fixed installers,
+     * or the Unity Releases API integrity value for 5.x archive installers. Fails closed when neither is known.
+     * @param url The download URL.
+     */
+    private async getDownloadOptions(url: string): Promise<DownloadOptions> {
+        const pinned = PINNED_DOWNLOAD_SHA256[url];
+
+        if (pinned) {
+            return { sha256: pinned };
+        }
+
+        const archive = url.match(/^https:\/\/download\.unity3d\.com\/download_unity\/([0-9a-f]{12})\//);
+
+        if (archive && this.archiveVersion) {
+            if (!this.archiveIntegrity) {
+                this.archiveIntegrity = await UnityInstaller.getReleaseIntegrity(this.archiveVersion);
+            }
+
+            const integrity = this.archiveIntegrity.get(url);
+
+            if (integrity) {
+                return { integrity };
+            }
+        }
+
+        throw new Error(`No checksum is known for ${url}, so it is not installed`);
+    }
+
+    /**
+     * Maps each installer URL of a release (editor and modules) to the integrity value the Unity Releases API publishes for it.
+     * @param unityVersion The exact release.
+     */
+    private static async getReleaseIntegrity(unityVersion: UnityVersion): Promise<Map<string, string>> {
+        const integrity = new Map<string, string>();
+        const releasesClient = new UnityReleasesClient();
+        const { data, error } = await releasesClient.api.Release.getUnityReleases({
+            url: '/unity/editor/release/v1/releases',
+            query: { version: unityVersion.version, limit: 5 },
+        } as GetUnityReleasesData);
+
+        if (error) {
+            throw new Error(`Failed to read the checksums for Unity ${unityVersion.version}: ${JSON.stringify(error)}`);
+        }
+
+        const collect = (entries: unknown): void => {
+            if (!Array.isArray(entries)) { return; }
+
+            for (const entry of entries as { url?: string; integrity?: string; modules?: unknown }[]) {
+                if (entry.url && entry.integrity) {
+                    integrity.set(entry.url, entry.integrity);
+                }
+
+                collect(entry.modules);
+            }
+        };
+
+        for (const release of data?.results ?? []) {
+            if (release.version === unityVersion.version) {
+                collect((release as unknown as { downloads?: unknown }).downloads);
+            }
+        }
+
+        return integrity;
+    }
+
     private getArchiveModuleNames(unityVersion: UnityVersion, modules: string[]): string[] {
         const hostModule = process.platform === 'win32' ? 'Windows' : process.platform === 'darwin' ? 'Mac' : 'Linux';
         const names: string[] = [];
@@ -430,7 +515,7 @@ export class UnityInstaller {
         }
 
         const installerPath = tempInstallerPath('.exe');
-        await DownloadFile(url, installerPath);
+        await DownloadFile(url, installerPath, await this.getDownloadOptions(url));
         this.logger.info(`Running ${path.basename(url)}...`);
 
         try {
@@ -455,7 +540,7 @@ export class UnityInstaller {
     private async installMacPackages(urls: string[]): Promise<void> {
         for (const url of urls) {
             const pkgPath = tempInstallerPath('.pkg');
-            await DownloadFile(url, pkgPath);
+            await DownloadFile(url, pkgPath, await this.getDownloadOptions(url));
 
             try {
                 await Exec('sudo', ['installer', '-pkg', pkgPath, '-target', '/'], { silent: true, showCommand: true });
@@ -510,7 +595,7 @@ export class UnityInstaller {
             await fs.promises.rm(src, { recursive: true, force: true });
         }
 
-        await fs.promises.chmod(targetPath, 0o777);
+        await fs.promises.chmod(targetPath, 0o755);
     }
 
     /**
@@ -549,7 +634,7 @@ export class UnityInstaller {
             case 'darwin': {
                 const url = `https://beta.unity3d.com/download/unity-${unityVersion.version}.dmg`;
                 const installerPath = tempInstallerPath('.dmg');
-                await DownloadFile(url, installerPath);
+                await DownloadFile(url, installerPath, await this.getDownloadOptions(url));
                 let mountPoint = '';
 
                 try {
@@ -618,7 +703,8 @@ export class UnityInstaller {
 
         if (debName) {
             const downloadPath = tempInstallerPath('.deb');
-            await DownloadFile(`https://archive.ubuntu.com/ubuntu/pool/main/o/openssl/${debName}`, downloadPath);
+            const url = `https://archive.ubuntu.com/ubuntu/pool/main/o/openssl/${debName}`;
+            await DownloadFile(url, downloadPath, await this.getDownloadOptions(url));
 
             try {
                 await Exec('sudo', ['dpkg', '-i', downloadPath]);

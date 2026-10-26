@@ -8,8 +8,11 @@ import {
     ResolveGlobToPath,
     DownloadFile,
     Exec,
+    FindProcessesByName,
     FindProcessesUnder,
     KillProcess,
+    SanitizeLogText,
+    Sha256FileHex,
     GetTempDir,
     ResolvePathCandidates,
     redactSensitiveLiterals,
@@ -53,6 +56,7 @@ export class LicensingClient {
 
     private licenseClientPath: string | undefined;
     private readonly secrets: string[] = [];
+    private isLicenseClientPatched = false;
     /** Where the 4.x/5.x license link lives, and the folders the client may have written Unity_lic.ulf to. */
     private legacyLicense: { linkPath: string; commonDirectory: string; patchedDirectory: string } | undefined;
     private licenseVersion: string | undefined;
@@ -122,7 +126,7 @@ export class LicensingClient {
     private static async getHubBundledClient(): Promise<string> {
         const hubVersion = '3.12.0';
         const arch = process.arch === 'arm64' ? 'arm64' : 'x64';
-        const cacheDirectory = path.join(os.tmpdir(), `UnityHubLicensingClient-${hubVersion}-${arch}`);
+        const cacheDirectory = await LicensingClient.privateDirectory(`hub-client-${hubVersion}-${arch}`);
         const findClient = async () => (await fs.promises.readdir(cacheDirectory, { recursive: true }))
             .map(entry => path.join(cacheDirectory, entry.toString()))
             .find(entry => path.basename(entry) === 'Unity.Licensing.Client' && fs.statSync(entry).isFile());
@@ -137,7 +141,12 @@ export class LicensingClient {
 
         const dmgPath = path.join(GetTempDir(), `UnityHubSetup-${hubVersion}-${arch}.dmg`);
         const mountPoint = path.join(GetTempDir(), `UnityHub-${hubVersion}-${arch}`);
-        await DownloadFile(`https://public-cdn.cloud.unity3d.com/hub/${hubVersion}/UnityHubSetup-${arch}.dmg`, dmgPath);
+        // pinned so a tampered download never reaches the client that receives the Unity ID
+        const dmgSha256: { [arch: string]: string } = {
+            'x64': '1b5e9698b6353cb814618ea12c6ca014d50fc33efe086da6b67e5b442a77bb3e',
+            'arm64': '0026d98a375d926090b144ca3d54e982612aa24a59404e004e333dc34c4b832a',
+        };
+        await DownloadFile(`https://public-cdn.cloud.unity3d.com/hub/${hubVersion}/UnityHubSetup-${arch}.dmg`, dmgPath, { sha256: dmgSha256[arch]! });
         await fs.promises.mkdir(mountPoint, { recursive: true });
 
         try {
@@ -184,7 +193,10 @@ export class LicensingClient {
             // missing or not writable
         }
 
-        for (const args of [['-n', 'mkdir', '-p', directory], ['-n', 'chmod', '777', directory]]) {
+        // owned by the current user rather than world-writable
+        const user = os.userInfo().username;
+
+        for (const args of [['-n', 'mkdir', '-p', directory], ['-n', 'chown', user, directory], ['-n', 'chmod', '755', directory]]) {
             const exitCode = await new Promise<number>((resolve) => {
                 const child = spawn('sudo', args, { stdio: 'ignore' });
                 child.on('error', () => resolve(1));
@@ -196,6 +208,22 @@ export class LicensingClient {
                 return;
             }
         }
+    }
+
+    /**
+     * Gets a folder under ~/.unity-cli/licensing that only the current user can read and write, creating it when needed.
+     * Used instead of the shared temp folder for the patched licensing client and the license it writes.
+     * @param name The folder name.
+     */
+    private static async privateDirectory(name: string): Promise<string> {
+        const root = path.join(os.homedir(), '.unity-cli', 'licensing');
+        await fs.promises.mkdir(root, { recursive: true, mode: 0o700 });
+
+        if (process.platform !== 'win32') {
+            await fs.promises.chmod(root, 0o700);
+        }
+
+        return path.join(root, name);
     }
 
     /**
@@ -508,17 +536,23 @@ export class LicensingClient {
             this.licenseClientPath = await this.init();
         }
 
-        if (this.licenseVersion === '6.x') {
-            return; // no patching needed
+        if (this.licenseVersion === '6.x' || this.isLicenseClientPatched) {
+            return; // no patching needed, or already done for this instance
         }
 
         const clientRoot = LicensingClient.clientRootDirectory(this.licenseClientPath);
-        const patchedDirectory = path.join(os.tmpdir(), `UnityLicensingClient-${this.licenseVersion.replace('.', '_')}`);
+        // a private per-user folder rather than the shared temp folder: it holds a client that receives the Unity ID and the license it writes
+        const patchedDirectory = await LicensingClient.privateDirectory(`patched-client-${this.licenseVersion.replace('.', '_')}`);
         const patchedClientPath = path.join(patchedDirectory, path.relative(clientRoot, this.licenseClientPath));
+        const sourceMarker = path.join(patchedDirectory, '.source-sha256');
+        const sourceHash = await Sha256FileHex(this.licenseClientPath);
+        const isCurrent = fs.existsSync(sourceMarker) && (await fs.promises.readFile(sourceMarker, 'utf-8')).trim() === sourceHash;
 
-        if (await fs.promises.mkdir(patchedDirectory, { recursive: true }) === undefined) {
-            this.logger.debug('Unity Licensing Client was already patched, reusing');
+        if (isCurrent) {
+            this.logger.debug('Unity Licensing Client was already patched from the same client, reusing');
         } else {
+            await fs.promises.rm(patchedDirectory, { recursive: true, force: true });
+            await fs.promises.mkdir(patchedDirectory, { recursive: true, mode: 0o700 });
             // copy the whole client, then patch whichever binary holds the "6.x" license version:
             // older clients ship it in Unity.Licensing.EntitlementResolver.dll, the single-file client the Unity CLI downloads embeds it in the executable
             await fs.promises.cp(clientRoot, patchedDirectory, { recursive: true, verbatimSymlinks: true });
@@ -574,9 +608,13 @@ export class LicensingClient {
                     });
                 }
             }
+
+            // records which client the copy came from, so a newer client is patched again instead of reused
+            await fs.promises.writeFile(sourceMarker, sourceHash, { encoding: 'utf-8', mode: 0o600 });
         }
 
         this.licenseClientPath = patchedClientPath;
+        this.isLicenseClientPatched = true;
         const unityCommonDir = this.getUnityCommonDir();
         const legacyLicenseFile = path.join(unityCommonDir, `Unity_v${this.licenseVersion}.ulf`);
         this.legacyLicense ??= { linkPath: legacyLicenseFile, commonDirectory: unityCommonDir, patchedDirectory };
@@ -706,15 +744,7 @@ export class LicensingClient {
      * The line is split on separator characters and each piece is checked on its own, which stays linear on any input.
      */
     private static sanitizeLogLine(line: string, secrets: string[]): string {
-        return redactSensitiveLiterals(line, secrets)
-            .split(/([\s"'<>=,;()[\]]+)/)
-            .map(part => {
-                const at = part.indexOf('@');
-                const isEmail = at > 0 && part.lastIndexOf('.') > at + 1;
-                const isToken = part.length >= 32 && /^[A-Za-z0-9+_.-]+$/.test(part);
-                return isEmail || isToken ? '*****' : part;
-            })
-            .join('');
+        return SanitizeLogText(line, secrets);
     }
 
     /**
@@ -746,18 +776,9 @@ export class LicensingClient {
             return;
         }
 
-        const [command, args] = process.platform === 'win32'
-            ? ['taskkill', ['/F', '/IM', 'Unity.Licensing.Client.exe']]
-            : ['pkill', ['-f', 'Unity.Licensing.Client']];
-
-        await new Promise<void>((resolve) => {
-            const child = spawn(command, args, { stdio: 'ignore' });
-            child.on('error', () => resolve());
-            child.on('close', (code) => {
-                Logger.instance.debug(`${command} exited with code ${code}`);
-                resolve();
-            });
-        });
+        // matched on the executable's own name, so a process that only mentions it on its command line is left alone
+        const clients = await FindProcessesByName('Unity.Licensing.Client');
+        await Promise.all(clients.map(client => KillProcess(client).catch(() => undefined)));
     }
 
     private maskSerialInOutput(output: string): string {
@@ -896,12 +917,13 @@ export class LicensingClient {
                 const tokenMatch = output.match(/with token:\s*"(?<token>[\w-]+)"/);
 
                 if (!tokenMatch || !tokenMatch.groups || !tokenMatch.groups['token']) {
-                    throw new Error(`Failed to acquire floating license lease: No token found in output.\n  ${output}`);
+                    throw new Error(`Failed to acquire floating license lease: No token found in output.\n  ${SanitizeLogText(output)}`);
                 }
 
                 const token = tokenMatch.groups['token'];
                 this.logger.CI_mask(token);
-                this.logger.info(output);
+                // the token is returned to the caller (and printed with --json); the log never shows it
+                this.logger.info(redactSensitiveLiterals(output, [token]));
                 return token;
             }
             default: { // personal and professional license activation

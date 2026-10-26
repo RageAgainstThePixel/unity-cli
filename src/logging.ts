@@ -693,6 +693,8 @@ export class Logger {
         'username',
         'servicesConfig',
         'serviceaccountkey',
+        // licenseFile can hold the license XML itself
+        'licensefile',
     ];
 
     /**

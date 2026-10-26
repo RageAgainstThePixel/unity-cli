@@ -371,17 +371,48 @@ export async function extractZipNative(
  */
 export async function HttpsGetText(url: string): Promise<string> {
     return new Promise((resolve, reject) => {
-        https.get(url, (response) => {
+        const request = https.get(url, { timeout: DOWNLOAD_IDLE_TIMEOUT_MS }, (response) => {
             if (response.statusCode !== 200) {
                 reject(new Error(`GET ${url} failed: HTTP ${response.statusCode}`));
                 response.resume();
                 return;
             }
             const chunks: Buffer[] = [];
-            response.on('data', (c: Buffer) => chunks.push(c));
+            let size = 0;
+            response.on('data', (c: Buffer) => {
+                size += c.length;
+
+                // text responses here are small manifests; anything larger is not what was asked for
+                if (size > MAX_TEXT_RESPONSE_BYTES) {
+                    request.destroy(new Error(`GET ${url} returned more than ${MAX_TEXT_RESPONSE_BYTES} bytes`));
+                    return;
+                }
+
+                chunks.push(c);
+            });
             response.on('end', () => resolve(Buffer.concat(chunks).toString('utf8').trim()));
-        }).on('error', reject);
+        });
+        request.on('timeout', () => request.destroy(new Error(`GET ${url} timed out`)));
+        request.on('error', reject);
     });
+}
+
+/** A download fails when no data arrives for this long. */
+const DOWNLOAD_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
+
+/** The largest response HttpsGetText accepts. */
+const MAX_TEXT_RESPONSE_BYTES = 10 * 1024 * 1024;
+
+export interface DownloadOptions {
+    /** The expected SHA-256 (hex) of the file; the download fails and is deleted when it does not match. */
+    sha256?: string;
+    /**
+     * An integrity value from the Unity Releases API, such as `md5-<base64>` or `sha256-<base64>`, checked the same way.
+     * Unity base64-encodes either the hex digest or the raw digest bytes; both are accepted.
+     */
+    integrity?: string;
+    /** Creates the file executable (0o755) instead of 0o644. */
+    executable?: boolean;
 }
 
 /**
@@ -404,19 +435,20 @@ export async function Sha256FileHex(filePath: string): Promise<string> {
  * Requires HTTP status 200 before writing. Verifies the file is readable after download.
  * @param url The URL to download from.
  * @param downloadPath The path to save the downloaded file.
- * @throws An error if the download fails or the file is not accessible after download.
+ * @param options Integrity and mode options.
+ * @throws An error if the download fails, its SHA-256 does not match, or the file is not accessible after download.
  */
-export async function DownloadFile(url: string, downloadPath: string): Promise<void> {
+export async function DownloadFile(url: string, downloadPath: string, options: DownloadOptions = {}): Promise<void> {
     logger.ci(`Downloading from ${url} to ${downloadPath}...`);
     await fs.promises.mkdir(path.dirname(downloadPath), { recursive: true });
     await new Promise<void>((resolve, reject) => {
-        https.get(url, (response) => {
+        const request = https.get(url, { timeout: DOWNLOAD_IDLE_TIMEOUT_MS }, (response) => {
             if (response.statusCode !== 200) {
                 response.resume();
                 reject(new Error(`GET ${url} failed: HTTP ${response.statusCode}`));
                 return;
             }
-            const file = fs.createWriteStream(downloadPath, { mode: 0o755 });
+            const file = fs.createWriteStream(downloadPath, { mode: options.executable ? 0o755 : 0o644 });
             const fail = (err: Error) => {
                 file.destroy();
                 void fs.promises.unlink(downloadPath).catch(() => undefined);
@@ -428,7 +460,9 @@ export async function DownloadFile(url: string, downloadPath: string): Promise<v
             file.on('finish', () => {
                 file.close(() => resolve());
             });
-        }).on('error', (error) => {
+        });
+        request.on('timeout', () => request.destroy(new Error(`GET ${url} timed out`)));
+        request.on('error', (error) => {
             void fs.promises.unlink(downloadPath).catch(() => undefined);
             reject(error);
         });
@@ -436,6 +470,111 @@ export async function DownloadFile(url: string, downloadPath: string): Promise<v
 
     await new Promise((r) => setTimeout(r, 100));
     await fs.promises.access(downloadPath, fs.constants.R_OK);
+
+    if (options.sha256) {
+        const actual = await Sha256FileHex(downloadPath);
+
+        if (actual.toLowerCase() !== options.sha256.toLowerCase()) {
+            await fs.promises.rm(downloadPath, { force: true });
+            throw new Error(`SHA-256 mismatch for ${url}: expected ${options.sha256}, got ${actual}`);
+        }
+    }
+
+    if (options.integrity) {
+        const separator = options.integrity.indexOf('-');
+        const algorithm = options.integrity.slice(0, separator).toLowerCase();
+        const encoded = options.integrity.slice(separator + 1);
+
+        if (separator <= 0 || !['md5', 'sha1', 'sha256', 'sha384', 'sha512'].includes(algorithm)) {
+            await fs.promises.rm(downloadPath, { force: true });
+            throw new Error(`Unsupported integrity value for ${url}: ${options.integrity}`);
+        }
+
+        const decoded = Buffer.from(encoded, 'base64');
+        const asText = decoded.toString('utf8');
+        const expected = /^[0-9a-f]+$/i.test(asText) ? asText.toLowerCase() : decoded.toString('hex');
+        const actual = await HashFileHex(downloadPath, algorithm);
+
+        if (actual !== expected) {
+            await fs.promises.rm(downloadPath, { force: true });
+            throw new Error(`${algorithm.toUpperCase()} mismatch for ${url}: expected ${expected}, got ${actual}`);
+        }
+    }
+}
+
+/**
+ * Computes a file digest as a lowercase hex string.
+ * @param filePath The file to hash.
+ * @param algorithm A Node crypto hash name, such as sha256 or md5.
+ */
+export async function HashFileHex(filePath: string, algorithm: string): Promise<string> {
+    const hash = crypto.createHash(algorithm);
+    const stream = fs.createReadStream(filePath);
+    return new Promise((resolve, reject) => {
+        stream.on('data', (chunk: string | Buffer) => hash.update(chunk));
+        stream.on('end', () => resolve(hash.digest('hex')));
+        stream.on('error', reject);
+    });
+}
+
+/**
+ * Redacts known secrets, email addresses and long token-like strings (JWTs, access and refresh tokens) from log text.
+ * Each line is split on separator characters and every piece is checked on its own, which stays linear on any input.
+ * @param text The text to sanitize.
+ * @param secrets Literal values to redact.
+ */
+export function SanitizeLogText(text: string, secrets: readonly string[] = []): string {
+    return redactSensitiveLiterals(text, secrets)
+        .split(/([\s"'<>=,;()[\]]+)/)
+        .map(part => {
+            const at = part.indexOf('@');
+            const isEmail = at > 0 && part.lastIndexOf('.') > at + 1;
+            const isToken = part.length >= 32 && /^[A-Za-z0-9+_.-]+$/.test(part);
+            return isEmail || isToken ? '*****' : part;
+        })
+        .join('');
+}
+
+/**
+ * Lists running processes whose executable file name is `name` (e.g. Unity.Licensing.Client), wherever it lives.
+ * @param name The executable file name, without .exe.
+ */
+export async function FindProcessesByName(name: string): Promise<ProcInfo[]> {
+    const results: ProcInfo[] = [];
+    const target = name.toLowerCase();
+
+    try {
+        if (process.platform === 'win32') {
+            const output = await Exec('powershell', [
+                '-NoProfile',
+                '-Command',
+                'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId)`t$($_.ParentProcessId)`t$($_.Name)" }'
+            ], { silent: true, showCommand: false });
+
+            for (const line of output.split(/\r?\n/)) {
+                const [pid, ppid, executable] = line.split('\t');
+
+                if (pid && ppid && executable && executable.toLowerCase().replace(/\.exe$/, '') === target) {
+                    results.push({ pid: parseInt(pid, 10), ppid: parseInt(ppid, 10), name: executable });
+                }
+            }
+        } else {
+            const output = await Exec('ps', ['-axo', 'pid=,ppid=,comm='], { silent: true, showCommand: false });
+
+            for (const line of output.split('\n')) {
+                const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/);
+
+                // comm is the executable path on macOS and a name cut to 15 characters on Linux
+                if (match && (path.basename(match[3]!).toLowerCase() === target || target.startsWith(match[3]!.toLowerCase()) && match[3]!.length >= 15)) {
+                    results.push({ pid: parseInt(match[1]!, 10), ppid: parseInt(match[2]!, 10), name: match[3]! });
+                }
+            }
+        }
+    } catch (error) {
+        logger.debug(`Failed to list processes named ${name}: ${error}`);
+    }
+
+    return results.filter(proc => proc.pid !== process.pid);
 }
 
 /**

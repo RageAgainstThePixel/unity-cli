@@ -29,10 +29,14 @@ runs:
     - name: Prepare test list and install packages
       shell: bash
       working-directory: ${{ inputs.unity-project-path }}
+      # inputs reach the script through the environment, never by expression interpolation
+      env:
+        TESTS_INPUT_OVERRIDE: ${{ inputs.tests-input }}
+        TEST_PROFILE: ${{ inputs.test-profile }}
       run: |
         set -euo pipefail
-        tests_input="${{ inputs.tests-input }}"
-        test_profile="${{ inputs.test-profile }}"
+        tests_input="${TESTS_INPUT_OVERRIDE}"
+        test_profile="${TEST_PROFILE}"
 
         if [ -z "$tests_input" ]; then
           case "$test_profile" in
@@ -60,7 +64,8 @@ runs:
           needs_test_framework=true
         fi
 
-        npm install -g openupm-cli
+        # the CLI is pinned; the packages it adds stay on their latest releases on purpose (see docs/unity-version-support.md)
+        npm install -g openupm-cli@4.5.2
         openupm add com.utilities.buildpipeline
         if [ "$needs_test_framework" = true ]; then
           openupm add com.unity.test-framework

@@ -7,6 +7,7 @@ import {
     DownloadFile,
     GetTempDir,
     HttpsGetText,
+    SanitizeLogText,
     Sha256FileHex,
     redactSensitiveLiterals,
 } from './utilities';
@@ -290,7 +291,8 @@ export class UnityCli {
     public async RunJson<T = unknown>(args: string[], options: UnityCliRunOptions = {}): Promise<{ exitCode: number; envelope: UnityCliEnvelope<T> | undefined; stdout: string; stderr: string }> {
         const result = await this.Run([...args, '--format', 'json'], { ...options, stream: false });
         const envelope = parseEnvelope<T>(result.stdout);
-        this.logger.debug(`unity ${redactSensitiveLiterals(args.join(' '), options.redactLiterals)} [${result.exitCode}]:\n${result.stdout}${stripHint(result.stderr)}`);
+        // JSON results can carry account details and tokens (license activate, status), so the debug copy is sanitized
+        this.logger.debug(`unity ${redactSensitiveLiterals(args.join(' '), options.redactLiterals)} [${result.exitCode}]:\n${SanitizeLogText(`${result.stdout}${stripHint(result.stderr)}`, options.redactLiterals)}`);
         return { exitCode: result.exitCode, envelope, stdout: result.stdout, stderr: result.stderr };
     }
 

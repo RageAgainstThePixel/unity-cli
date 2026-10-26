@@ -10,6 +10,7 @@ import {
 import {
     Delay,
     isStdoutTTY,
+    redactSensitiveLiterals,
     WaitForFileToBeUnlocked
 } from './utilities';
 import {
@@ -1175,7 +1176,7 @@ async function writeUtpTelemetryLog(filePath: string, entries: UTP[], logger: Lo
  * @param projectPath The path to the project (used for log annotation).
  * @returns An object containing the tail promise and signalEnd function.
  */
-export function TailLogFile(logPath: string, projectPath: string | undefined): LogTailResult {
+export function TailLogFile(logPath: string, projectPath: string | undefined, redactLiterals: readonly string[] = []): LogTailResult {
     let logEnded = false;
     let lastSize = 0;
     const logPollingInterval = 250;
@@ -1248,7 +1249,8 @@ export function TailLogFile(logPath: string, projectPath: string | undefined): L
     };
 
     const processLogLine = (rawLine: string): void => {
-        const line = rawLine.trim();
+        // the Editor log echoes its command line, so values like -password are redacted before anything is printed or parsed
+        const line = redactSensitiveLiterals(rawLine, redactLiterals).trim();
         if (!line) { return; }
 
         // Attempt to parse telemetry utp JSON

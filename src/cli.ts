@@ -67,9 +67,9 @@ program.command('license-version')
 program.command('activate-license')
     .description('Activate a Unity license. Tries the official Unity CLI first, then the Unity Licensing Client with your Unity ID email and password.')
     .option('-l, --license <license>', 'License type (personal, professional, floating). Required.')
-    .option('-e, --email <email>', 'Email associated with the Unity account. Used when the Unity CLI cannot activate a personal or professional license.')
-    .option('-p, --password <password>', 'Password for the Unity account. Used when the Unity CLI cannot activate a personal or professional license.')
-    .option('-s, --serial <serial>', 'License serial number. Required when activating a professional license.')
+    .option('-e, --email <email>', 'Email associated with the Unity account. Used when the Unity CLI cannot activate a personal or professional license. Defaults to the UNITY_USERNAME environment variable.')
+    .option('-p, --password <password>', 'Password for the Unity account. Used when the Unity CLI cannot activate a personal or professional license. Defaults to the UNITY_PASSWORD environment variable, which keeps it off the command line.')
+    .option('-s, --serial <serial>', 'License serial number. Required when activating a professional license. Defaults to the UNITY_SERIAL environment variable.')
     .option('-c, --config <config>', 'Path to the configuration file, raw JSON, or base64 encoded JSON string. Required when activating a floating license.')
     .option('-f, --license-file <licenseFile>', 'A cached license file (Unity_lic.ulf) from an earlier activation on a machine with the same identity: a path, the raw XML, or base64. Defaults to the UNITY_LICENSE environment variable. Falls back to the email and password when it cannot be used.')
     .option('--verbose', 'Enable verbose logging.')
@@ -78,6 +78,16 @@ program.command('activate-license')
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
+
+        // environment variables keep credentials out of the process command line
+        options.email ??= process.env.UNITY_USERNAME || undefined;
+        options.password ??= process.env.UNITY_PASSWORD || undefined;
+        options.serial ??= process.env.UNITY_SERIAL || undefined;
+
+        // Mask credentials in CI environments before any potential logging
+        Logger.instance.maskCredential(options.email);
+        Logger.instance.maskCredential(options.password);
+        Logger.instance.maskCredential(options.serial);
 
         Logger.instance.debugOptions(options);
 
@@ -97,12 +107,8 @@ program.command('activate-license')
 
         if (licenseType === LicenseType.professional && !options.serial) {
             options.serial = await PromptForSecretInput('Serial: ');
+            Logger.instance.maskCredential(options.serial);
         }
-
-        // Mask credentials in CI environments before any potential logging
-        Logger.instance.maskCredential(options.email);
-        Logger.instance.maskCredential(options.password);
-        Logger.instance.maskCredential(options.serial);
 
         const token = await ActivateLicense({
             licenseType,
@@ -130,6 +136,10 @@ program.command('return-license')
             Logger.instance.logLevel = LogLevel.DEBUG;
         }
 
+        const token: string | undefined = options.token?.toString()?.trim() || undefined;
+
+        // Mask token in CI environments before any potential logging
+        Logger.instance.maskCredential(token);
         Logger.instance.debugOptions(options);
 
         const licenseStr: string = options.license?.toString()?.trim();
@@ -145,11 +155,6 @@ program.command('return-license')
             Logger.instance.error(`Invalid license type: ${licenseType}`);
             process.exit(1);
         }
-
-        const token: string | undefined = options.token?.toString()?.trim() || undefined;
-
-        // Mask token in CI environments before any potential logging
-        Logger.instance.maskCredential(token);
 
         await ReturnLicense(licenseType, token);
         process.exit(0);

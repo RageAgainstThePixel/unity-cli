@@ -24,6 +24,11 @@ describe('UnityEditor', () => {
     });
 
     describe('GetUnityRunArgs', () => {
+        it('passes the .app bundle on macOS', () => {
+            const args = UnityEditor.GetUnityRunArgs('/Applications/Unity/Hub/Editor/6000.0.0f1/Unity.app/Contents/MacOS/Unity', '/project', '/logs/run.log', ['-quit']);
+            expect(args[3]).toBe('/Applications/Unity/Hub/Editor/6000.0.0f1/Unity.app');
+        });
+
         it('lets unity run own -batchmode, -quit, -projectPath and -logFile', () => {
             const args = UnityEditor.GetUnityRunArgs('/editor/Unity', '/project', '/logs/run.log', [
                 '-projectPath', '/project',
