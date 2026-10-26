@@ -37,7 +37,9 @@ export DEBIAN_FRONTEND=noninteractive
 # a stalled mirror must not hold the job: apt retries slow requests, and each step has a hard limit
 APT_OPTS="-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 -o DPkg::Lock::Timeout=120"
 timeout 300 apt-get $APT_OPTS update
-timeout 600 apt-get $APT_OPTS install -y --no-install-recommends xvfb ffmpeg libgtk2.0-0 libglu1-mesa libgconf-2-4 libncurses5 pulseaudio
+# what the editor cannot start without comes first; ffmpeg and pulseaudio pull in about 70 MB more and are only for video and audio
+timeout 600 apt-get $APT_OPTS install -y --no-install-recommends xvfb libgtk2.0-0 libglu1-mesa libgconf-2-4 libncurses5
+timeout 900 apt-get $APT_OPTS install -y --no-install-recommends ffmpeg pulseaudio || echo "Skipped ffmpeg and pulseaudio: the install did not finish"
 apt-get clean
 `;
 
