@@ -13,11 +13,11 @@ In unity's infinite wisdom, they decided to rip off yet another one of my open s
 
 v4 is the last feature release. The repository stays open for security and crash fixes only, and there are no new commands. `@rage-against-the-pixel/unity-cli` v3 and v4 stay on npm.
 
-Use Unity's official CLI for everything it covers. See [Use the Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli). That includes Hub-free editor installs and uninstalls, modules, project create and open, templates, builds, tests, serial, floating and offline licenses, and service-account auth. Pack and sign UPM packages with Unity's [Unity Package Manager CLI](https://docs.unity3d.com/Manual/upm-cli.html).
-
+Use Unity's official CLI for everything it covers. See [Use the Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli). That includes Hub-free editor installs and uninstalls, modules, project create and open, templates, builds, tests, serial, floating and offline licenses, and service-account auth.
 unity-cli v4 still covers:
 
-- Installing and pinning the official Unity CLI, with SHA-256 verification, for CI runners.
+- Installing the official Unity CLI on first use, with SHA-256 verification, for CI runners.
+- Installing the Unity Package Manager CLI and packing signed packages with it.
 - License activation and return with a Unity ID email and password, used when the official CLI cannot activate, such as a personal license on a headless runner.
 - Unity 4.x and 5.x editors: installs from Unity's archives and the license file those editors read.
 - Android target SDK setup for a project.
@@ -38,7 +38,7 @@ Send feature requests that the official CLI already covers to Unity.
 - [Installation](#installation)
 - [Usage](#usage)
   - [Common Commands](#common-commands)
-  - [Setup Unity CLI](#setup-unity-cli)
+  - [Official Unity CLI](#official-unity-cli)
   - [Auth](#auth)
     - [License Version](#license-version)
     - [Activate License](#activate-license)
@@ -50,25 +50,31 @@ Send feature requests that the official CLI already covers to Unity.
     - [Setup Unity Editor](#setup-unity-editor)
     - [Run Unity Editor Commands](#run-unity-editor-commands)
     - [Unity Editor Logs](#unity-editor-logs)
+  - [Deprecated Commands](#deprecated-commands)
+  - [Unity Package Manager](#unity-package-manager)
+    - [Install Unity Package Manager](#install-unity-package-manager)
+    - [UPM Version](#upm-version)
+    - [Pack a Unity Package](#pack-a-unity-package)
 - [Logging](#logging)
   - [Local cli](#local-cli)
   - [Github Actions](#github-actions)
 
 ## Upgrading from v3
 
-v4 removes the commands the official CLI covers. Call `unity` for them instead.
+v4 drops the Hub. Commands that need the official CLI install it on first use.
 
-| v3 command | v4 replacement |
+| v3 command | v4 |
 | --- | --- |
-| `install-all-tools`, `hub-install` | `unity-cli setup-cli` (no Hub needed) |
-| `hub`, `hub-path`, `hub-version`, `hub-logs`, `package-manager-logs` | `unity env`, `unity logs`, `unity doctor` |
-| `uninstall-unity` | `unity uninstall <version> --yes` |
-| `list-project-templates` | `unity templates list --editor <version>` |
-| `create-project` | `unity projects create <name> --editor-version <version> --template <id> --no-cloud` |
-| `open-project` | `unity open` |
-| `upm-install`, `upm-version`, `upm-pack`, `sign-package` | Unity's [Package Manager CLI](https://docs.unity3d.com/Manual/upm-cli.html) |
+| `install-all-tools`, `hub-install` | Removed. The official CLI installs on first use, with no Hub needed |
+| `hub`, `hub-path`, `hub-version`, `hub-logs`, `package-manager-logs` | Removed. Use `unity env`, `unity logs`, `unity doctor` |
+| `sign-package` | Removed. Use `upm-pack` |
+| `uninstall-unity` | Deprecated, same options, forwards to `unity uninstall <version> --yes` |
+| `list-project-templates` | Deprecated, same options, forwards to `unity templates list --editor <version>` |
+| `create-project` | Deprecated, same options, forwards to `unity projects create <name> --path <path> --editor-version <version> --template <id> --no-cloud` |
+| `open-project` | Deprecated, same options, forwards to `unity open <project>` |
+| `upm-install`, `upm-version`, `upm-pack` | Unchanged |
 
-`setup-unity` exports `UNITY_CLI_PATH` instead of `UNITY_HUB_PATH`. Unknown commands are not forwarded to `unity`.
+`setup-unity` exports `UNITY_CLI_PATH` instead of `UNITY_HUB_PATH`. Only the commands above are forwarded; unknown commands are not passed to `unity`.
 
 ## Installation
 
@@ -103,16 +109,14 @@ With options always using double dashes (`--option`) and arguments passed direct
 unity-cli --help
 ```
 
-### Setup Unity CLI
+### Official Unity CLI
 
-`setup-cli [options]`: Install the official Unity CLI, or reuse it when the requested version is already installed. It downloads the exact release from Unity's CDN, checks its SHA-256, caches it in the runner tool cache (`unity-cli/<version>/<arch>`), adds it to the `PATH`, and exports `UNITY_CLI_PATH` and `UNITY_CLI_VERSION`. It also sets `UNITY_NON_INTERACTIVE`, `UNITY_NO_UPDATE_CHECK` and `UNITY_NO_CONSENT_PROMPT` so the CLI never prompts or updates itself mid-job.
+Every command that needs the official Unity CLI installs it on first use. It downloads the latest release from Unity's CDN, checks the SHA-256 that Unity's release manifest lists, caches it in the runner tool cache (`unity-cli/<version>/<arch>`), adds it to the `PATH`, and exports `UNITY_CLI_PATH` and `UNITY_CLI_VERSION`. Later steps in the same job read `UNITY_CLI_VERSION` and reuse that copy. It also sets `UNITY_NON_INTERACTIVE`, `UNITY_NO_UPDATE_CHECK` and `UNITY_NO_CONSENT_PROMPT` so the CLI never prompts or updates itself mid-job.
 
-- `--unity-cli-version <version>`: An exact official Unity CLI version (e.g. `1.0.0-beta.14`) or `latest`. Defaults to an installed CLI, then the version unity-cli is tested against.
-- `--verbose`: Enable verbose logging.
-- `--json`: Prints the last line of output as JSON string.
+To use a specific release, pass `--unity-cli-version <version>` to any command or set `UNITY_CLI_VERSION`:
 
 ```bash
-unity-cli setup-cli --unity-cli-version 1.0.0-beta.14
+unity-cli --unity-cli-version 1.0.0-beta.14 setup-unity --unity-version 6000
 ```
 
 ### Auth
@@ -205,7 +209,6 @@ unity-cli licensing-audit-logs
 - `-b`, `--build-targets <buildTargets>` The Unity build target to get/install as comma-separated values (e.g. `iOS,Android`).
 - `-m`, `--modules <modules>` The Unity module to get/install as comma-separated values (e.g. `ios,android`).
 - `-i`, `--install-path <installPath>` The path to install the Unity Editor to. By default, it will be installed to the official CLI's install path.
-- `--unity-cli-version <version>` The official Unity CLI version to install when it is missing.
 - `--verbose` Enable verbose logging.
 - `--json` Prints the last line of output as JSON string.
 
@@ -245,6 +248,52 @@ unity-cli run --unity-project <path-to-project> -quit -batchmode -executeMethod 
 
 ```bash
 unity-cli editor-logs
+```
+
+### Deprecated Commands
+
+`uninstall-unity`, `list-project-templates`, `create-project` and `open-project` keep their v3 options, print a deprecation warning that names the replacement, and forward to the official Unity CLI (see [Upgrading from v3](#upgrading-from-v3)). `create-project` still accepts a template regex and picks the first matching template id. Run `unity-cli <command> --help` for the options.
+
+### Unity Package Manager
+
+Unity publishes the pack and sign tool as its own CLI. See [Unity Package Manager CLI workflow](https://docs.unity3d.com/Manual/upm-cli.html). The commands below call that same `upm` binary.
+
+#### Install Unity Package Manager
+
+`upm-install [options]`: Download and install the Unity Package Manager cli (pack/sign).
+
+- `--auto-update`: Automatically updates the upm cli if it is already installed and a newer release is available. Cannot be used with `--version`.
+- `--version <version>`: Specify to install a specific version of the Unity Package Manager cli. Cannot be used with `--auto-update`.
+- `--json`: Print version and managed paths as JSON.
+- `--verbose`: Enable verbose logging.
+
+```bash
+unity-cli upm-install --auto-update
+```
+
+#### UPM Version
+
+`upm-version`: Print the Unity Package Manager cli version.
+
+```bash
+unity-cli upm-version
+```
+
+#### Pack a Unity Package
+
+**Prerequisites:** In the [Unity Cloud Dashboard](https://cloud.unity.com/), create a **service account** on the organization you use for signing. When you assign **organization** access, open **Manage organization roles**, set the **Package Manager** role to **Package Manager Package Signer**, and save. Put the generated key id and secret in `UPM_SERVICE_ACCOUNT_KEY_ID` and `UPM_SERVICE_ACCOUNT_KEY_SECRET` (or your CI secret store). Copy **Organization ID** from **Administration** → **Settings** in that same org. If you have multiple orgs, switch to the correct one in the dashboard before creating keys or copying the id.
+
+`upm-pack [options]`: Sign and pack a Unity package.
+
+- `--source <path>`: An absolute or relative path to the root folder of the custom package to pack. This is the folder that contains the package manifest file (package.json). (optional; defaults to the current working directory).
+- `--destination <path>`: The output path for the signed tarball. If you specify a folder that doesn’t exist, it will be created for you. Note: If you omit this parameter, the tarball will be placed in the current working directory.
+- `--verbose`: Enable verbose logging.
+
+> [!NOTE]
+> Set `UNITY_ORGANIZATION_ID` or `UNITY_ORG_ID`, `UPM_SERVICE_ACCOUNT_KEY_ID`, and `UPM_SERVICE_ACCOUNT_KEY_SECRET`, or leave them unset in an interactive terminal to be prompted securely.
+
+```bash
+unity-cli upm-pack --source <path-to-package-folder> --destination <output-path>
 ```
 
 ## Logging

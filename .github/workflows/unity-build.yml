@@ -65,8 +65,17 @@ jobs:
       - name: Setup Unity
         timeout-minutes: 30
         run: |
-          unity-cli setup-cli --json
-          if [ "${MATRIX_UNITY_VERSION}" != "none" ]; then
+          unity-cli upm-install --json
+          UPM_VER=$(unity-cli upm-version | tr -d '\n\r')
+          echo "UPM CLI version: ${UPM_VER}"
+          if ! [[ "${UPM_VER}" =~ ^v[0-9] ]]; then
+            echo "::error::upm-version expected a v-prefixed release (e.g. v9.0.0); got: ${UPM_VER}"
+            exit 1
+          fi
+          if [ "${MATRIX_UNITY_VERSION}" = "none" ]; then
+            # the official CLI installs on first use; license-context needs it and no editor
+            unity-cli license-context
+          else
             setup_cmd=(
               unity-cli setup-unity
               --unity-version "${MATRIX_UNITY_VERSION}"

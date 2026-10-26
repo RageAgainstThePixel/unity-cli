@@ -12,9 +12,6 @@ import {
     redactSensitiveLiterals,
 } from './utilities';
 
-/** The official Unity CLI version unity-cli is tested against. Callers own the version they install. */
-export const DEFAULT_UNITY_CLI_VERSION = '1.0.0-beta.14';
-
 const CDN_BASE = 'https://public-cdn.cloud.unity3d.com/hub/prod/cli/';
 const TOOL_NAME = 'unity-cli';
 const EXE_NAME = process.platform === 'win32' ? 'unity.exe' : 'unity';
@@ -63,11 +60,12 @@ export class UnityCli {
 
     /**
      * Returns the official Unity CLI, installing it when it is missing or is not the requested version.
-     * @param version An exact version such as 1.0.0-beta.14, or `latest`. Defaults to an already installed CLI, then {@link DEFAULT_UNITY_CLI_VERSION}.
+     * @param version An exact version such as 1.0.0-beta.14, or `latest`. Defaults to UNITY_CLI_VERSION, then `latest`.
+     * Every install exports UNITY_CLI_VERSION, so later steps in the same job reuse the version the first one resolved.
      */
     public static async Get(version: string | undefined = undefined): Promise<UnityCli> {
         configureEnvironment();
-        const requested = version ? normalizeVersion(version) : undefined;
+        const requested = normalizeVersion(version || process.env.UNITY_CLI_VERSION || 'latest');
 
         // latest resolves the manifest first, so an outdated CLI is not reused
         if (requested === 'latest') {
@@ -76,7 +74,7 @@ export class UnityCli {
 
         const existing = await UnityCli.Find();
 
-        if (existing && (!requested || existing.version === requested)) {
+        if (existing && existing.version === requested) {
             Logger.instance.debug(`Using Unity CLI ${existing.version} at ${existing.executable}`);
             return exportCli(existing);
         }
@@ -85,7 +83,7 @@ export class UnityCli {
             Logger.instance.info(`Found Unity CLI ${existing.version} at ${existing.executable}, but ${requested} was requested`);
         }
 
-        return await UnityCli.Install(requested ?? DEFAULT_UNITY_CLI_VERSION);
+        return await UnityCli.Install(requested);
     }
 
     /**
@@ -128,7 +126,7 @@ export class UnityCli {
      * Downloads an exact official Unity CLI release from Unity's CDN, verifies its SHA-256 and caches it.
      * @param version An exact version such as 1.0.0-beta.14, or `latest`.
      */
-    public static async Install(version: string = DEFAULT_UNITY_CLI_VERSION): Promise<UnityCli> {
+    public static async Install(version: string = 'latest'): Promise<UnityCli> {
         configureEnvironment();
         const requested = normalizeVersion(version);
         const manifest = await fetchManifest(requested);
@@ -532,7 +530,7 @@ function normalizeVersion(version: string): string {
     const normalized = trimmed.replace(/^v/i, '');
 
     if (!VERSION_PATTERN.test(normalized)) {
-        throw new Error(`Invalid Unity CLI version: ${version}. Use an exact version such as ${DEFAULT_UNITY_CLI_VERSION}, or latest.`);
+        throw new Error(`Invalid Unity CLI version: ${version}. Use an exact version such as 1.0.0-beta.14, or latest.`);
     }
 
     return normalized;

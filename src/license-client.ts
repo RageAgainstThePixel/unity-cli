@@ -106,7 +106,7 @@ export class LicensingClient {
         }
 
         if (!licenseClientPath) {
-            throw new Error('Failed to find Unity.Licensing.Client. Install the Unity CLI with "unity-cli setup-cli", or set UNITY_LICENSING_CLIENT_PATH.');
+            throw new Error('Failed to find Unity.Licensing.Client. Set UNITY_LICENSING_CLIENT_PATH to its location.');
         }
 
         await LicensingClient.ensureMacLicenseDirectory();

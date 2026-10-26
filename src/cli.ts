@@ -22,6 +22,7 @@ import {
     ReturnLicense,
 } from './license-client';
 import { PromptForSecretInput } from './utilities';
+import { UpmCli, UpmPackOptions } from './upm-cli';
 
 const pkgPath = path.join(__dirname, '..', 'package.json');
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
@@ -30,28 +31,15 @@ const program = new Command();
 
 program.name('unity-cli')
     .description('Bridges the gaps in the official Unity CLI (unity) for CI: Unity ID licensing, Unity 4.x and 5.x editors, Android SDK setup and Editor log annotations.')
-    .version(pkg.version);
+    .version(pkg.version)
+    .option('--unity-cli-version <version>', 'The official Unity CLI version to use (e.g. 1.0.0-beta.14). Defaults to the UNITY_CLI_VERSION environment variable, then the latest release. Commands install it on first use.')
+    .hook('preAction', (command) => {
+        const version = command.opts().unityCliVersion?.toString()?.trim();
 
-program.command('setup-cli')
-    .description('Install the official Unity CLI (unity), or reuse it when the requested version is already installed.')
-    .option('--unity-cli-version <version>', 'An exact official Unity CLI version (e.g. 1.0.0-beta.14) or latest. Defaults to an installed CLI, then the version unity-cli is tested against.')
-    .option('--verbose', 'Enable verbose logging.')
-    .option('--json', 'Prints the last line of output as JSON string.')
-    .action(async (options) => {
-        if (options.verbose) {
-            Logger.instance.logLevel = LogLevel.DEBUG;
+        if (version) {
+            // every command resolves the official CLI through UnityCli.Get(), which reads the request from here
+            process.env.UNITY_CLI_VERSION = version;
         }
-
-        Logger.instance.debugOptions(options);
-        const cli = await UnityCli.Get(options.unityCliVersion?.toString()?.trim() || undefined);
-
-        if (options.json) {
-            process.stdout.write(`\n${JSON.stringify({ UNITY_CLI_PATH: cli.executable, UNITY_CLI_VERSION: cli.version })}\n`);
-        } else {
-            process.stdout.write(`${cli.executable}\n`);
-        }
-
-        process.exit(0);
     });
 
 program.commandsGroup('Auth:');
@@ -200,7 +188,6 @@ program.command('setup-unity')
     .option('-b, --build-targets <buildTargets>', 'The Unity build target to get/install as comma-separated values (e.g. iOS,Android).')
     .option('-m, --modules <modules>', 'The Unity module to get/install as comma-separated values (e.g. ios,android).')
     .option('-i, --install-path <installPath>', 'The path to install the Unity Editor to. By default, it will be installed to the Unity CLI install path.')
-    .option('--unity-cli-version <version>', 'The official Unity CLI version to install when it is missing (e.g. 1.0.0-beta.14, latest).')
     .option('--verbose', 'Enable verbose logging.')
     .option('--json', 'Prints the last line of output as JSON string.')
     .action(async (options) => {
@@ -267,7 +254,7 @@ program.command('setup-unity')
             }
         }
 
-        const unityCli = await UnityCli.Get(options.unityCliVersion?.toString()?.trim() || undefined);
+        const unityCli = await UnityCli.Get();
         const installer = new UnityInstaller(unityCli);
 
         if (options.installPath) {
@@ -429,6 +416,345 @@ program.command('editor-logs')
         const unityEditorLogsPath = UnityEditor.GetEditorLogsDirectory();
         process.stdout.write(`${unityEditorLogsPath}\n`);
         process.exit(0);
+    });
+
+
+program.commandsGroup('Deprecated, forwarded to the official Unity CLI:');
+
+program.command('uninstall-unity')
+    .description('[Deprecated] Uninstall a Unity Editor version. Forwards to: unity uninstall <version> --yes')
+    .option('-e, --unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, -u, --unity-version or the UNITY_EDITOR_PATH environment variable must be set.')
+    .option('-u, --unity-version <unityVersion>', 'The Unity version to uninstall (e.g. 2020.3.1f1, 6000.2). If unspecified, then --unity-editor must be specified.')
+    .option('-c, --changeset <changeset>', 'Ignored; the official CLI uninstalls by version.')
+    .option('-a, --arch <arch>', 'The Unity architecture to uninstall (x86_64, arm64).')
+    .option('--verbose', 'Enable verbose logging.')
+    .action(async (options) => {
+        if (options.verbose) {
+            Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        Logger.instance.debugOptions(options);
+        const version = await forwardedEditorVersion(options);
+
+        if (!version) {
+            Logger.instance.error('You must specify the Unity version or editor path with -u, --unity-version, -e, --unity-editor or UNITY_EDITOR_PATH.');
+            process.exit(1);
+        }
+
+        const args = ['uninstall', version, '--yes'];
+        const arch = options.arch?.toString()?.trim();
+
+        if (arch) {
+            args.push('--architecture', arch);
+        }
+
+        await forwardToUnityCli('uninstall-unity', args);
+    });
+
+program.command('list-project-templates')
+    .description('[Deprecated] List available Unity project templates for an editor. Forwards to: unity templates list --editor <version>')
+    .option('-u, --unity-version <unityVersion>', 'The Unity version to list templates for (e.g. 2022.3.1f1, 6000.2). If unspecified, then --unity-editor must be specified.')
+    .option('-e, --unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, -u, --unity-version or the UNITY_EDITOR_PATH environment variable must be set.')
+    .option('--verbose', 'Enable verbose logging.')
+    .option('--json', 'Prints the output as JSON.')
+    .action(async (options) => {
+        if (options.verbose) {
+            Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        Logger.instance.debugOptions(options);
+        const version = await forwardedEditorVersion(options, true);
+        await forwardToUnityCli('list-project-templates', ['templates', 'list', ...(version ? ['--editor', version] : [])], options.json === true);
+    });
+
+program.command('create-project')
+    .description('[Deprecated] Create a new Unity project. Forwards to: unity projects create <name> --path <path> --editor-version <version> --template <id> --no-cloud')
+    .option('-n, --name <projectName>', 'The name of the new Unity project. If unspecified, the project will be created in the specified path or the current working directory.')
+    .option('-p, --path <projectPath>', 'The path to create the new Unity project. If unspecified, the current working directory will be used.')
+    .option('-t, --template <projectTemplate>', 'The name of the template package to use for creating the unity project. Supports regex patterns.', 'com.unity.template.3d(-cross-platform)?')
+    .option('-u, --unity-version <unityVersion>', 'The Unity version to create the project with (e.g. 2022.3.1f1, 6000.2). If unspecified, then --unity-editor must be specified.')
+    .option('-e, --unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, -u, --unity-version, or the UNITY_EDITOR_PATH environment variable must be set.')
+    .option('--verbose', 'Enable verbose logging.')
+    .option('--json', 'Prints the output as JSON.')
+    .action(async (options) => {
+        if (options.verbose) {
+            Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        Logger.instance.debugOptions(options);
+        const version = await forwardedEditorVersion(options, true);
+        const target = path.resolve(options.path?.toString()?.trim() || process.cwd());
+        const name = options.name?.toString()?.trim();
+        const args = ['projects', 'create', name || path.basename(target), '--path', name ? target : path.dirname(target)];
+
+        if (version) {
+            args.push('--editor-version', version);
+        }
+
+        const template = options.template.toString().trim();
+        let templateId = template;
+
+        // v3 matched templates with a regex; the official CLI takes an exact template id
+        if (!/^[\w.-]+$/.test(template)) {
+            const cli = await UnityCli.Get();
+            const { envelope } = await cli.RunJson<{ name?: string; id?: string }[]>(['templates', 'list', ...(version ? ['--editor', version] : [])]);
+            const pattern = new RegExp(`^(?:${template})$`);
+            const ids = (envelope?.data ?? []).map(t => t.name || t.id).filter((id): id is string => !!id);
+            const match = ids.find(id => pattern.test(id));
+
+            if (!match) {
+                Logger.instance.error(`No project template matches ${template}. Available: ${ids.join(', ')}`);
+                process.exit(1);
+            }
+
+            templateId = match;
+        }
+
+        args.push('--template', templateId, '--no-cloud');
+        await forwardToUnityCli('create-project', args, options.json === true);
+    });
+
+program.command('open-project')
+    .description('[Deprecated] Open a Unity project in the Unity Editor. Forwards to: unity open <project>')
+    .option('-p, --unity-project <unityProject>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
+    .option('-u, --unity-version <unityVersion>', 'The Unity version to open the project with. If specified, it will override the version read from the project.')
+    .option('-t, --build-target <buildTarget>', 'The Unity build target to switch the project to (e.g. StandaloneWindows64, StandaloneOSX, iOS, Android).')
+    .option('--verbose', 'Enable verbose logging.')
+    .action(async (options) => {
+        if (options.verbose) {
+            Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        Logger.instance.debugOptions(options);
+        const projectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || process.cwd();
+        const args = ['open', projectPath];
+        const version = options.unityVersion?.toString()?.trim();
+        const buildTarget = options.buildTarget?.toString()?.trim();
+
+        if (version) {
+            args.push('--editor-version', version);
+        }
+
+        if (buildTarget) {
+            args.push('--build-target', buildTarget);
+        }
+
+        await forwardToUnityCli('open-project', args);
+    });
+
+/**
+ * The editor version a forwarded v3 command names, from --unity-version or the editor at --unity-editor / UNITY_EDITOR_PATH.
+ * Partial versions such as 2021.3.x become 2021.3, the short form `unity uninstall` accepts; with `exact`, they resolve
+ * to the newest matching release instead, because `unity templates list` and `unity projects create` need a full version.
+ */
+async function forwardedEditorVersion(options: { unityVersion?: string; unityEditor?: string }, exact: boolean = false): Promise<string | undefined> {
+    const version = options.unityVersion?.toString()?.trim();
+
+    if (version) {
+        if (!exact) {
+            return version.replace(/\.[x*]$/i, '');
+        }
+
+        const unityVersion = new UnityVersion(version);
+
+        if (unityVersion.isFullyQualified()) {
+            return unityVersion.version;
+        }
+
+        return (await new UnityInstaller(await UnityCli.Get()).resolveVersion(unityVersion)).version;
+    }
+
+    const editorPath = options.unityEditor?.toString()?.trim() || process.env.UNITY_EDITOR_PATH;
+    return editorPath ? new UnityEditor(editorPath).version.version : undefined;
+}
+
+/** Warns that a v3 command is deprecated, runs its official Unity CLI replacement and exits with that exit code. */
+async function forwardToUnityCli(command: string, args: string[], json: boolean = false): Promise<never> {
+    Logger.instance.warn(`unity-cli ${command} is deprecated and will be removed. Use the official Unity CLI instead: unity ${args.join(' ')}`);
+    const cli = await UnityCli.Get();
+    const result = await cli.Run(json ? [...args, '--json'] : args, { stream: !json });
+
+    if (json) {
+        process.stdout.write(`${result.stdout.trim()}\n`);
+    }
+
+    process.exit(result.exitCode);
+}
+
+program.commandsGroup("Unity Package Manager:");
+
+program.command('upm-install')
+    .description('Download and install the Unity Package Manager cli (pack/sign).')
+    .option('--verbose', 'Enable verbose logging.')
+    .option('--auto-update', 'Automatically updates the upm cli if it is already installed and a newer release is available. Cannot be used with --version.')
+    .option('--version <version>', 'Specify to install a specific version of the Unity Package Manager cli. Cannot be used with --auto-update.')
+    .option('--json', 'Print version and managed paths as JSON.')
+    .action(async (options) => {
+        if (options.verbose) {
+            Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        Logger.instance.debugOptions(options);
+
+        try {
+            if (options.autoUpdate === true && options.version) {
+                Logger.instance.error('Cannot use --auto-update with --version.');
+                process.exit(1);
+            }
+
+            const upm = new UpmCli();
+            let requestedVersion = options.version?.toString()?.trim();
+            if (options.autoUpdate === true) {
+                const currentVersion = upm.GetInstalledReleaseTag();
+                const latestVersion = await upm.GetLatestReleaseTag();
+
+                if (currentVersion && !upm.IsUpdateAvailable(latestVersion)) {
+                    Logger.instance.info(`Upm cli is already up to date (${currentVersion}).`);
+                    requestedVersion = currentVersion;
+                } else {
+                    if (currentVersion) {
+                        Logger.instance.info(`Updating upm cli ${currentVersion} -> ${latestVersion}...`);
+                    }
+                    requestedVersion = latestVersion;
+                }
+            }
+
+            const ver = await upm.Install({
+                version: requestedVersion,
+                skipIfInstalled: true
+            });
+
+            await upm.Version(ver);
+            const exe = upm.executable;
+
+            if (options.json) {
+                process.stdout.write(`\n${JSON.stringify({
+                    UPM_VERSION: ver,
+                    UPM_CLI_PATH: exe,
+                    UPM_MANAGED_ROOT: upm.managedRoot,
+                })}\n`);
+            } else {
+                process.stdout.write(`Upm cli ${ver} installed.\n`);
+                process.stdout.write(`${exe}\n`);
+            }
+
+            process.exit(0);
+        } catch (error) {
+            Logger.instance.error(`${error}`);
+            process.exit(1);
+        }
+    });
+
+program.command('upm-version')
+    .description('Print the Unity Package Manager cli version.')
+    .action(async () => {
+        try {
+            const upmCli = new UpmCli();
+            const version = await upmCli.Version();
+            process.stdout.write(`v${version.version}\n`);
+            process.exit(0);
+        } catch (error) {
+            Logger.instance.error(`${error}`);
+            process.exit(1);
+        }
+    });
+
+interface UpmPackCliOptions {
+    source?: string;
+    destination?: string;
+    verbose?: boolean;
+}
+
+program.command('upm-pack')
+    .description('Sign and pack a Unity package.')
+    .option('--source <path>', 'An absolute or relative path to the root folder of the custom package to pack. This is the folder that contains the package manifest file (package.json). (optional; defaults to the current working directory).')
+    .option('--destination <path>', 'The output path for the signed tarball. If you specify a folder that doesn\'t exist, it will be created for you. Note: If you omit this parameter, the tarball will be placed in the current working directory.')
+    .option('--verbose', 'Enable verbose logging.')
+    .action(async (options: UpmPackCliOptions) => {
+        if (options.verbose) {
+            Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        Logger.instance.debugOptions({ options });
+
+        try {
+            const upm = new UpmCli();
+            await upm.PromptInstallOrUpdateWhenInteractive();
+
+            let serviceAccountKeyId = process.env.UPM_SERVICE_ACCOUNT_KEY_ID?.trim();
+
+            if (!serviceAccountKeyId) {
+                serviceAccountKeyId = (await PromptForSecretInput('UPM_SERVICE_ACCOUNT_KEY_ID: ')).trim();
+            }
+
+            if (!serviceAccountKeyId) {
+                Logger.instance.error(
+                    'UPM_SERVICE_ACCOUNT_KEY_ID is required. Set the environment variable or enter a value when prompted.'
+                );
+                process.exit(1);
+            }
+
+            let serviceAccountKeySecret = process.env.UPM_SERVICE_ACCOUNT_KEY_SECRET?.trim();
+
+            if (!serviceAccountKeySecret) {
+                serviceAccountKeySecret = (await PromptForSecretInput('UPM_SERVICE_ACCOUNT_KEY_SECRET: ')).trim();
+            }
+
+            if (!serviceAccountKeySecret) {
+                Logger.instance.error(
+                    'UPM_SERVICE_ACCOUNT_KEY_SECRET is required. Set the environment variable or enter a value when prompted.'
+                );
+                process.exit(1);
+            }
+
+            process.env.UPM_SERVICE_ACCOUNT_KEY_ID = serviceAccountKeyId;
+            Logger.instance.maskCredential(serviceAccountKeyId);
+            process.env.UPM_SERVICE_ACCOUNT_KEY_SECRET = serviceAccountKeySecret;
+            Logger.instance.maskCredential(serviceAccountKeySecret);
+
+            let orgId = process.env.UNITY_ORGANIZATION_ID?.trim() || process.env.UNITY_ORG_ID?.trim();
+            const dest = options.destination?.toString()?.trim();
+
+            if (!orgId) {
+                orgId = (await PromptForSecretInput('UNITY_ORGANIZATION_ID: ')).trim();
+            }
+
+            if (!orgId) {
+                Logger.instance.error(
+                    'Organization ID is required. Set UNITY_ORGANIZATION_ID or UNITY_ORG_ID, or enter a value when prompted.'
+                );
+                process.exit(1);
+            }
+
+            Logger.instance.maskCredential(orgId);
+
+            const redactLiterals = [orgId, serviceAccountKeyId, serviceAccountKeySecret].filter(
+                (s): s is string => typeof s === 'string' && s.trim().length > 0
+            );
+
+            const packOptions: UpmPackOptions = {
+                organizationId: orgId,
+            };
+
+            if (dest) {
+                packOptions.destination = dest;
+            }
+
+            const sourceArg = options.source?.toString()?.trim();
+            packOptions.packageDirectory =
+                sourceArg && sourceArg.length > 0 ? path.resolve(sourceArg) : process.cwd();
+
+            await upm.Pack(packOptions, {
+                silent: false,
+                showCommand: Logger.instance.logLevel === LogLevel.DEBUG,
+                redactLiterals,
+            });
+
+            process.exit(0);
+        } catch (error) {
+            Logger.instance.error(`${error}`);
+            process.exit(1);
+        }
     });
 
 void program.parseAsync(process.argv).catch((err: unknown) => {
