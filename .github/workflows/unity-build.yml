@@ -9,6 +9,11 @@ on:
         required: false
         type: string
         default: normal
+      max-parallel:
+        description: How many rows run at once. Only Windows rows need a cap, since each one takes its own license seat.
+        required: false
+        type: number
+        default: 256
     secrets:
       UNITY_USERNAME:
         required: true
@@ -22,12 +27,14 @@ on:
         required: false
 jobs:
   build:
-    name: ${{ matrix.name }}
+    # rows are grouped by OS, so the name carries the editor and target
+    name: ${{ matrix.unity-version }} ${{ matrix.build-target }} ${{ matrix.build-args }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60 # successful rows take about 10 minutes, Linux rows up to 30 on a slow apt mirror; a hung editor or licensing call must not hold the matrix
+    timeout-minutes: 45 # a hung editor or licensing call must not hold the matrix
     strategy:
       matrix: ${{ fromJSON(inputs.matrix) }}
       fail-fast: false
+      max-parallel: ${{ inputs.max-parallel }}
     permissions:
       contents: read
       checks: write # to publish unit test results via checks github api
@@ -45,7 +52,10 @@ jobs:
       MATRIX_CHANNEL: ${{ matrix.channel }}
       MATRIX_CHANGESET: ${{ matrix.changeset }}
     steps:
+      # runs alongside checkout and the unity-cli build; the wait before the editor packages joins it
       - name: Free Disk Space
+        id: free-disk-space
+        background: true
         if: ${{ matrix.os == 'ubuntu-latest' && (matrix.unity-version != '2018' && matrix.unity-version != '2017.4.40f1') }}
         uses: endersonmenezes/free-disk-space@8b8cd4e2277836962939a8f3b4ea0ee4bc006156 # v4.0.1
         with:
@@ -56,14 +66,43 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24.x
+          cache: npm
       - name: Setup unity-cli
         run: |
           npm ci
           npm run build
           npm run link
           unity-cli --version
+      - name: Wait for Free Disk Space
+        wait: free-disk-space
+      # the editor's apt packages come from a mirror that has served them at about 40 kB/s, so the .deb files are kept
+      # in the Actions cache: an apt hook copies every package dpkg installs, and a later run puts them back into apt's
+      # archive before setup-unity, so apt finds them already downloaded
+      - name: Restore Linux editor packages
+        id: linux-packages
+        if: ${{ runner.os == 'Linux' && matrix.unity-version != 'none' }}
+        run: |
+          echo "key=unity-linux-packages-${ImageOS}-${ImageVersion}" >> "$GITHUB_OUTPUT"
+          echo "restore-key=unity-linux-packages-${ImageOS}-" >> "$GITHUB_OUTPUT"
+          mkdir -p "${RUNNER_TEMP}/apt-packages"
+          echo "DPkg::Pre-Install-Pkgs {\"xargs -r cp -n -t ${RUNNER_TEMP}/apt-packages/ || true\";};" | sudo tee /etc/apt/apt.conf.d/99unity-cli-keep-packages > /dev/null
+      - uses: actions/cache/restore@v6
+        id: linux-packages-cache
+        if: ${{ steps.linux-packages.outcome == 'success' }}
+        with:
+          path: ${{ runner.temp }}/apt-packages
+          key: ${{ steps.linux-packages.outputs.key }}
+          restore-keys: ${{ steps.linux-packages.outputs.restore-key }}
+      - name: Seed apt with cached packages
+        if: ${{ steps.linux-packages-cache.outputs.cache-matched-key != '' }}
+        run: |
+          count=$(find "${RUNNER_TEMP}/apt-packages" -maxdepth 1 -name '*.deb' | wc -l | tr -d ' ')
+          echo "Restored ${count} cached packages"
+          if [ "${count}" -gt 0 ]; then
+            sudo cp -n "${RUNNER_TEMP}"/apt-packages/*.deb /var/cache/apt/archives/
+          fi
       - name: Setup Unity
-        timeout-minutes: 40 # Linux editor packages alone may take 25 minutes on a slow apt mirror
+        timeout-minutes: 30
         run: |
           unity-cli upm-install --json
           UPM_VER=$(unity-cli upm-version | tr -d '\n\r')
@@ -94,6 +133,21 @@ jobs:
             fi
             "${setup_cmd[@]}"
           fi
+      - name: Collect Linux editor packages
+        id: linux-packages-collect
+        if: ${{ steps.linux-packages.outcome == 'success' && steps.linux-packages-cache.outputs.cache-hit != 'true' }}
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-packages"
+          count=$(find "${RUNNER_TEMP}/apt-packages" -maxdepth 1 -name '*.deb' | wc -l | tr -d ' ')
+          echo "Collected ${count} packages"
+          echo "count=${count}" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/save@v6
+        # rows run in parallel, so several may try the same key; the first save wins and the rest only warn
+        if: ${{ steps.linux-packages-collect.outputs.count > 0 }}
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/apt-packages
+          key: ${{ steps.linux-packages.outputs.key }}
       - name: Verify UNITY_CLI_PATH and UNITY_EDITOR_PATH variables
         run: |
           echo "UNITY_CLI_PATH: ${UNITY_CLI_PATH}"
@@ -336,21 +390,6 @@ jobs:
           if [ "$marker_found" -ne 0 ]; then
             exit 1
           fi
-      - name: Uninstall Editor
-        if: ${{ matrix.unity-version != 'none' }}
-        timeout-minutes: 5
-        continue-on-error: true
-        run: |
-          if [ -z "${UNITY_EDITOR_VERSION}" ]; then
-            echo "UNITY_EDITOR_VERSION is not set, skipping uninstall"
-            exit 0
-          fi
-          major="${UNITY_EDITOR_VERSION%%.*}"
-          if [ "${major}" -lt 2017 ]; then
-            echo "Unity ${UNITY_EDITOR_VERSION} was not installed by the Unity CLI, skipping uninstall"
-            exit 0
-          fi
-          unity uninstall "${UNITY_EDITOR_VERSION}" --yes
       - name: Print log paths
         if: ${{ matrix.unity-version != 'none' }}
         run: |

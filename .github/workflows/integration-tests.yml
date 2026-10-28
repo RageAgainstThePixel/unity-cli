@@ -41,7 +41,8 @@ jobs:
         id: setup-jobs
         with:
           build-options: ./.github/workflows/build-options.json
-          group-by: unity-version
+          # macOS and Linux rows share one license seat per OS and run all at once; each Windows row takes its own seat
+          group-by: os
     outputs:
       jobs: ${{ steps.setup-jobs.outputs.jobs }}
   validate:
@@ -54,12 +55,13 @@ jobs:
     strategy:
       matrix: ${{ fromJSON(needs.setup.outputs.jobs) }}
       fail-fast: false
-      max-parallel: 1
     secrets: inherit
     uses: ./.github/workflows/unity-build.yml
     with:
       matrix: ${{ toJSON(matrix.jobs.matrix) }}
       utp-test-profile: normal
+      # the UNITY_WINDOWS_SEATS repo variable raises the Windows cap without a workflow change
+      max-parallel: ${{ matrix.jobs.name == 'windows-latest' && fromJSON(vars.UNITY_WINDOWS_SEATS || '2') || 256 }}
   validate-negative-scenarios:
     if: github.event.pull_request.draft == false
     name: build negative-scenarios
@@ -69,8 +71,27 @@ jobs:
     secrets: inherit
     uses: ./.github/workflows/unity-build.yml
     with:
-      matrix: '{"include":[{"os":"ubuntu-latest","unity-version":"6000.1","build-target":"StandaloneLinux64","name":"negative-scenarios / ubuntu-latest StandaloneLinux64"}]}'
+      matrix: '{"include":[{"os":"ubuntu-latest","unity-version":"6000.1","build-target":"StandaloneLinux64","name":"negative-scenarios"}]}'
       utp-test-profile: negative
+  # one check that stands for the whole run, so rows can be regrouped or renamed without touching required checks
+  ci-result:
+    needs: [utp-batch-contract, setup, validate, validate-negative-scenarios]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: ${RESULTS}"
+          for result in ${RESULTS}; do
+            if [ "${result}" = "failure" ] || [ "${result}" = "cancelled" ]; then
+              echo "::error::At least one job ended with ${result}"
+              exit 1
+            fi
+          done
   timeline:
     needs: [setup, validate, validate-negative-scenarios]
     if: always()
