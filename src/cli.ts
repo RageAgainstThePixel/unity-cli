@@ -23,6 +23,7 @@ import {
 } from './license-client';
 import { PromptForSecretInput } from './utilities';
 import { UpmCli, UpmPackOptions } from './upm-cli';
+import { ReportFailure } from './failure-markers';
 
 const pkgPath = path.join(__dirname, '..', 'package.json');
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
@@ -654,7 +655,7 @@ program.command('upm-install')
 
             process.exit(0);
         } catch (error) {
-            Logger.instance.error(`${error}`);
+            ReportFailure(error);
             process.exit(1);
         }
     });
@@ -668,7 +669,7 @@ program.command('upm-version')
             process.stdout.write(`v${version.version}\n`);
             process.exit(0);
         } catch (error) {
-            Logger.instance.error(`${error}`);
+            ReportFailure(error);
             process.exit(1);
         }
     });
@@ -766,12 +767,12 @@ program.command('upm-pack')
 
             process.exit(0);
         } catch (error) {
-            Logger.instance.error(`${error}`);
+            ReportFailure(error);
             process.exit(1);
         }
     });
 
 void program.parseAsync(process.argv).catch((err: unknown) => {
-    Logger.instance.error(err instanceof Error ? err.message : String(err));
+    ReportFailure(err);
     process.exit(1);
 });

@@ -37,12 +37,13 @@ export DEBIAN_FRONTEND=noninteractive
 # a stalled mirror must not hold the job: apt retries slow requests, and each step has a hard limit
 APT_OPTS="-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 -o DPkg::Lock::Timeout=120"
 timeout 300 apt-get $APT_OPTS update
-# what the editor needs comes first: without pulseaudio, FMOD logs audio device errors on 2019 and 2020 editors;
-# ffmpeg pulls in about 60 MB more and is only for video, so a slow mirror may skip it
-# pulseaudio alone pulls in about 38 MB, which the runners' Azure mirror has taken over 10 minutes to serve
+# without pulseaudio, FMOD logs audio device errors on 2019 and 2020 editors; it pulls in about 38 MB,
+# which the runners' Azure mirror has taken over 10 minutes to serve
 timeout 1200 apt-get $APT_OPTS install -y --no-install-recommends xvfb libgtk2.0-0 libglu1-mesa libgconf-2-4 libncurses5 pulseaudio
-timeout 300 apt-get $APT_OPTS install -y --no-install-recommends ffmpeg || echo "Skipped ffmpeg: the install did not finish"
-apt-get clean
+`;
+
+/** ffmpeg is only for video capture and import, so it is opt-in with UNITY_CLI_LINUX_FFMPEG=true. */
+const LINUX_FFMPEG_SCRIPT = `timeout 300 apt-get $APT_OPTS install -y --no-install-recommends ffmpeg || echo "Skipped ffmpeg: the install did not finish"
 `;
 
 /**
@@ -688,7 +689,9 @@ export class UnityInstaller {
         if (process.env.UNITY_CLI_LINUX_DEPENDENCIES_INSTALLED !== 'true') {
             try {
                 // streamed, so a slow mirror shows where it stalls
-                await Exec('sudo', ['sh', '-c', LINUX_EDITOR_DEPENDENCIES_SCRIPT], { silent: false, showCommand: true });
+                // sudo drops the caller's environment, so the opt-in is read here rather than in the script
+                const ffmpeg = process.env.UNITY_CLI_LINUX_FFMPEG === 'true' ? LINUX_FFMPEG_SCRIPT : '';
+                await Exec('sudo', ['sh', '-c', `${LINUX_EDITOR_DEPENDENCIES_SCRIPT}${ffmpeg}apt-get clean\n`], { silent: false, showCommand: true });
                 process.env.UNITY_CLI_LINUX_DEPENDENCIES_INSTALLED = 'true';
                 this.logger.CI_setEnvironmentVariable('UNITY_CLI_LINUX_DEPENDENCIES_INSTALLED', 'true');
             } catch (error) {
