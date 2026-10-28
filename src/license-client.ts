@@ -1007,15 +1007,16 @@ export class LicensingClient {
     }
 
     /**
-     * Whether Unity's licensing servers resolve any entitlement for the active license.
-     * A license file that was returned or replaced elsewhere still activates locally, but resolves none.
+     * The machine binding values the licensing client reports for this machine (Legacy.MachineBinding1, 2, ...).
+     * @returns The values, or an empty list when the client cannot report them.
      */
-    public async HasResolvableEntitlements(): Promise<boolean> {
+    public async GetMachineBindings(): Promise<string[]> {
         try {
-            return /Product Name: \S/.test(await this.exec(['--showEntitlements'], true));
+            const context = await this.exec(['--showContext'], true);
+            return [...context.matchAll(/Legacy\.MachineBinding\d+[ \t]+(\S+)/g)].map(match => match[1]!);
         } catch (error) {
-            this.logger.debug(`Failed to read the license entitlements: ${error}`);
-            return false;
+            this.logger.debug(`Failed to read the machine bindings: ${error}`);
+            return [];
         }
     }
 
@@ -1173,6 +1174,7 @@ export async function ActivateLicense(options: ActivateOptions): Promise<string 
         const result = await activateWithUnityCli(options);
 
         if (result.activated) {
+            await logLicenseBinding();
             return result.token;
         }
 
@@ -1190,6 +1192,23 @@ export async function ActivateLicense(options: ActivateOptions): Promise<string 
 
     await LicensingClient.StopBackgroundClients();
     return await new LicensingClient().Activate(options);
+}
+
+/**
+ * Logs whether the license file now on disk names this machine's binding, which is what a cached copy is checked
+ * against on the next run. Only a yes or no is logged, never the binding or the file.
+ */
+async function logLicenseBinding(): Promise<void> {
+    try {
+        const content = await fs.promises.readFile(GetLicenseFilePath(), 'utf-8');
+        const bindings = await new LicensingClient().GetMachineBindings();
+
+        if (bindings.length > 0) {
+            Logger.instance.info(`The license file is bound to this machine's identity: ${bindings.some(binding => content.includes(binding)) ? 'yes' : 'no'}`);
+        }
+    } catch (error) {
+        Logger.instance.debug(`Could not compare the license file with this machine's identity: ${error}`);
+    }
 }
 
 /**
@@ -1304,6 +1323,15 @@ async function activateFromLicenseFile(licenseFile: string): Promise<boolean> {
         throw new Error('The license file is not a Unity license (Unity_lic.ulf).');
     }
 
+    // a license file is bound to the machine it was issued to: it still activates offline on another machine, but the
+    // licensing servers resolve no entitlements for it, and the editor fails later. Runner images change that identity.
+    const bindings = await new LicensingClient().GetMachineBindings();
+
+    if (bindings.length > 0 && !bindings.some(binding => content.includes(binding))) {
+        logger.warn('The cached license file was issued to a different machine identity, likely before a runner image change. Activating with the account instead.');
+        return false;
+    }
+
     logger.info('Activating from the cached license file...');
     const tempDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'unity-license-'));
     const tempFile = path.join(tempDirectory, 'Unity_lic.ulf');
@@ -1316,16 +1344,8 @@ async function activateFromLicenseFile(licenseFile: string): Promise<boolean> {
             const { exitCode, envelope } = await cli.RunJson(['license', 'activate', '--file', tempFile], { timeoutMs: UNITY_CLI_LICENSE_TIMEOUT_MS });
 
             if (exitCode === 0 && envelope?.success !== false && await isLicenseActive(cli)) {
-                // the file activates offline even after its seat was returned or replaced, so ask the licensing servers too
-                if (await new LicensingClient().HasResolvableEntitlements()) {
-                    logger.info('Successfully activated from the cached license file with the Unity CLI');
-                    return true;
-                }
-
-                logger.warn('The cached license file activated, but Unity resolves no entitlements for it; it was likely returned or replaced elsewhere. Activating with the account instead.');
-                // remove the dead license, so the account activation writes a fresh one instead of seeing a license already in place
-                await fs.promises.rm(GetLicenseFilePath(), { force: true }).catch(error => logger.debug(`Failed to remove the dead license file: ${error}`));
-                return false;
+                logger.info('Successfully activated from the cached license file with the Unity CLI');
+                return true;
             }
 
             logger.warn(`unity license activate --file exited with code ${exitCode}${formatEnvelopeErrors(envelope)}, placing the license file directly...`);
