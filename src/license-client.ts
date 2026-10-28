@@ -1211,14 +1211,32 @@ async function logLicenseBinding(): Promise<void> {
     }
 }
 
+/** When `return-license` returns: `auto` skips a shared runner identity, `always` and `never` do what they say. */
+export type ReturnWhen = 'auto' | 'always' | 'never';
+
+/**
+ * Whether this is a GitHub-hosted macOS or Linux runner. Those report one machine identity to Unity across every job
+ * and repo, so returning a license there revokes it for all of them. Windows and self-hosted runners have their own.
+ */
+export function IsSharedRunnerIdentity(): boolean {
+    return process.env.RUNNER_ENVIRONMENT === 'github-hosted' && (process.platform === 'darwin' || process.platform === 'linux');
+}
+
 /**
  * Returns a Unity license through the official Unity CLI first, then the Unity Licensing Client.
  * @param licenseType The type of license to return.
  * @param token The floating license token from activation. A floating license with a token is returned by the Unity Licensing Client.
+ * @param when `auto` (the default) skips returning a personal or professional license on a shared runner identity.
  */
-export async function ReturnLicense(licenseType: LicenseType, token: string | undefined = undefined): Promise<void> {
+export async function ReturnLicense(licenseType: LicenseType, token: string | undefined = undefined, when: ReturnWhen = 'auto'): Promise<void> {
     try {
-        await returnLicense(licenseType, token);
+        if (when === 'never') {
+            Logger.instance.info('Skipping the license return (--when never).');
+        } else if (when === 'auto' && licenseType !== LicenseType.floating && IsSharedRunnerIdentity()) {
+            Logger.instance.info('Skipping the license return: GitHub-hosted macOS and Linux runners share one machine identity, so a return would revoke the license for every job and repo on it. Use --when always to return anyway.');
+        } else {
+            await returnLicense(licenseType, token);
+        }
     } finally {
         // returning is the last licensing step of a job, so stop what the licensing calls left running in the background
         await LicensingClient.StopBackgroundClients();

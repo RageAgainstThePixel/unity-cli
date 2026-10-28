@@ -20,6 +20,7 @@ import {
     LicensingClient,
     PrintLicenseContext,
     ReturnLicense,
+    ReturnWhen,
 } from './license-client';
 import { PromptForSecretInput } from './utilities';
 import { UpmCli, UpmPackOptions } from './upm-cli';
@@ -119,10 +120,18 @@ program.command('return-license')
     .description('Return a Unity license. Tries the official Unity CLI first, then the Unity Licensing Client.')
     .option('-l, --license <license>', 'License type (personal, professional, floating)')
     .option('-t, --token <token>', 'Floating license token from activation. When given, the floating license is returned with the Unity Licensing Client.')
+    .option('--when <when>', 'auto, always or never. auto skips returning a personal or professional license on GitHub-hosted macOS and Linux runners, which share one machine identity: a return there revokes the license for every job and repo on that identity. Defaults to auto.', 'auto')
     .option('--verbose', 'Enable verbose logging.')
     .action(async (options) => {
         if (options.verbose) {
             Logger.instance.logLevel = LogLevel.DEBUG;
+        }
+
+        const when = options.when?.toString()?.trim().toLowerCase();
+
+        if (!['auto', 'always', 'never'].includes(when)) {
+            Logger.instance.error(`Invalid --when value: ${when}. Expected auto, always or never.`);
+            process.exit(1);
         }
 
         const token: string | undefined = options.token?.toString()?.trim() || undefined;
@@ -145,7 +154,7 @@ program.command('return-license')
             process.exit(1);
         }
 
-        await ReturnLicense(licenseType, token);
+        await ReturnLicense(licenseType, token, when as ReturnWhen);
         process.exit(0);
     });
 

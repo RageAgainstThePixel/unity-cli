@@ -157,6 +157,7 @@ UNITY_USERNAME=<your-email> UNITY_PASSWORD=<your-password> unity-cli activate-li
 
 - `-l`, `--license`: License type (personal, professional, floating)
 - `-t`, `--token`: Floating license token from activation. When given, the floating license is returned with the Unity Licensing Client.
+- `--when <auto|always|never>`: Defaults to `auto`, which skips returning a personal or professional license on GitHub-hosted macOS and Linux runners. Those runners report one machine identity to Unity across every job and repository, so a return there revokes the license for all of them. Windows and self-hosted runners always return.
 - `--verbose`: Enable verbose logging.
 
 ```bash
