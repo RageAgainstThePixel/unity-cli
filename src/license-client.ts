@@ -1006,6 +1006,19 @@ export class LicensingClient {
         return licenses;
     }
 
+    /**
+     * Whether Unity's licensing servers resolve any entitlement for the active license.
+     * A license file that was returned or replaced elsewhere still activates locally, but resolves none.
+     */
+    public async HasResolvableEntitlements(): Promise<boolean> {
+        try {
+            return /Product Name: \S/.test(await this.exec(['--showEntitlements'], true));
+        } catch (error) {
+            this.logger.debug(`Failed to read the license entitlements: ${error}`);
+            return false;
+        }
+    }
+
     private async activateLicense(licenseType: LicenseType, username: string, password: string, serial: string | undefined = undefined): Promise<void> {
         const args = [
             `--activate-ulf`,
@@ -1303,8 +1316,16 @@ async function activateFromLicenseFile(licenseFile: string): Promise<boolean> {
             const { exitCode, envelope } = await cli.RunJson(['license', 'activate', '--file', tempFile], { timeoutMs: UNITY_CLI_LICENSE_TIMEOUT_MS });
 
             if (exitCode === 0 && envelope?.success !== false && await isLicenseActive(cli)) {
-                logger.info('Successfully activated from the cached license file with the Unity CLI');
-                return true;
+                // the file activates offline even after its seat was returned or replaced, so ask the licensing servers too
+                if (await new LicensingClient().HasResolvableEntitlements()) {
+                    logger.info('Successfully activated from the cached license file with the Unity CLI');
+                    return true;
+                }
+
+                logger.warn('The cached license file activated, but Unity resolves no entitlements for it; it was likely returned or replaced elsewhere. Activating with the account instead.');
+                // remove the dead license, so the account activation writes a fresh one instead of seeing a license already in place
+                await fs.promises.rm(GetLicenseFilePath(), { force: true }).catch(error => logger.debug(`Failed to remove the dead license file: ${error}`));
+                return false;
             }
 
             logger.warn(`unity license activate --file exited with code ${exitCode}${formatEnvelopeErrors(envelope)}, placing the license file directly...`);
