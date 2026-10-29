@@ -30,7 +30,8 @@ jobs:
     # rows are grouped by OS, so the name carries the editor and target
     name: ${{ matrix.unity-version }} ${{ matrix.build-target }} ${{ matrix.build-args }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45 # a hung editor or licensing call must not hold the matrix
+    # a hung editor or licensing call must not hold the matrix; Android rows build a player through Gradle and get more
+    timeout-minutes: ${{ matrix.build-target == 'Android' && 60 || 45 }}
     strategy:
       matrix: ${{ fromJSON(inputs.matrix) }}
       fail-fast: false
