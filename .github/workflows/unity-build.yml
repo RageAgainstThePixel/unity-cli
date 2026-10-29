@@ -302,6 +302,22 @@ jobs:
           sed -i 's/AndroidTargetSdkVersion: [0-9]*/AndroidTargetSdkVersion: 32/' "${UNITY_PROJECT_PATH}/ProjectSettings/ProjectSettings.asset"
           # ensure android dependencies are installed before UTP/build batches
           unity-cli setup-unity -p "${UNITY_PROJECT_PATH}" -m android
+      - name: Disable WebGL Compression
+        # Brotli on the .wasm takes minutes per build and the tests never serve the player, so it only costs job time
+        if: ${{ matrix.build-target == 'WebGL' && matrix.unity-version != 'none' }}
+        shell: pwsh
+        run: |
+          $path = Join-Path $env:UNITY_PROJECT_PATH 'ProjectSettings/ProjectSettings.asset'
+          $text = Get-Content -Path $path -Raw
+          # 0 is Brotli, 1 is Gzip and 2 is Disabled
+          if ($text -match '(?m)^([ \t]*)webGLCompressionFormat:.*$') {
+            $text = $text -replace '(?m)^([ \t]*)webGLCompressionFormat:.*$', '${1}webGLCompressionFormat: 2'
+          } else {
+            # the asset holds only the PlayerSettings document, whose keys sit two spaces in
+            $text = $text.TrimEnd() + "`n  webGLCompressionFormat: 2`n"
+          }
+          Set-Content -Path $path -Value $text -NoNewline
+          Select-String -Path $path -Pattern 'webGLCompressionFormat'
       - name: Compute safe artifact name
         id: artifact-name
         env:
