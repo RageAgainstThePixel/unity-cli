@@ -1,10 +1,11 @@
 # Unity version support
 
-This repo tests Unity editors on CI in two tiers:
+This repo tests Unity editors on CI in three tiers:
 
 | Tier | What it means | How CI selects |
 |------|----------------|----------------|
-| **Tested** | Integration matrix, from 4.7.2 through the newest Unity 6 beta and the Unity 7 alpha | [`.github/workflows/build-options.json`](../.github/workflows/build-options.json) via `setup-unity --channel f,b,a`: each row runs the newest build of its stream, and a final release wins once the stream has one |
+| **Tested on every PR** | Unity 6000.0 through the newest Unity 6 beta and the Unity 7 alpha | [`.github/workflows/build-options.json`](../.github/workflows/build-options.json) via `setup-unity --channel f,b,a`: each row runs the newest build of its stream, and a final release wins once the stream has one |
+| **Tested monthly** | 4.7.2 through 2022.3, which no longer change | [`.github/workflows/build-options-legacy.json`](../.github/workflows/build-options-legacy.json), on the monthly schedule or a manual run of integration-tests with `editors: legacy` |
 | **Untested** | Not in CI; still installable | Fully-qualified `-u 6000.x.yfN -c <changeset>` or partial + `--channel b\|a` |
 
 ## Resolving versions
