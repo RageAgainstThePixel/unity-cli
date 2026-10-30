@@ -13,6 +13,8 @@ describe('ClassifyFailure', () => {
         'Error: GET https://cdn.packages.unity.com/upm-cli/releases/v9.36.0/upm-macos-arm64.zip.sha256 failed: HTTP 504',
         'Download failed: read ECONNRESET',
         'unity install failed: 503 Service Unavailable',
+        'aborted',
+        'Error: aborted',
     ])('marks transient failures: %s', message => {
         expect(ClassifyFailure(message)).toBe(TRANSIENT_FAILURE_MARKER);
     });

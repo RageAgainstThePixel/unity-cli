@@ -9,7 +9,7 @@ export const TRANSIENT_FAILURE_MARKER = 'unity-transient-failure';
 // literal alternations only, so matching stays linear on any message
 // the licensing client's exit codes 17 and 19 cover a seat it could not take
 const LICENSE_EXHAUSTED_PATTERN = /activations? limit|maximum number of activations|max activations|no free seats?|no available seats?|seat limit|0 free entitlements|Seat activation or deactivation failed|Acquiring license failed/i;
-const TRANSIENT_PATTERN = /HTTP 5\d\d|Bad Gateway|Service Unavailable|Gateway Time-?out|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED|socket hang up/i;
+const TRANSIENT_PATTERN = /HTTP 5\d\d|Bad Gateway|Service Unavailable|Gateway Time-?out|ECONNRESET|ECONNABORTED|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED|socket hang up/i;
 
 /**
  * The marker for a failure a rerun after other jobs finish can clear, if the message names one.
@@ -21,7 +21,8 @@ export function ClassifyFailure(message: string): string | undefined {
         return LICENSE_EXHAUSTED_MARKER;
     }
 
-    if (TRANSIENT_PATTERN.test(message)) {
+    // Node reports a download cut off mid-stream with a bare "aborted"
+    if (TRANSIENT_PATTERN.test(message) || /^(Error: )?aborted$/.test(message.trim())) {
         return TRANSIENT_FAILURE_MARKER;
     }
 
