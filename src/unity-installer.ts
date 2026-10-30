@@ -7,6 +7,7 @@ import { Logger } from './logging';
 import { UnityEditor } from './unity-editor';
 import { UnityVersion } from './unity-version';
 import { FindAbsolutePath, UnityCli } from './unity-cli';
+import { IsPathUnder } from './process-tracker';
 import {
     DownloadFile,
     DownloadOptions,
@@ -584,10 +585,12 @@ export class UnityInstaller {
 
         const destinationPath = path.join(targetPath, 'PlaybackEngines');
         await fs.promises.mkdir(destinationPath, { recursive: true });
+        // the parent too, since removing PlaybackEngines afterwards needs write permission on it
+        await claimMacInstalledItem(path.dirname(sourcePath), false);
+        await claimMacInstalledItem(sourcePath, true);
 
         for (const item of await fs.promises.readdir(sourcePath)) {
-            await fs.promises.rm(path.join(destinationPath, item), { recursive: true, force: true });
-            await fs.promises.cp(path.join(sourcePath, item), path.join(destinationPath, item), { recursive: true, verbatimSymlinks: true });
+            await moveMacInstalledItem(path.join(sourcePath, item), path.join(destinationPath, item));
         }
 
         await fs.promises.rm(sourcePath, { recursive: true, force: true });
@@ -605,6 +608,8 @@ export class UnityInstaller {
 
         this.logger.debug(`Moving ${unityAppPath} to ${targetPath}...`);
         await fs.promises.mkdir(targetPath, { recursive: true });
+        // the folder itself, so its entries can be moved out; the Hub folder inside it is left as it is
+        await claimMacInstalledItem(unityAppPath, false);
 
         for (const item of await fs.promises.readdir(unityAppPath)) {
             // the editor install path itself lives in /Applications/Unity/Hub
@@ -612,9 +617,9 @@ export class UnityInstaller {
                 continue;
             }
 
-            const src = path.join(unityAppPath, item);
-            await fs.promises.cp(src, path.join(targetPath, item), { recursive: true, verbatimSymlinks: true });
-            await fs.promises.rm(src, { recursive: true, force: true });
+            const source = path.join(unityAppPath, item);
+            await claimMacInstalledItem(source, true);
+            await moveMacInstalledItem(source, path.join(targetPath, item));
         }
 
         await fs.promises.chmod(targetPath, 0o755);
@@ -1023,6 +1028,60 @@ export function resolveEditorExecutable(location: string | undefined): string | 
  */
 function tempInstallerPath(extension: string): string {
     return path.join(GetTempDir(), `unity-installer-${randomUUID()}${extension}`);
+}
+
+/**
+ * Gives the runner's user something a macOS package installed under /Applications/Unity. The installer runs as root,
+ * so its files are root-owned and cannot be moved or removed otherwise, such as PlaybackEngines/AndroidPlayer.
+ * @param source A path under /Applications/Unity, never one from a caller, since it runs as root.
+ * @param recursive Whether to claim everything below it too.
+ */
+async function claimMacInstalledItem(source: string, recursive: boolean): Promise<void> {
+    if (!IsPathUnder(source, path.join('/Applications', 'Unity'))) {
+        throw new Error(`Refusing to take ownership of ${source}`);
+    }
+
+    const { uid, gid } = os.userInfo();
+    // -h changes a symlink itself, so a broken one does not fail the walk
+    await Exec('sudo', ['chown', ...(recursive ? ['-R'] : []), '-h', `${uid}:${gid}`, source], { silent: true, showCommand: true });
+    await Exec('sudo', ['chmod', ...(recursive ? ['-R'] : []), 'u+w', source], { silent: true, showCommand: true });
+}
+
+/**
+ * Moves something a macOS package installed. Older editors ship symlinks whose targets are gone, such as 5.6's
+ * MonoDevelop.app, which fs.cp fails on, so links are moved or recreated as they are.
+ */
+export async function moveMacInstalledItem(source: string, destination: string): Promise<void> {
+    await fs.promises.rm(destination, { recursive: true, force: true });
+
+    try {
+        await fs.promises.rename(source, destination);
+    } catch (error) {
+        // the install path can be on another volume than /Applications
+        if ((error as NodeJS.ErrnoException).code !== 'EXDEV') {
+            throw error;
+        }
+
+        await copyKeepingSymlinks(source, destination);
+        await fs.promises.rm(source, { recursive: true, force: true });
+    }
+}
+
+async function copyKeepingSymlinks(source: string, destination: string): Promise<void> {
+    const stat = await fs.promises.lstat(source);
+
+    if (stat.isSymbolicLink()) {
+        await fs.promises.symlink(await fs.promises.readlink(source), destination);
+    } else if (stat.isDirectory()) {
+        await fs.promises.mkdir(destination, { mode: stat.mode & 0o7777 });
+
+        for (const entry of await fs.promises.readdir(source)) {
+            await copyKeepingSymlinks(path.join(source, entry), path.join(destination, entry));
+        }
+    } else {
+        await fs.promises.copyFile(source, destination);
+        await fs.promises.chmod(destination, stat.mode & 0o7777);
+    }
 }
 
 /**

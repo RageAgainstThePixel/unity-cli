@@ -35,6 +35,28 @@ jobs:
       - run: npm run build
       - name: UTP batch assertion helpers (contract)
         run: bash tests/run-utp-tests-contract.sh
+  unit-tests:
+    if: github.event.pull_request.draft == false
+    name: unit-tests ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # the CLI option tests run the linked unity-cli
+      - run: npm run link
+      - run: npm run tests
   setup:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
@@ -98,9 +120,14 @@ jobs:
             exit 0
           }
           unity-cli upm-install --json
-          unity-cli license-context
+          # activates before anything else installs the licensing client, as a fresh runner without the Hub does
+          # for downstream actions; license-context runs after, only to explain a failure
           unity-cli activate-license --license personal
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($LASTEXITCODE -ne 0) {
+            $code = $LASTEXITCODE
+            unity-cli license-context
+            exit $code
+          }
           $dir = Join-Path $env:RUNNER_TEMP 'unity-license'
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
           # the key never reaches a command line: openssl reads it from the environment
@@ -145,7 +172,7 @@ jobs:
       utp-test-profile: negative
   # one check that stands for the whole run, so rows can be regrouped or renamed without touching required checks
   ci-result:
-    needs: [utp-batch-contract, setup, validate, validate-negative-scenarios]
+    needs: [utp-batch-contract, unit-tests, setup, validate, validate-negative-scenarios]
     # skipped with the rest on a draft, rather than green with nothing tested
     if: ${{ always() && github.event.pull_request.draft != true }}
     runs-on: ubuntu-latest

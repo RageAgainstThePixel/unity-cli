@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { LicensingClient, LicenseType } from '../src/license-client';
+import { LicensingClient, LicensingClientDiagnostic, LicenseType } from '../src/license-client';
 
 afterEach(() => {
     jest.restoreAllMocks();
@@ -89,5 +89,22 @@ describe('LicensingClient waitForLicenseServerConfiguration', () => {
 
         await expect((client as any).waitForLicenseServerConfiguration(200, 10)).rejects.toThrow(/Timed out waiting for floating license server configuration/);
         fs.rmSync(tempLog, { force: true });
+    });
+});
+
+describe('LicensingClientDiagnostic', () => {
+    it('keeps the last lines that say why the command failed', () => {
+        const lines = ['Starting', 'Error: first', 'Error: second', 'progress', 'Seat activation failed', 'Machine activations limit reached', ''];
+        expect(LicensingClientDiagnostic(lines)).toBe('Error: second\nSeat activation failed\nMachine activations limit reached');
+    });
+
+    it('cuts long lines', () => {
+        const diagnostic = LicensingClientDiagnostic([`Error: ${'x'.repeat(400)}`]);
+        expect(diagnostic).toHaveLength(303);
+        expect(diagnostic?.endsWith('...')).toBe(true);
+    });
+
+    it('returns undefined without a diagnostic line', () => {
+        expect(LicensingClientDiagnostic(['Starting', 'Done', ''])).toBeUndefined();
     });
 });

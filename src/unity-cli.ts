@@ -370,8 +370,14 @@ export class UnityCli {
      * @returns The licensing client executable, or undefined when the CLI does not report one.
      */
     public async GetLicensingClientPath(): Promise<string | undefined> {
-        // the first license command makes the CLI download the licensing client
-        await this.RunJson(['license', 'list']);
+        // license status makes the CLI download the licensing client; license list exits 3 (not signed in) before it
+        // does on a runner with no Hub or Unity ID session, so it cannot be used here
+        const status = await this.RunJson(['license', 'status']);
+
+        if (status.exitCode !== 0) {
+            this.logger.debug(`unity license status exited with code ${status.exitCode}, looking for the licensing client anyway`);
+        }
+
         const { envelope } = await this.RunJson<{ externalComponents?: unknown }>(['doctor']);
         const components = envelope?.data?.externalComponents;
         const executableName = process.platform === 'win32' ? 'Unity.Licensing.Client.exe' : 'Unity.Licensing.Client';
