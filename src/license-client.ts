@@ -741,7 +741,14 @@ export class LicensingClient {
             this.logger.endGroup();
 
             if (exitCode !== 0) {
-                const message = timedOut ? 'Timed out' : killedBy ? `Killed by ${killedBy}` : this.getExitCodeMessage(exitCode);
+                let message = timedOut ? 'Timed out' : killedBy ? `Killed by ${killedBy}` : this.getExitCodeMessage(exitCode);
+
+                // Unity ID throttles sign-ins when many jobs activate with one account at once; naming it lets the
+                // failure be marked for a rerun once those jobs finish
+                if (/maximum same user attempt retry count/i.test(output)) {
+                    message = 'Unity ID sign-in rate limit reached: too many sign-in attempts for this account';
+                }
+
                 throw new Error(`License command failed with exit code ${exitCode}: ${message}`);
             }
         }

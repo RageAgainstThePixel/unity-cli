@@ -12,11 +12,12 @@ on:
       editors:
         description: Which editors to test
         type: choice
-        options: [unity-6-and-newer, legacy]
+        # license-refresh runs one macOS and one Linux row, which store fresh UNITY_LICENSE_* secrets with few sign-ins
+        options: [unity-6-and-newer, legacy, license-refresh]
         default: unity-6-and-newer
 concurrency:
   # the monthly legacy run gets its own group, so a push to main does not cancel it
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'schedule' || inputs.editors == 'legacy' }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'schedule' && 'legacy' || inputs.editors || 'unity-6-and-newer' }}
   cancel-in-progress: true
 jobs:
   utp-batch-contract:
@@ -50,7 +51,7 @@ jobs:
         id: setup-jobs
         with:
           # pull requests and pushes test Unity 6 and newer; 4.7.2 through 2022.3 run monthly or on demand
-          build-options: ${{ (github.event_name == 'schedule' || inputs.editors == 'legacy') && './.github/workflows/build-options-legacy.json' || './.github/workflows/build-options.json' }}
+          build-options: ${{ (github.event_name == 'schedule' || inputs.editors == 'legacy') && './.github/workflows/build-options-legacy.json' || inputs.editors == 'license-refresh' && './.github/workflows/build-options-license-refresh.json' || './.github/workflows/build-options.json' }}
           # one group per editor version; every group runs at once, since macOS and Linux rows share one seat per OS
           # and Windows rows return theirs
           group-by: unity-version
@@ -72,7 +73,7 @@ jobs:
       matrix: ${{ toJSON(matrix.jobs.matrix) }}
       utp-test-profile: normal
   validate-negative-scenarios:
-    if: github.event.pull_request.draft == false && github.event_name != 'schedule' && inputs.editors != 'legacy'
+    if: github.event.pull_request.draft == false && github.event_name != 'schedule' && inputs.editors != 'legacy' && inputs.editors != 'license-refresh'
     name: build negative-scenarios
     permissions:
       contents: read

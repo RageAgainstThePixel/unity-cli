@@ -9,7 +9,7 @@ export const TRANSIENT_FAILURE_MARKER = 'unity-transient-failure';
 // only phrases that name a seat or activation limit: the licensing client's generic "seat activation failed" and
 // "acquiring license failed" also cover a wrong password or a revoked license, which a rerun would only repeat.
 // Literal alternations only, so matching stays linear on any message.
-const LICENSE_EXHAUSTED_PATTERN = /activations? limit|maximum number of activations|max activations|no free seats?|no available seats?|seat limit|0 free entitlements/i;
+const LICENSE_EXHAUSTED_PATTERN = /activations? limit|maximum number of activations|max activations|no free seats?|no available seats?|seat limit|0 free entitlements|sign-in rate limit/i;
 // a refused connection usually means a wrong host or port, which a rerun repeats, so it is not listed
 const TRANSIENT_PATTERN = /HTTP 5\d\d|Bad Gateway|Service Unavailable|Gateway Time-?out|ECONNRESET|ECONNABORTED|ETIMEDOUT|EAI_AGAIN|socket hang up/i;
 

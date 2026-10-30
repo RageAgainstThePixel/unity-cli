@@ -3,6 +3,7 @@ import { ClassifyFailure, LICENSE_EXHAUSTED_MARKER, TRANSIENT_FAILURE_MARKER } f
 describe('ClassifyFailure', () => {
     it.each([
         'Machine activations limit reached for this account',
+        'License command failed with exit code 26: Unity ID sign-in rate limit reached: too many sign-in attempts for this account',
         'Code 404 while processing request (status: Found 1 entitlement groups and 0 free entitlements matching requested entitlement ids)',
     ])('marks license exhaustion: %s', message => {
         expect(ClassifyFailure(message)).toBe(LICENSE_EXHAUSTED_MARKER);
