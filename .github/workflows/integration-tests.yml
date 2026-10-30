@@ -51,8 +51,9 @@ jobs:
         with:
           # pull requests and pushes test Unity 6 and newer; 4.7.2 through 2022.3 run monthly or on demand
           build-options: ${{ (github.event_name == 'schedule' || inputs.editors == 'legacy') && './.github/workflows/build-options-legacy.json' || './.github/workflows/build-options.json' }}
-          # macOS and Linux rows share one license seat per OS and run all at once; each Windows row takes its own seat
-          group-by: os
+          # one group per editor version; every group runs at once, since macOS and Linux rows share one seat per OS
+          # and Windows rows return theirs
+          group-by: unity-version
     outputs:
       jobs: ${{ steps.setup-jobs.outputs.jobs }}
   validate:
@@ -70,8 +71,6 @@ jobs:
     with:
       matrix: ${{ toJSON(matrix.jobs.matrix) }}
       utp-test-profile: normal
-      # the UNITY_WINDOWS_SEATS repo variable raises the Windows cap without a workflow change
-      max-parallel: ${{ matrix.jobs.name == 'windows-latest' && fromJSON(vars.UNITY_WINDOWS_SEATS || '2') || 256 }}
   validate-negative-scenarios:
     if: github.event.pull_request.draft == false && github.event_name != 'schedule' && inputs.editors != 'legacy'
     name: build negative-scenarios
