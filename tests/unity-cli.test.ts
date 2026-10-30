@@ -63,9 +63,12 @@ describe('GetLegacyLicenseVersion', () => {
 
 describe('license activation order', () => {
     const originalEditorPath = process.env.UNITY_EDITOR_PATH;
+    const originalRunnerEnvironment = process.env.RUNNER_ENVIRONMENT;
 
     beforeEach(() => {
         delete process.env.UNITY_EDITOR_PATH;
+        // a GitHub-hosted macOS or Linux runner skips the return, which these tests exercise
+        delete process.env.RUNNER_ENVIRONMENT;
     });
 
     afterAll(() => {
@@ -73,6 +76,12 @@ describe('license activation order', () => {
             delete process.env.UNITY_EDITOR_PATH;
         } else {
             process.env.UNITY_EDITOR_PATH = originalEditorPath;
+        }
+
+        if (originalRunnerEnvironment === undefined) {
+            delete process.env.RUNNER_ENVIRONMENT;
+        } else {
+            process.env.RUNNER_ENVIRONMENT = originalRunnerEnvironment;
         }
     });
 

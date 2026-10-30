@@ -42,14 +42,17 @@ describe('normalizeAnnotationPath', () => {
         expect(out.annotationFile).toBeUndefined();
     });
 
-    it('normalizes windows relative paths for annotation output', () => {
+    // faking process.platform does not swap the path module, so Windows paths only resolve on Windows
+    const windowsIt = process.platform === 'win32' ? it : it.skip;
+
+    windowsIt('normalizes windows relative paths for annotation output', () => {
         Object.defineProperty(process, 'platform', { value: 'win32' });
         const out = normalizeAnnotationPath('Assets\\UnityCliTests\\CompilerErrors.cs', 'D:\\Work\\MyProj');
         expect(out.absoluteFile).toBe('D:/Work/MyProj/Assets/UnityCliTests/CompilerErrors.cs');
         expect(out.annotationFile).toBe('Assets/UnityCliTests/CompilerErrors.cs');
     });
 
-    it('supports windows case-insensitive project roots', () => {
+    windowsIt('supports windows case-insensitive project roots', () => {
         Object.defineProperty(process, 'platform', { value: 'win32' });
         const out = normalizeAnnotationPath('D:\\WORK\\MYPROJ\\Assets\\Bar.cs', 'd:/work/myproj');
         expect(out.annotationFile).toBe('Assets/Bar.cs');
