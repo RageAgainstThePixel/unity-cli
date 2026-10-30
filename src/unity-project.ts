@@ -106,7 +106,7 @@ export class UnityProject {
                     continue;
                 }
 
-                const target = UnityProject.readBuildProfileTarget(UnityProject.readSmallFile(entryPath));
+                const target = UnityProject.readBuildProfileTarget(UnityProject.readBuildProfileAsset(entryPath));
 
                 if (target) {
                     targets.add(target);
@@ -117,14 +117,20 @@ export class UnityProject {
         return [...targets];
     }
 
-    /** Reads a file of up to 1 MB through one open handle, so the size check and the read see the same file. Larger or unreadable files read as empty. */
-    private static readSmallFile(filePath: string): string {
+    /**
+     * Reads an asset that may be a build profile through one open handle, so the checks and the read see the same file.
+     * Only the first kilobyte is read unless it names the BuildProfile script, so a large project's other assets are
+     * not read in full. Other, larger than 1 MB or unreadable files read as empty.
+     */
+    private static readBuildProfileAsset(filePath: string): string {
         let fd: number | undefined;
 
         try {
             fd = fs.openSync(filePath, 'r');
+            const head = Buffer.alloc(1024);
+            const headLength = fs.readSync(fd, head, 0, head.length, 0);
 
-            if (fs.fstatSync(fd).size > 1024 * 1024) {
+            if (!head.subarray(0, headLength).toString('utf-8').includes('fileID: 15003,') || fs.fstatSync(fd).size > 1024 * 1024) {
                 return '';
             }
 

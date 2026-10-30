@@ -6,10 +6,12 @@ export const LICENSE_EXHAUSTED_MARKER = 'unity-license-exhausted';
 /** Annotation title for a network or CDN failure a later rerun can clear. */
 export const TRANSIENT_FAILURE_MARKER = 'unity-transient-failure';
 
-// literal alternations only, so matching stays linear on any message
-// the licensing client's exit codes 17 and 19 cover a seat it could not take
-const LICENSE_EXHAUSTED_PATTERN = /activations? limit|maximum number of activations|max activations|no free seats?|no available seats?|seat limit|0 free entitlements|Seat activation or deactivation failed|Acquiring license failed/i;
-const TRANSIENT_PATTERN = /HTTP 5\d\d|Bad Gateway|Service Unavailable|Gateway Time-?out|ECONNRESET|ECONNABORTED|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED|socket hang up/i;
+// only phrases that name a seat or activation limit: the licensing client's generic "seat activation failed" and
+// "acquiring license failed" also cover a wrong password or a revoked license, which a rerun would only repeat.
+// Literal alternations only, so matching stays linear on any message.
+const LICENSE_EXHAUSTED_PATTERN = /activations? limit|maximum number of activations|max activations|no free seats?|no available seats?|seat limit|0 free entitlements/i;
+// a refused connection usually means a wrong host or port, which a rerun repeats, so it is not listed
+const TRANSIENT_PATTERN = /HTTP 5\d\d|Bad Gateway|Service Unavailable|Gateway Time-?out|ECONNRESET|ECONNABORTED|ETIMEDOUT|EAI_AGAIN|socket hang up/i;
 
 /**
  * The marker for a failure a rerun after other jobs finish can clear, if the message names one.
@@ -30,8 +32,9 @@ export function ClassifyFailure(message: string): string | undefined {
 }
 
 /**
- * Logs a command failure. Failures a rerun can clear become an error annotation titled with their marker,
- * which the rerun workflow looks for; every other failure is logged as before.
+ * Logs a command failure. Failures a rerun can clear get a notice annotation titled with their marker, which the
+ * rerun workflow looks for; every failure is then logged as an error as before. The marker is a notice because GitHub
+ * keeps only 10 error annotations per step, and a step that already reported editor errors would drop it.
  * @param error The error that ended the command.
  */
 export function ReportFailure(error: unknown): void {
@@ -39,8 +42,8 @@ export function ReportFailure(error: unknown): void {
     const marker = ClassifyFailure(message);
 
     if (marker) {
-        Logger.instance.annotate(LogLevel.ERROR, message, undefined, undefined, undefined, undefined, undefined, marker);
-    } else {
-        Logger.instance.error(message);
+        Logger.instance.annotate(LogLevel.INFO, `Retryable failure: ${message}`, undefined, undefined, undefined, undefined, undefined, marker);
     }
+
+    Logger.instance.error(message);
 }

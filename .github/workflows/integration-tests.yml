@@ -85,7 +85,8 @@ jobs:
   # one check that stands for the whole run, so rows can be regrouped or renamed without touching required checks
   ci-result:
     needs: [utp-batch-contract, setup, validate, validate-negative-scenarios]
-    if: always()
+    # skipped with the rest on a draft, rather than green with nothing tested
+    if: ${{ always() && github.event.pull_request.draft != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -93,6 +94,8 @@ jobs:
       - name: Check results
         env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
+          SETUP_RESULT: ${{ needs.setup.result }}
+          VALIDATE_RESULT: ${{ needs.validate.result }}
         run: |
           echo "Job results: ${RESULTS}"
           for result in ${RESULTS}; do
@@ -101,6 +104,11 @@ jobs:
               exit 1
             fi
           done
+          # the matrix must actually have run: an empty or skipped matrix would otherwise pass with no tests
+          if [ "${SETUP_RESULT}" != "success" ] || [ "${VALIDATE_RESULT}" != "success" ]; then
+            echo "::error::No Unity rows ran (setup: ${SETUP_RESULT}, validate: ${VALIDATE_RESULT})"
+            exit 1
+          fi
   timeline:
     needs: [setup, validate, validate-negative-scenarios]
     if: always()

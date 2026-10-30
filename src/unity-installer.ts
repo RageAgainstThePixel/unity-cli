@@ -28,11 +28,14 @@ const RETRYABLE_EXIT_CODES = [7, 9, 14];
  */
 const LINUX_EDITOR_DEPENDENCIES_SCRIPT = `#!/bin/sh
 set -e
-if [ ! -f /etc/apt/sources.list.d/jammy.list ]; then
-  echo "deb https://archive.ubuntu.com/ubuntu jammy main universe" > /etc/apt/sources.list.d/jammy.list
+# an Ubuntu jammy source only works on Ubuntu; a Debian or other apt host would break its own apt-get update
+if grep -qs '^ID=ubuntu$' /etc/os-release; then
+  if [ ! -f /etc/apt/sources.list.d/jammy.list ]; then
+    echo "deb https://archive.ubuntu.com/ubuntu jammy main universe" > /etc/apt/sources.list.d/jammy.list
+  fi
+  # jammy only supplies packages the host release lacks; it never replaces the host's own packages
+  printf 'Package: *\\nPin: release n=jammy\\nPin-Priority: 100\\n' > /etc/apt/preferences.d/unity-cli-jammy
 fi
-# jammy only supplies packages the host release lacks; it never replaces the host's own packages
-printf 'Package: *\\nPin: release n=jammy\\nPin-Priority: 100\\n' > /etc/apt/preferences.d/unity-cli-jammy
 export DEBIAN_FRONTEND=noninteractive
 # a stalled mirror must not hold the job: apt retries slow requests, and each step has a hard limit
 APT_OPTS="-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 -o DPkg::Lock::Timeout=120"
@@ -58,6 +61,14 @@ const PINNED_DOWNLOAD_SHA256: { [url: string]: string } = {
 };
 
 /** Unity 5.x target support installer names, keyed by module id. */
+/** The PlaybackEngines folder each archive module installs into, where it differs from `<name>Support`. */
+const ARCHIVE_PLAYBACK_ENGINE_FOLDERS: { [moduleName: string]: string } = {
+    'Android': 'AndroidPlayer',
+    'Linux': 'LinuxStandaloneSupport',
+    'Mac': 'MacStandaloneSupport',
+    'Windows': 'WindowsStandaloneSupport',
+};
+
 const ARCHIVE_MODULE_NAMES: { [module: string]: string } = {
     'android': 'Android',
     'ios': 'iOS',
@@ -390,7 +401,10 @@ export class UnityInstaller {
                 }
 
                 for (const moduleName of moduleNames) {
-                    if (fs.existsSync(path.join(installDir, 'Editor', 'Data', 'PlaybackEngines', `${moduleName.toLowerCase()}support`))) {
+                    const engineFolder = ARCHIVE_PLAYBACK_ENGINE_FOLDERS[moduleName] ?? `${moduleName}Support`;
+
+                    // Windows paths are case-insensitive, so the folder name's case does not matter here
+                    if (fs.existsSync(path.join(installDir, 'Editor', 'Data', 'PlaybackEngines', engineFolder))) {
                         continue;
                     }
 
@@ -741,16 +755,24 @@ export class UnityInstaller {
             } catch (error) {
                 const code = (error as NodeJS.ErrnoException).code;
 
-                if (code === 'EEXIST' || code === 'ENOENT') {
+                if (code === 'ENOENT') {
                     return;
                 }
 
-                throw error;
+                if (code !== 'EEXIST') {
+                    throw error;
+                }
+
+                // patched before; only a run that stopped before the wrapper landed leaves .bee_backend without bee_backend
+                try {
+                    await fs.promises.access(beeBackend);
+                    return;
+                } catch {
+                    this.logger.ci('Restoring the Bee Backend wrapper an earlier run did not finish...');
+                }
             }
 
             this.logger.ci(`Patching Unity Linux Editor for Bee Backend...`);
-            await fs.promises.unlink(beeBackend);
-            // 'wx' fails instead of overwriting if something recreated the file since the unlink
             const wrapperSource: string = `#!/bin/bash
 # https://discussions.unity.com/t/linux-editor-stuck-on-loading-because-of-bee-backend-w-workaround/854480
 set -e
@@ -764,7 +786,11 @@ for ((i = 0; i < "\${#args[@]}"; ++i)); do
     esac
 done
 "$(dirname "$0")/.$(basename "$0")" "\${args[@]}"`
-            await fs.promises.writeFile(beeBackend, wrapperSource, { encoding: 'utf-8', mode: 0o755, flag: 'wx' });
+            // written under a temporary name and renamed over bee_backend, so a stop at any point leaves either the
+            // original (still linked as .bee_backend) or the whole wrapper, never neither
+            const tempWrapper = path.join(dataPath, `.bee_backend.${randomUUID()}.tmp`);
+            await fs.promises.writeFile(tempWrapper, wrapperSource, { encoding: 'utf-8', mode: 0o755, flag: 'wx' });
+            await fs.promises.rename(tempWrapper, beeBackend);
         }
     }
 

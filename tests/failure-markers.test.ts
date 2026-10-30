@@ -2,7 +2,6 @@ import { ClassifyFailure, LICENSE_EXHAUSTED_MARKER, TRANSIENT_FAILURE_MARKER } f
 
 describe('ClassifyFailure', () => {
     it.each([
-        'License command failed with exit code 17: Seat activation or deactivation failed',
         'Machine activations limit reached for this account',
         'Code 404 while processing request (status: Found 1 entitlement groups and 0 free entitlements matching requested entitlement ids)',
     ])('marks license exhaustion: %s', message => {
@@ -23,6 +22,9 @@ describe('ClassifyFailure', () => {
         'Unity failed with exit code 6',
         'License command failed with exit code 2: Invalid credentials',
         'GET https://example.com failed: HTTP 404',
+        'License command failed with exit code 17: Seat activation or deactivation failed',
+        'License command failed with exit code 19: Acquiring license failed',
+        'connect ECONNREFUSED 127.0.0.1:443',
     ])('leaves other failures unmarked: %s', message => {
         expect(ClassifyFailure(message)).toBeUndefined();
     });
