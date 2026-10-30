@@ -14,10 +14,16 @@ on:
         required: true
       UNITY_PASSWORD:
         required: true
+      CI_TOKEN:
+        description: Keys the encrypted run license that macOS and Linux rows activate from.
+        required: false
 jobs:
   build:
-    name: ${{ matrix.name }}
+    # rows are grouped by editor version, so the name carries the OS and target
+    name: ${{ matrix.os }} ${{ matrix.build-target }} ${{ matrix.build-args }}
     runs-on: ${{ matrix.os }}
+    # a hung editor or licensing call must not hold the matrix; Android rows build a player through Gradle and get more
+    timeout-minutes: ${{ matrix.build-target == 'Android' && 60 || 45 }}
     strategy:
       matrix: ${{ fromJSON(inputs.matrix) }}
       fail-fast: false
@@ -30,34 +36,66 @@ jobs:
     env:
       UNITY_PROJECT_PATH: '' # Create Unity Project step will set this if needed
       UNITY_CLI_WORKFLOW_SUMMARY: 'true' # opt-in: append rich markdown to GITHUB_STEP_SUMMARY from unity-cli log parsing
+      # matrix values reach run scripts through the environment, never by expression interpolation
+      MATRIX_OS: ${{ matrix.os }}
+      MATRIX_UNITY_VERSION: ${{ matrix.unity-version }}
+      MATRIX_BUILD_TARGET: ${{ matrix.build-target }}
+      MATRIX_BUILD_ARGS: ${{ matrix.build-args }}
+      MATRIX_CHANNEL: ${{ matrix.channel }}
+      MATRIX_CHANGESET: ${{ matrix.changeset }}
     steps:
+      # runs alongside checkout and the unity-cli build; the wait before the editor packages joins it
       - name: Free Disk Space
+        id: free-disk-space
+        background: true
         if: ${{ matrix.os == 'ubuntu-latest' && (matrix.unity-version != '2018' && matrix.unity-version != '2017.4.40f1') }}
-        uses: endersonmenezes/free-disk-space@7901478139cff6e9d44df5972fd8ab8fcade4db1 # v3.2.2
+        uses: endersonmenezes/free-disk-space@8b8cd4e2277836962939a8f3b4ea0ee4bc006156 # v4.0.1
         with:
           remove_android: true
           remove_dotnet: false
           remove_tool_cache: false
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24.x
+          cache: npm
       - name: Setup unity-cli
         run: |
           npm ci
           npm run build
           npm run link
           unity-cli --version
+      - name: Wait for Free Disk Space
+        wait: free-disk-space
+      # the editor's apt packages come from a mirror that has served them at about 40 kB/s, so the .deb files are kept
+      # in the Actions cache: an apt hook copies every package dpkg installs, and a later run puts them back into apt's
+      # archive before setup-unity, so apt finds them already downloaded
+      - name: Restore Linux editor packages
+        id: linux-packages
+        if: ${{ runner.os == 'Linux' && matrix.unity-version != 'none' }}
+        run: |
+          echo "key=unity-linux-packages-${ImageOS}-${ImageVersion}" >> "$GITHUB_OUTPUT"
+          echo "restore-key=unity-linux-packages-${ImageOS}-" >> "$GITHUB_OUTPUT"
+          mkdir -p "${RUNNER_TEMP}/apt-packages"
+          echo "DPkg::Pre-Install-Pkgs {\"xargs -r cp -n -t ${RUNNER_TEMP}/apt-packages/ || true\";};" | sudo tee /etc/apt/apt.conf.d/99unity-cli-keep-packages > /dev/null
+      - uses: actions/cache/restore@v6
+        id: linux-packages-cache
+        if: ${{ steps.linux-packages.outcome == 'success' }}
+        with:
+          path: ${{ runner.temp }}/apt-packages
+          key: ${{ steps.linux-packages.outputs.key }}
+          restore-keys: ${{ steps.linux-packages.outputs.restore-key }}
+      - name: Seed apt with cached packages
+        if: ${{ steps.linux-packages-cache.outputs.cache-matched-key != '' }}
+        run: |
+          count=$(find "${RUNNER_TEMP}/apt-packages" -maxdepth 1 -name '*.deb' | wc -l | tr -d ' ')
+          echo "Restored ${count} cached packages"
+          if [ "${count}" -gt 0 ]; then
+            sudo cp -n "${RUNNER_TEMP}"/apt-packages/*.deb /var/cache/apt/archives/
+          fi
       - name: Setup Unity
         timeout-minutes: 30
         run: |
-          if [ "${{ matrix.os }}" = "windows-11-arm" ]; then
-            unity-cli hub-install
-          else
-            unity-cli hub-install --hub-version 3.12.0
-            unity-cli hub-install --auto-update
-          fi
-          unity-cli hub-version
           unity-cli upm-install --json
           UPM_VER=$(unity-cli upm-version | tr -d '\n\r')
           echo "UPM CLI version: ${UPM_VER}"
@@ -65,15 +103,20 @@ jobs:
             echo "::error::upm-version expected a v-prefixed release (e.g. v9.0.0); got: ${UPM_VER}"
             exit 1
           fi
-          if [ "${{ matrix.unity-version }}" != "none" ]; then
+          if [ "${MATRIX_UNITY_VERSION}" = "none" ]; then
+            # the official CLI installs on first use; license-context needs it and no editor
+            unity-cli license-context
+          else
             setup_cmd=(
               unity-cli setup-unity
-              --unity-version "${{ matrix.unity-version }}"
-              --build-targets "${{ matrix.build-target }}"
+              --unity-version "${MATRIX_UNITY_VERSION}"
+              --build-targets "${MATRIX_BUILD_TARGET}"
               --json
             )
-            CHANNEL="${{ matrix.channel }}"
-            CHANGESET="${{ matrix.changeset }}"
+            # each row tests the newest build of its stream: a final release still wins once the stream has one,
+            # while streams that only have betas or alphas so far (such as 6000.7 and 7000.0) resolve to those
+            CHANNEL="${MATRIX_CHANNEL:-f,b,a}"
+            CHANGESET="${MATRIX_CHANGESET}"
             if [ -n "${CHANNEL}" ]; then
               setup_cmd+=(--channel "${CHANNEL}")
             fi
@@ -82,26 +125,43 @@ jobs:
             fi
             "${setup_cmd[@]}"
           fi
-      - name: Verify UNITY_HUB_PATH and UNITY_EDITOR_PATH variables
+      - name: Collect Linux editor packages
+        id: linux-packages-collect
+        if: ${{ steps.linux-packages.outcome == 'success' && steps.linux-packages-cache.outputs.cache-hit != 'true' }}
         run: |
-          echo "UNITY_HUB_PATH: ${UNITY_HUB_PATH}"
+          sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/apt-packages"
+          count=$(find "${RUNNER_TEMP}/apt-packages" -maxdepth 1 -name '*.deb' | wc -l | tr -d ' ')
+          echo "Collected ${count} packages"
+          echo "count=${count}" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/save@v6
+        # rows run in parallel, so several may try the same key; the first save wins and the rest only warn
+        if: ${{ steps.linux-packages-collect.outputs.count > 0 }}
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/apt-packages
+          key: ${{ steps.linux-packages.outputs.key }}
+      - name: Verify UNITY_CLI_PATH and UNITY_EDITOR_PATH variables
+        run: |
+          echo "UNITY_CLI_PATH: ${UNITY_CLI_PATH}"
+          echo "UNITY_CLI_VERSION: ${UNITY_CLI_VERSION:-}"
           echo "UNITY_EDITOR_PATH: ${UNITY_EDITOR_PATH}"
           echo "UNITY_PROJECT_PATH: ${UNITY_PROJECT_PATH}" # Expected to be empty at this point
           echo "UNITY_EDITOR_VERSION: ${UNITY_EDITOR_VERSION:-}"
           echo "UNITY_EDITOR_CHANGESET: ${UNITY_EDITOR_CHANGESET:-}"
           echo "UNITY_EDITOR_CHANNELS: ${UNITY_EDITOR_CHANNELS:-}"
 
-          if [ -z "${UNITY_HUB_PATH}" ]; then
-            echo "::error::UNITY_HUB_PATH is not set"
+          if [ -z "${UNITY_CLI_PATH}" ]; then
+            echo "::error::UNITY_CLI_PATH is not set"
             exit 1
           fi
+          unity --version
 
-          if [ "${{ matrix.unity-version }}" != "none" ] && [ -z "${UNITY_EDITOR_PATH}" ]; then
+          if [ "${MATRIX_UNITY_VERSION}" != "none" ] && [ -z "${UNITY_EDITOR_PATH}" ]; then
             echo "::error::UNITY_EDITOR_PATH is not set"
             exit 1
           fi
 
-          if [ "${{ matrix.unity-version }}" != "none" ]; then
+          if [ "${MATRIX_UNITY_VERSION}" != "none" ]; then
             {
               echo "### Resolved Unity editor"
               echo ""
@@ -111,24 +171,93 @@ jobs:
               echo "- path: \`${UNITY_EDITOR_PATH:-n/a}\`"
             } >> "$GITHUB_STEP_SUMMARY"
           fi
+      # macOS and Linux runners all report the same machine identity to Unity, so the license the caller's license job
+      # activated once for this run serves every macOS or Linux row; it arrives as an encrypted artifact and is never
+      # returned. Without it, or when it no longer fits this machine, the row activates with the account. Windows runners
+      # are a new machine every job, so Windows rows activate with the account and return the license.
+      - name: Download run license
+        id: download-run-license
+        if: ${{ runner.os != 'Windows' && matrix.unity-version != 'none' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: unity-license-${{ runner.os }}
+          path: ${{ runner.temp }}/unity-license
+      - name: Decrypt run license
+        id: run-license
+        if: ${{ steps.download-run-license.outcome == 'success' }}
+        continue-on-error: true
+        shell: pwsh
+        env:
+          CI_TOKEN: ${{ secrets.CI_TOKEN }}
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'unity-license'
+          $license = Join-Path $dir 'Unity_lic.ulf'
+          # the key never reaches a command line: openssl reads it from the environment
+          $env:LICENSE_KEY = "$($env:CI_TOKEN):$($env:GITHUB_RUN_ID)"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in (Join-Path $dir 'unity-license.enc') -out $license -pass env:LICENSE_KEY
+          if ($LASTEXITCODE -ne 0) { throw 'Could not decrypt the run license' }
+          "path=$license" >> $env:GITHUB_OUTPUT
       - name: Activate License
+        id: activate-license
         if: ${{ matrix.unity-version != 'none' }}
+        env:
+          UNITY_LICENSE: ${{ steps.run-license.outputs.path }}
+          # read by activate-license from the environment, so the credentials never sit on a command line
+          UNITY_USERNAME: ${{ secrets.UNITY_USERNAME }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
         run: |
           unity-cli license-context
-          unity-cli activate-license --license personal --email "${{ secrets.UNITY_USERNAME }}" --password "${{ secrets.UNITY_PASSWORD }}"
+          major="${UNITY_EDITOR_VERSION%%.*}"
+          # 4.x and 5.x editors need their own license version, so they always activate with the account
+          if [ "${RUNNER_OS}" = "Windows" ] || [ "${major}" -lt 2017 ]; then
+            unset UNITY_LICENSE
+          fi
+          # activate-license writes license-source=license-file|account to this step's outputs
+          unity-cli activate-license --license personal
+          rm -rf "${RUNNER_TEMP}/unity-license"
       - name: Create Unity Project
         if: ${{ matrix.unity-version != 'none' }}
         run: |
-          unity-cli list-project-templates --unity-editor "${UNITY_EDITOR_PATH}" --json
+          project_root="${GITHUB_WORKSPACE}"
+          project_path="${project_root}/Unity Project"
+          major="${UNITY_EDITOR_VERSION%%.*}"
+          # project templates start with 2019; older editors create an empty project
+          create_project() {
+            if [ "${major}" -ge 2019 ]; then
+              arch="x86_64"
+              if [ "${RUNNER_ARCH}" = "ARM64" ] && [ "${major}" -ge 2021 ]; then
+                arch="arm64"
+              fi
+              unity projects create "Unity Project" --path "${project_root}" --editor-version "${UNITY_EDITOR_VERSION}" --architecture "${arch}" --template "${template}" --no-cloud
+            else
+              unity-cli run --unity-editor "${UNITY_EDITOR_PATH}" -quit -createProject "${project_path}"
+            fi
+          }
+          # prefer the built-in 3D template like v3 did; the CLI's "3d" means URP, which older editors don't offer
+          template="3d"
+          if [ "${major}" -ge 2019 ]; then
+            templates_json="$(unity templates list --editor "${UNITY_EDITOR_VERSION}" --json || true)"
+            echo "${templates_json}"
+            template="$(printf '%s' "${templates_json}" | node -e '
+              let input = ""; process.stdin.on("data", c => input += c).on("end", () => {
+                let names = [];
+                try { names = (JSON.parse(input).data || []).map(t => t.name || t.id).filter(Boolean); } catch {}
+                const preferred = ["com.unity.template.3d", "com.unity.template.3d-cross-platform", "com.unity.template.universal", "com.unity.template.urp-blank"];
+                process.stdout.write(preferred.find(p => names.includes(p)) || "3d");
+              });')"
+            echo "Using project template: ${template}"
+          fi
           create_rc=1
           for attempt in 1 2 3; do
             echo "Create Unity Project attempt ${attempt}/3"
-            if unity-cli create-project --name "Unity Project" --unity-editor "${UNITY_EDITOR_PATH}" --json; then
+            if create_project; then
               create_rc=0
               break
             fi
+            rm -rf "${project_path}"
             if [ "$attempt" -lt 3 ]; then
-              echo "::warning::create-project failed on attempt ${attempt}; retrying after short backoff"
+              echo "::warning::Creating the project failed on attempt ${attempt}; retrying after short backoff"
               sleep 10
             fi
           done
@@ -136,6 +265,7 @@ jobs:
             echo "::error::Failed to create Unity project after 3 attempts"
             exit 1
           fi
+          echo "UNITY_PROJECT_PATH=${project_path}" >> "$GITHUB_ENV"
       - name: Verify UNITY_PROJECT_PATH variable
         if: ${{ matrix.unity-version != 'none' }}
         id: verify-project-path
@@ -145,7 +275,7 @@ jobs:
             exit 1
           fi
           # check if the project can be built. Only Unity 2019.4+ and newer majors support the build pipeline package
-          version="${{ matrix.unity-version }}"
+          version="${MATRIX_UNITY_VERSION}"
           # extract major and minor (minor may be empty if version is just '2019' etc.)
           major=$(echo "$version" | cut -d'.' -f1)
           minor=$(echo "$version" | cut -d'.' -f2)
@@ -166,19 +296,35 @@ jobs:
           sed -i 's/AndroidTargetSdkVersion: [0-9]*/AndroidTargetSdkVersion: 32/' "${UNITY_PROJECT_PATH}/ProjectSettings/ProjectSettings.asset"
           # ensure android dependencies are installed before UTP/build batches
           unity-cli setup-unity -p "${UNITY_PROJECT_PATH}" -m android
+      - name: Disable WebGL Compression
+        # Brotli on the .wasm takes minutes per build and the tests never serve the player, so it only costs job time
+        if: ${{ matrix.build-target == 'WebGL' && matrix.unity-version != 'none' }}
+        shell: pwsh
+        run: |
+          $path = Join-Path $env:UNITY_PROJECT_PATH 'ProjectSettings/ProjectSettings.asset'
+          $text = Get-Content -Path $path -Raw
+          # 0 is Brotli, 1 is Gzip and 2 is Disabled
+          if ($text -match '(?m)^([ \t]*)webGLCompressionFormat:.*$') {
+            $text = $text -replace '(?m)^([ \t]*)webGLCompressionFormat:.*$', '${1}webGLCompressionFormat: 2'
+          } else {
+            # the asset holds only the PlayerSettings document, whose keys sit two spaces in
+            $text = $text.TrimEnd() + "`n  webGLCompressionFormat: 2`n"
+          }
+          Set-Content -Path $path -Value $text -NoNewline
+          Select-String -Path $path -Pattern 'webGLCompressionFormat'
       - name: Compute safe artifact name
         id: artifact-name
         env:
           MATRIX_NAME: ${{ matrix.name }}
         run: |
           set -euo pipefail
-          unity_version="${{ matrix.unity-version }}"
+          unity_version="${MATRIX_UNITY_VERSION}"
           unity_version="${unity_version//'*'/x}"
-          bt="${{ matrix.build-target }}"
+          bt="${MATRIX_BUILD_TARGET}"
           bt="${bt:-none}"
           # Per-job slug so parallel matrix rows never collide (name encodes the job-builder row).
-          base="${{ matrix.os }}-${unity_version}-${bt}"
-          ba="${{ matrix.build-args }}"
+          base="${MATRIX_OS}-${unity_version}-${bt}"
+          ba="${MATRIX_BUILD_ARGS}"
           if [ -n "${ba}" ]; then
             if command -v sha256sum >/dev/null 2>&1; then
               bah=$(printf '%s' "$ba" | sha256sum | awk '{print $1}' | cut -c1-12)
@@ -255,46 +401,14 @@ jobs:
           if [ "$marker_found" -ne 0 ]; then
             exit 1
           fi
-      - name: Uninstall Editor
-        if: ${{ matrix.unity-version != 'none' }}
-        timeout-minutes: 5
-        continue-on-error: true
-        run: |
-          if [ -z "${UNITY_EDITOR_PATH}" ]; then
-            echo "UNITY_EDITOR_PATH is not set, skipping uninstall"
-            exit 0
-          fi
-          unity-cli uninstall-unity --unity-editor "${UNITY_EDITOR_PATH}"
       - name: Print log paths
         if: ${{ matrix.unity-version != 'none' }}
         run: |
-          HUB_LOG_PATH=$(unity-cli hub-logs)
-          PACKAGE_MANAGER_LOG_PATH=$(unity-cli package-manager-logs)
           LICENSING_CLIENT_LOG_PATH=$(unity-cli licensing-client-logs)
           LICENSING_AUDIT_LOG_PATH=$(unity-cli licensing-audit-logs)
 
-          echo "Hub Log Path: ${HUB_LOG_PATH}"
-          echo "Package Manager Log Path: ${PACKAGE_MANAGER_LOG_PATH}"
           echo "Licensing Client Log Path: ${LICENSING_CLIENT_LOG_PATH}"
           echo "Licensing Audit Log Path: ${LICENSING_AUDIT_LOG_PATH}"
-
-          if [ ! -f "${HUB_LOG_PATH}" ]; then
-            echo "::warning:: Hub log file does not exist at ${HUB_LOG_PATH}"
-            # find all info-log.json files in ~/.config/unity3d/ - print their paths
-            find ~/.config/unity3d/ -type f \( -name "info-log.json" \) -exec echo "{}" \;
-            # also try to find in UNITY_HUB_PATH parent directory if set
-            if [ -n "${UNITY_HUB_PATH}" ]; then
-              HUB_DIR=$(dirname "${UNITY_HUB_PATH}")
-              find "${HUB_DIR}" -type f \( -name "info-log.json" \) -exec echo "{}" \;
-            fi
-            # print all files found in ~/.config/
-            find ~/.config/ -type f -exec echo "{}" \;
-            echo "::warning:: Hub log file does not exist at any known location"
-          fi
-
-          if [ ! -f "${PACKAGE_MANAGER_LOG_PATH}" ]; then
-            echo "::warning::Package Manager log file does not exist at ${PACKAGE_MANAGER_LOG_PATH}"
-          fi
 
           if [ ! -f "${LICENSING_CLIENT_LOG_PATH}" ]; then
             echo "::error::Licensing Client log file does not exist at ${LICENSING_CLIENT_LOG_PATH}"
@@ -304,5 +418,7 @@ jobs:
             echo "::error::Licensing Audit log file does not exist at ${LICENSING_AUDIT_LOG_PATH}"
           fi
       - name: Return License
-        if: always()
+        # macOS and Linux runners all report the same machine identity to Unity, so jobs share one activation and a
+        # return revokes it for every other job; Windows runners are a new machine every job, so only they return
+        if: ${{ always() && runner.os == 'Windows' }}
         run: unity-cli return-license --license personal

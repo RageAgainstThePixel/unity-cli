@@ -1,0 +1,134 @@
+name: rerun-marked-failures
+# Reruns the failed jobs of a finished run when every failure was marked as retryable, such as no free Unity license
+# seat or a transient download error. unity-cli marks those failures with an error annotation whose title is one of the
+# markers below, so any repository whose jobs use unity-cli can call this from a workflow_run workflow of its own:
+#
+#   on:
+#     workflow_run:
+#       workflows: [<workflow name>]
+#       types: [completed]
+#   jobs:
+#     rerun:
+#       if: github.event.workflow_run.conclusion == 'failure'
+#       permissions:
+#         actions: write
+#         checks: read
+#       uses: RageAgainstThePixel/unity-cli/.github/workflows/rerun-marked-failures.yml@v4
+#       with:
+#         run-id: ${{ github.event.workflow_run.id }}
+#         run-attempt: ${{ github.event.workflow_run.run_attempt }}
+#
+# The run starts only once the watched run has finished, which is when its Windows seats are returned, so nothing waits
+# or polls in between.
+on:
+  workflow_call:
+    inputs:
+      run-id:
+        description: The finished run to check.
+        required: true
+        type: number
+      run-attempt:
+        description: The attempt of that run that finished.
+        required: true
+        type: number
+      max-attempts:
+        description: The last attempt that may be rerun; later attempts are left failed.
+        required: false
+        type: number
+        default: 3
+      markers:
+        description: Comma-separated annotation titles that mark a failure as retryable.
+        required: false
+        type: string
+        default: unity-license-exhausted,unity-transient-failure
+      ignore-jobs:
+        description: Comma-separated names of jobs that only report other jobs' results, such as an aggregate check.
+        required: false
+        type: string
+        default: ci-result
+      delay-seconds:
+        description: Seconds to wait before the rerun, for seats that other repositories may still hold.
+        required: false
+        type: number
+        default: 0
+jobs:
+  rerun:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: write # to rerun the failed jobs
+      checks: read # to read the failed jobs' annotations
+    steps:
+      - name: Rerun marked failures
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.run-id }}
+          RUN_ATTEMPT: ${{ inputs.run-attempt }}
+          MAX_ATTEMPTS: ${{ inputs.max-attempts }}
+          MARKERS: ${{ inputs.markers }}
+          IGNORE_JOBS: ${{ inputs.ignore-jobs }}
+          DELAY_SECONDS: ${{ inputs.delay-seconds }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $repo = $env:GITHUB_REPOSITORY
+          $attempt = [int]$env:RUN_ATTEMPT
+          $markers = $env:MARKERS -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+          $ignore = $env:IGNORE_JOBS -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+          function Write-Summary([string]$text) { Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $text }
+          # the REST API answers 5xx now and then, and always for 100 jobs with their steps in one page, so pages are
+          # kept small and a retry with backoff rides out the rest
+          function Invoke-GhApi([string]$path, [string]$jq) {
+            foreach ($try in 1..4) {
+              $out = gh api $path --paginate --jq $jq
+              if ($LASTEXITCODE -eq 0) { return $out }
+              if ($try -lt 4) { Start-Sleep -Seconds ([math]::Pow(2, $try)) }
+            }
+            throw "gh api $path failed after 4 attempts"
+          }
+
+          $jobs = Invoke-GhApi "repos/$repo/actions/runs/$($env:RUN_ID)/attempts/$attempt/jobs?per_page=30" '.jobs[]' |
+            ForEach-Object { $_ | ConvertFrom-Json }
+          $failed = @($jobs | Where-Object { $_.conclusion -eq 'failure' -and $ignore -notcontains $_.name })
+          if ($failed.Count -eq 0) {
+            Write-Summary "No failed jobs in run $($env:RUN_ID) attempt $attempt."
+            exit 0
+          }
+
+          $marked = @()
+          $unmarked = @()
+          foreach ($job in $failed) {
+            # a job's id is also its check run id
+            $titles = @(Invoke-GhApi "repos/$repo/check-runs/$($job.id)/annotations?per_page=100" '.[].title')
+            $hit = $titles | Where-Object { $markers -contains $_ } | Select-Object -First 1
+            if ($hit) { $marked += [pscustomobject]@{ name = $job.name; marker = $hit } }
+            # a job that only failed because a job it needs failed carries no annotation of its own
+            elseif ($job.steps.Count -eq 0 -or -not ($job.steps | Where-Object { $_.conclusion -eq 'failure' })) { continue }
+            else { $unmarked += $job.name }
+          }
+
+          Write-Summary "### Retryable failures in run $($env:RUN_ID) attempt $attempt"
+          Write-Summary ''
+          foreach ($m in $marked) { Write-Summary "- ``$($m.marker)``: $($m.name)" }
+          foreach ($u in $unmarked) { Write-Summary "- not retryable: $u" }
+          Write-Summary ''
+
+          if ($marked.Count -eq 0) {
+            Write-Summary 'Nothing to rerun: no failure carries a retry marker.'
+            exit 0
+          }
+          if ($unmarked.Count -gt 0) {
+            # a rerun repeats every failed job, so a real failure would only fail again at full cost
+            Write-Summary 'Not rerun: other jobs failed for reasons a rerun does not fix.'
+            exit 0
+          }
+          if ($attempt -ge [int]$env:MAX_ATTEMPTS) {
+            Write-Summary "Not rerun: attempt $attempt reached the limit of $($env:MAX_ATTEMPTS)."
+            echo "::warning::Run $($env:RUN_ID) still has retryable failures after $attempt attempts"
+            exit 0
+          }
+
+          $delay = [int]$env:DELAY_SECONDS
+          if ($delay -gt 0) { Start-Sleep -Seconds $delay }
+          gh run rerun $env:RUN_ID --failed --repo $repo
+          Write-Summary "Reran the $($marked.Count) failed jobs as attempt $($attempt + 1)."

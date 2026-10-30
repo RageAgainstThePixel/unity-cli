@@ -77,6 +77,99 @@ export class UnityProject {
     }
 
     /**
+     * The build targets of the build profiles saved under the project's Assets folder (Unity 6 and newer).
+     * @returns Build target names such as Android or StandaloneWindows64, without duplicates.
+     */
+    public GetBuildProfileTargets(): string[] {
+        const targets = new Set<string>();
+        const pending = [path.join(this.projectPath, 'Assets')];
+
+        while (pending.length > 0) {
+            const dir = pending.pop()!;
+            let entries: fs.Dirent[];
+
+            try {
+                entries = fs.readdirSync(dir, { withFileTypes: true });
+            } catch {
+                continue;
+            }
+
+            for (const entry of entries) {
+                const entryPath = path.join(dir, entry.name);
+
+                if (entry.isDirectory()) {
+                    pending.push(entryPath);
+                    continue;
+                }
+
+                if (!entry.isFile() || !entry.name.endsWith('.asset')) {
+                    continue;
+                }
+
+                const target = UnityProject.readBuildProfileTarget(UnityProject.readBuildProfileAsset(entryPath));
+
+                if (target) {
+                    targets.add(target);
+                }
+            }
+        }
+
+        return [...targets];
+    }
+
+    /**
+     * Reads an asset that may be a build profile through one open handle, so the checks and the read see the same file.
+     * Only the first kilobyte is read unless it names the BuildProfile script, so a large project's other assets are
+     * not read in full. Other, larger than 1 MB or unreadable files read as empty.
+     */
+    private static readBuildProfileAsset(filePath: string): string {
+        let fd: number | undefined;
+
+        try {
+            fd = fs.openSync(filePath, 'r');
+            const head = Buffer.alloc(1024);
+            const headLength = fs.readSync(fd, head, 0, head.length, 0);
+
+            if (!head.subarray(0, headLength).toString('utf-8').includes('fileID: 15003,') || fs.fstatSync(fd).size > 1024 * 1024) {
+                return '';
+            }
+
+            return fs.readFileSync(fd, 'utf-8');
+        } catch {
+            return '';
+        } finally {
+            if (fd !== undefined) {
+                fs.closeSync(fd);
+            }
+        }
+    }
+
+    /** BuildTarget enum values a build profile stores, by name. */
+    private static readonly BuildTargetNames: { [value: number]: string } = {
+        2: 'StandaloneOSX',
+        5: 'StandaloneWindows',
+        9: 'iOS',
+        13: 'Android',
+        19: 'StandaloneWindows64',
+        20: 'WebGL',
+        21: 'WSAPlayer',
+        24: 'StandaloneLinux64',
+        37: 'tvOS',
+        47: 'VisionOS',
+    };
+
+    /** The build target of a BuildProfile asset, or undefined for any other asset. */
+    private static readBuildProfileTarget(asset: string): string | undefined {
+        // BuildProfile is a built-in MonoBehaviour: script fileID 15003 in the editor's built-in guid
+        if (!asset.includes('fileID: 15003, guid: 0000000000000000e000000000000000') || !asset.includes('m_PlatformBuildProfile:')) {
+            return undefined;
+        }
+
+        const match = /^ {2}m_BuildTarget: (\d+)\r?$/m.exec(asset);
+        return match ? UnityProject.BuildTargetNames[Number(match[1])] ?? `BuildTarget(${match[1]})` : undefined;
+    }
+
+    /**
      * Gets the Unity project located at the specified path, or the current working directory if no path is provided.
      * @param projectPath The path to the Unity project. If undefined, the current working directory is used.
      * @returns The UnityProject instance representing the project at the specified path.

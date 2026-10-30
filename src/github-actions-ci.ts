@@ -69,20 +69,35 @@ export class GitHubActionsLoggerProvider implements ILoggerProvider {
     }
 
     public mask(message: string): void {
-        process.stdout.write(`::add-mask::${message}\n`);
+        // add-mask covers one line, so a multi-line value is masked line by line
+        for (const line of message.split(/\r?\n/)) {
+            if (line.length > 0) {
+                process.stdout.write(`::add-mask::${line}\n`);
+            }
+        }
     }
 
     public setEnvironmentVariable(name: string, value: string): void {
         const githubEnv = process.env.GITHUB_ENV;
-        if (githubEnv) {
+        // a line break would let the value set other variables
+        if (githubEnv && !/[\r\n]/.test(`${name}${value}`)) {
             fs.appendFileSync(githubEnv, `${name}=${value}\n`, { encoding: 'utf8' });
         }
     }
 
     public setOutput(name: string, value: string): void {
         const githubOutput = process.env.GITHUB_OUTPUT;
-        if (githubOutput) {
+        // a line break would let the value set other outputs
+        if (githubOutput && !/[\r\n]/.test(`${name}${value}`)) {
             fs.appendFileSync(githubOutput, `${name}=${value}\n`, { encoding: 'utf8' });
+        }
+    }
+
+    public addPath(directory: string): void {
+        const githubPath = process.env.GITHUB_PATH;
+        // a line break would let the value add more than one PATH entry
+        if (githubPath && !/[\r\n]/.test(directory)) {
+            fs.appendFileSync(githubPath, `${directory}\n`, { encoding: 'utf8' });
         }
     }
 

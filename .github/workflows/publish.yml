@@ -9,9 +9,10 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24.x
           registry-url: "https://registry.npmjs.org"
@@ -22,11 +23,11 @@ jobs:
           minor=$(npm --version | cut -d. -f2)
           patch=$(npm --version | cut -d. -f3)
           if [ "$major" -lt 11 ] || { [ "$major" -eq 11 ] && [ "$minor" -lt 5 ]; } || { [ "$major" -eq 11 ] && [ "$minor" -eq 5 ] && [ "$patch" -lt 1 ]; }; then
-            npm install -g npm@latest
+            npm install -g npm@11.21.1
           fi
       - name: Build and publish
         run: |
-          npm i
+          npm ci
           npm run build
           lastVersion=$(npm show @rage-against-the-pixel/unity-cli version)
           version=$(node -p "require('./package.json').version")

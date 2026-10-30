@@ -5,17 +5,14 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-  issues: write
 jobs:
   discover:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
       - name: Discover Unity releases vs matrix
-        env:
-          OPEN_ISSUE: '1'
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node .github/scripts/unity-release-discovery.cjs

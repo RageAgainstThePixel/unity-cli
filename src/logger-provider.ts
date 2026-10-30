@@ -20,6 +20,7 @@ export interface ILoggerProvider {
     mask(message: string): void;
     setEnvironmentVariable(name: string, value: string): void;
     setOutput(name: string, value: string): void;
+    addPath(directory: string): void;
     appendStepSummary(summary: string): void;
     getMarkdownByteLimit(target: MarkdownTarget): number;
 }
@@ -65,6 +66,10 @@ export class LocalCliLoggerProvider implements ILoggerProvider {
     }
 
     public setOutput(_name: string, _value: string): void {
+        // no-op for local terminal
+    }
+
+    public addPath(_directory: string): void {
         // no-op for local terminal
     }
 

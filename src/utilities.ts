@@ -371,17 +371,48 @@ export async function extractZipNative(
  */
 export async function HttpsGetText(url: string): Promise<string> {
     return new Promise((resolve, reject) => {
-        https.get(url, (response) => {
+        const request = https.get(url, { timeout: DOWNLOAD_IDLE_TIMEOUT_MS }, (response) => {
             if (response.statusCode !== 200) {
                 reject(new Error(`GET ${url} failed: HTTP ${response.statusCode}`));
                 response.resume();
                 return;
             }
             const chunks: Buffer[] = [];
-            response.on('data', (c: Buffer) => chunks.push(c));
+            let size = 0;
+            response.on('data', (c: Buffer) => {
+                size += c.length;
+
+                // text responses here are small manifests; anything larger is not what was asked for
+                if (size > MAX_TEXT_RESPONSE_BYTES) {
+                    request.destroy(new Error(`GET ${url} returned more than ${MAX_TEXT_RESPONSE_BYTES} bytes`));
+                    return;
+                }
+
+                chunks.push(c);
+            });
             response.on('end', () => resolve(Buffer.concat(chunks).toString('utf8').trim()));
-        }).on('error', reject);
+        });
+        request.on('timeout', () => request.destroy(new Error(`GET ${url} timed out`)));
+        request.on('error', reject);
     });
+}
+
+/** A download fails when no data arrives for this long. */
+const DOWNLOAD_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
+
+/** The largest response HttpsGetText accepts. */
+const MAX_TEXT_RESPONSE_BYTES = 10 * 1024 * 1024;
+
+export interface DownloadOptions {
+    /** The expected SHA-256 (hex) of the file; the download fails and is deleted when it does not match. */
+    sha256?: string;
+    /**
+     * An integrity value from the Unity Releases API, such as `md5-<base64>` or `sha256-<base64>`, checked the same way.
+     * Unity base64-encodes either the hex digest or the raw digest bytes; both are accepted.
+     */
+    integrity?: string;
+    /** Creates the file executable (0o755) instead of 0o644. */
+    executable?: boolean;
 }
 
 /**
@@ -404,38 +435,127 @@ export async function Sha256FileHex(filePath: string): Promise<string> {
  * Requires HTTP status 200 before writing. Verifies the file is readable after download.
  * @param url The URL to download from.
  * @param downloadPath The path to save the downloaded file.
- * @throws An error if the download fails or the file is not accessible after download.
+ * @param options Integrity and mode options.
+ * @throws An error if the download fails, its SHA-256 does not match, or the file is not accessible after download.
  */
-export async function DownloadFile(url: string, downloadPath: string): Promise<void> {
+export async function DownloadFile(url: string, downloadPath: string, options: DownloadOptions = {}): Promise<void> {
     logger.ci(`Downloading from ${url} to ${downloadPath}...`);
     await fs.promises.mkdir(path.dirname(downloadPath), { recursive: true });
+    // installers move between hosts, so HTTPS redirects are followed; every download is checked against a pinned
+    // SHA-256 or Releases API integrity value afterwards, so where it was served from does not change what is accepted
+    let currentUrl = url;
+    let redirects = 0;
     await new Promise<void>((resolve, reject) => {
-        https.get(url, (response) => {
-            if (response.statusCode !== 200) {
-                response.resume();
-                reject(new Error(`GET ${url} failed: HTTP ${response.statusCode}`));
-                return;
-            }
-            const file = fs.createWriteStream(downloadPath, { mode: 0o755 });
-            const fail = (err: Error) => {
-                file.destroy();
-                void fs.promises.unlink(downloadPath).catch(() => undefined);
-                reject(err);
-            };
-            response.once('error', fail);
-            file.once('error', fail);
-            response.pipe(file);
-            file.on('finish', () => {
-                file.close(() => resolve());
+        const get = () => {
+            const request = https.get(currentUrl, { timeout: DOWNLOAD_IDLE_TIMEOUT_MS }, (response) => {
+                const location = response.headers.location;
+
+                if (response.statusCode && [301, 302, 303, 307, 308].includes(response.statusCode) && location) {
+                    response.resume();
+                    const next = new URL(location, currentUrl);
+
+                    if (next.protocol !== 'https:' || ++redirects > 5) {
+                        reject(new Error(`GET ${url} failed: ${next.protocol !== 'https:' ? `redirected to ${next.protocol}` : 'too many redirects'}`));
+                        return;
+                    }
+
+                    currentUrl = next.href;
+                    get();
+                    return;
+                }
+
+                if (response.statusCode !== 200) {
+                    response.resume();
+                    reject(new Error(`GET ${url} failed: HTTP ${response.statusCode}`));
+                    return;
+                }
+                const file = fs.createWriteStream(downloadPath, { mode: options.executable ? 0o755 : 0o644 });
+                const fail = (err: Error) => {
+                    file.destroy();
+                    void fs.promises.unlink(downloadPath).catch(() => undefined);
+                    reject(err);
+                };
+                response.once('error', fail);
+                file.once('error', fail);
+                response.pipe(file);
+                file.on('finish', () => {
+                    file.close(() => resolve());
+                });
             });
-        }).on('error', (error) => {
-            void fs.promises.unlink(downloadPath).catch(() => undefined);
-            reject(error);
-        });
+            request.on('timeout', () => request.destroy(new Error(`GET ${url} timed out`)));
+            request.on('error', (error) => {
+                void fs.promises.unlink(downloadPath).catch(() => undefined);
+                reject(error);
+            });
+        };
+        get();
     });
 
     await new Promise((r) => setTimeout(r, 100));
     await fs.promises.access(downloadPath, fs.constants.R_OK);
+
+    if (options.sha256) {
+        const actual = await Sha256FileHex(downloadPath);
+
+        if (actual.toLowerCase() !== options.sha256.toLowerCase()) {
+            await fs.promises.rm(downloadPath, { force: true });
+            throw new Error(`SHA-256 mismatch for ${url}: expected ${options.sha256}, got ${actual}`);
+        }
+    }
+
+    if (options.integrity) {
+        const separator = options.integrity.indexOf('-');
+        const algorithm = options.integrity.slice(0, separator).toLowerCase();
+        const encoded = options.integrity.slice(separator + 1);
+
+        if (separator <= 0 || !['md5', 'sha1', 'sha256', 'sha384', 'sha512'].includes(algorithm)) {
+            await fs.promises.rm(downloadPath, { force: true });
+            throw new Error(`Unsupported integrity value for ${url}: ${options.integrity}`);
+        }
+
+        const decoded = Buffer.from(encoded, 'base64');
+        const asText = decoded.toString('utf8');
+        const expected = /^[0-9a-f]+$/i.test(asText) ? asText.toLowerCase() : decoded.toString('hex');
+        const actual = await HashFileHex(downloadPath, algorithm);
+
+        if (actual !== expected) {
+            await fs.promises.rm(downloadPath, { force: true });
+            throw new Error(`${algorithm.toUpperCase()} mismatch for ${url}: expected ${expected}, got ${actual}`);
+        }
+    }
+}
+
+/**
+ * Computes a file digest as a lowercase hex string.
+ * @param filePath The file to hash.
+ * @param algorithm A Node crypto hash name, such as sha256 or md5.
+ */
+export async function HashFileHex(filePath: string, algorithm: string): Promise<string> {
+    const hash = crypto.createHash(algorithm);
+    const stream = fs.createReadStream(filePath);
+    return new Promise((resolve, reject) => {
+        stream.on('data', (chunk: string | Buffer) => hash.update(chunk));
+        stream.on('end', () => resolve(hash.digest('hex')));
+        stream.on('error', reject);
+    });
+}
+
+/**
+ * Redacts known secrets, email addresses and long token-like strings (JWTs, access and refresh tokens) from log text.
+ * Each line is split on separator characters and every piece is checked on its own, which stays linear on any input.
+ * @param text The text to sanitize.
+ * @param secrets Literal values to redact.
+ */
+export function SanitizeLogText(text: string, secrets: readonly string[] = []): string {
+    return redactSensitiveLiterals(text, secrets)
+        .split(/([\s"'<>=,;()[\]]+)/)
+        .map(part => {
+            const at = part.indexOf('@');
+            const isEmail = at > 0 && part.lastIndexOf('.') > at + 1;
+            const isToken = part.length >= 32 && /^[A-Za-z0-9+_.-]+$/.test(part);
+            return isEmail || isToken ? '*****' : part;
+        })
+        .join('');
 }
 
 /**
@@ -664,46 +784,6 @@ export async function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = '
             logger.error(`Failed to kill process:\n${JSON.stringify(error)}`);
             throw error;
         }
-    }
-}
-
-/**
- * Kills all child processes of the given process.
- * @param procInfo The process information of the parent process.
- */
-export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
-    logger.debug(`Killing child processes of [${procInfo.pid}] ${procInfo.name}...`);
-    try {
-        if (process.platform === 'win32') {
-            const command = `Get-CimInstance Win32_Process -Filter "ParentProcessId=${procInfo.pid}" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
-            await Exec('powershell', [
-                '-NoProfile',
-                '-Command',
-                command
-            ], { silent: true, showCommand: false });
-        } else { // linux and macos
-            const psOutput = await Exec('ps', ['-eo', 'pid,ppid,comm'], { silent: true, showCommand: false });
-            const lines = psOutput.split('\n').slice(1); // Skip header line
-            const killPromises: Promise<void>[] = [];
-
-            for (const line of lines) {
-                const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/);
-
-                if (match) {
-                    const pid: number = parseInt(match[1]!, 10);
-                    const ppid: number = parseInt(match[2]!, 10);
-                    const name: string = match[3]!.trim();
-
-                    if (ppid === procInfo.pid) {
-                        killPromises.push(KillProcess({ pid, ppid, name }));
-                    }
-                }
-            }
-
-            await Promise.all(killPromises);
-        }
-    } catch (error) {
-        logger.error(`Failed to kill child processes of pid ${procInfo.pid}:\n${JSON.stringify(error)}`);
     }
 }
 

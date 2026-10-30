@@ -1,0 +1,16 @@
+name: rerun-integration-tests
+# workflow_run only fires for workflow files on the default branch, so this starts working once it is merged to main
+on:
+  workflow_run:
+    workflows: [integration-tests]
+    types: [completed]
+jobs:
+  rerun:
+    if: github.event.workflow_run.conclusion == 'failure'
+    permissions:
+      actions: write
+      checks: read
+    uses: ./.github/workflows/rerun-marked-failures.yml
+    with:
+      run-id: ${{ github.event.workflow_run.id }}
+      run-attempt: ${{ github.event.workflow_run.run_attempt }}

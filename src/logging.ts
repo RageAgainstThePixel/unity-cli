@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { UTP, Severity } from './utp';
 import { UTP_BENIGN_SEVERITY_REMAPS } from './utp-benign';
 import { GitHubActionsLoggerProvider, GitHubAnnotationLevel } from './github-actions-ci';
@@ -692,6 +693,8 @@ export class Logger {
         'username',
         'servicesConfig',
         'serviceaccountkey',
+        // licenseFile can hold the license XML itself
+        'licensefile',
     ];
 
     /**
@@ -746,6 +749,20 @@ export class Logger {
 
     public CI_setOutput(name: string, value: string): void {
         this._provider.setOutput(name, value);
+    }
+
+    /**
+     * Prepends a directory to the PATH for this process and, in CI environments that support it, later steps.
+     * @param directory The directory to add.
+     */
+    public CI_addPath(directory: string): void {
+        const entries = (process.env.PATH ?? '').split(path.delimiter);
+
+        if (!entries.includes(directory)) {
+            process.env.PATH = [directory, ...entries].filter(Boolean).join(path.delimiter);
+        }
+
+        this._provider.addPath(directory);
     }
 
     private static formatDurationMs(ms: number | undefined): string {

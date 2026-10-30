@@ -41,11 +41,11 @@ export interface UpmPackOptions {
 }
 
 /**
- * Managed Unity Package Manager CLI (unity-cli–installed `UnityPackageManager`), modeled after {@link UnityHub}:
+ * Managed Unity Package Manager CLI (unity-cli–installed `UnityPackageManager`):
  * parameterless constructor resolves roots and executable preference, {@link Install} manages downloads, {@link Exec} runs the binary.
  */
 export class UpmCli {
-    /** Root directory for managed installs (~/.unity-cli/upm), analogous to {@link UnityHub.rootDirectory}. */
+    /** Root directory for managed installs (~/.unity-cli/upm). */
     public readonly managedRoot: string;
 
     private readonly logger: Logger = Logger.instance;
@@ -192,7 +192,7 @@ export class UpmCli {
         throw new Error(`Could not find UnityPackageManager binary under ${installDir}`);
     }
 
-    /** Optional executable override (mirrors `UNITY_HUB_PATH` for {@link UnityHub}). */
+    /** Optional executable override (mirrors `UNITY_CLI_PATH` for the official Unity CLI). */
     private getExecutablePathOverride(): string | undefined {
         const p = process.env.UPM_CLI_PATH?.trim();
         return p && p.length > 0 ? path.normalize(p) : undefined;
@@ -251,7 +251,7 @@ export class UpmCli {
 
     /**
      * Resolved path used to spawn the UPM CLI: `UPM_CLI_PATH` override when set, otherwise the managed primary binary.
-     * @throws If nothing usable is installed (mirrors Hub/Editor behavior when the executable cannot be used).
+     * @throws If nothing usable is installed.
      */
     public GetExecutablePath(): string {
         const overridePath = this.getExecutablePathOverride();
@@ -267,7 +267,7 @@ export class UpmCli {
         return managed;
     }
 
-    /** Same role as {@link UnityHub.executable}: path used to spawn the UPM CLI (may reflect `UPM_CLI_PATH` or the managed install). */
+    /** Path used to spawn the UPM CLI (may reflect `UPM_CLI_PATH` or the managed install). */
     public get executable(): string {
         return this.GetExecutablePath();
     }
@@ -295,7 +295,7 @@ export class UpmCli {
     }
 
     /**
-     * Installs or updates the managed UPM CLI (mirrors {@link UnityHub.Install} for the Hub itself).
+     * Installs or updates the managed UPM CLI.
      * @returns Installed release tag (e.g. v9.27.0).
      */
     public async Install(options?: EnsureUpmInstalledOptions): Promise<string> {
@@ -390,7 +390,7 @@ export class UpmCli {
      * When running in an interactive terminal, may prompt to install a missing UPM CLI or update to the latest CDN release.
      * When not interactive, logs a warning if the running binary is older than the CDN latest (no install).
      * Compares the running binary ({@link Version}) to {@link GetLatestReleaseTag} (including when {@code UPM_CLI_PATH} overrides the managed install).
-     * Call before {@link GetExecutablePath} / {@link Exec} for Hub-style optional install/update (e.g. pack).
+     * Call before {@link GetExecutablePath} / {@link Exec} for an optional install/update (e.g. pack).
      */
     public async PromptInstallOrUpdateWhenInteractive(): Promise<void> {
         const overrideUsable = this.executableOverrideIsUsable();
@@ -462,7 +462,7 @@ export class UpmCli {
     }
 
     /**
-     * Executes the UPM CLI with the given arguments (mirrors {@link UnityHub.Exec}).
+     * Executes the UPM CLI with the given arguments.
      */
     public async Exec(args: string[], options: ExecOptions = { silent: this.logger.logLevel > LogLevel.CI, showCommand: this.logger.logLevel <= LogLevel.CI }): Promise<string> {
         const exe = this.GetExecutablePath();
