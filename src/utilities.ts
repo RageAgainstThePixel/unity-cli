@@ -441,31 +441,54 @@ export async function Sha256FileHex(filePath: string): Promise<string> {
 export async function DownloadFile(url: string, downloadPath: string, options: DownloadOptions = {}): Promise<void> {
     logger.ci(`Downloading from ${url} to ${downloadPath}...`);
     await fs.promises.mkdir(path.dirname(downloadPath), { recursive: true });
+    // installers move between hosts, so HTTPS redirects are followed; every download is checked against a pinned
+    // SHA-256 or Releases API integrity value afterwards, so where it was served from does not change what is accepted
+    let currentUrl = url;
+    let redirects = 0;
     await new Promise<void>((resolve, reject) => {
-        const request = https.get(url, { timeout: DOWNLOAD_IDLE_TIMEOUT_MS }, (response) => {
-            if (response.statusCode !== 200) {
-                response.resume();
-                reject(new Error(`GET ${url} failed: HTTP ${response.statusCode}`));
-                return;
-            }
-            const file = fs.createWriteStream(downloadPath, { mode: options.executable ? 0o755 : 0o644 });
-            const fail = (err: Error) => {
-                file.destroy();
-                void fs.promises.unlink(downloadPath).catch(() => undefined);
-                reject(err);
-            };
-            response.once('error', fail);
-            file.once('error', fail);
-            response.pipe(file);
-            file.on('finish', () => {
-                file.close(() => resolve());
+        const get = () => {
+            const request = https.get(currentUrl, { timeout: DOWNLOAD_IDLE_TIMEOUT_MS }, (response) => {
+                const location = response.headers.location;
+
+                if (response.statusCode && [301, 302, 303, 307, 308].includes(response.statusCode) && location) {
+                    response.resume();
+                    const next = new URL(location, currentUrl);
+
+                    if (next.protocol !== 'https:' || ++redirects > 5) {
+                        reject(new Error(`GET ${url} failed: ${next.protocol !== 'https:' ? `redirected to ${next.protocol}` : 'too many redirects'}`));
+                        return;
+                    }
+
+                    currentUrl = next.href;
+                    get();
+                    return;
+                }
+
+                if (response.statusCode !== 200) {
+                    response.resume();
+                    reject(new Error(`GET ${url} failed: HTTP ${response.statusCode}`));
+                    return;
+                }
+                const file = fs.createWriteStream(downloadPath, { mode: options.executable ? 0o755 : 0o644 });
+                const fail = (err: Error) => {
+                    file.destroy();
+                    void fs.promises.unlink(downloadPath).catch(() => undefined);
+                    reject(err);
+                };
+                response.once('error', fail);
+                file.once('error', fail);
+                response.pipe(file);
+                file.on('finish', () => {
+                    file.close(() => resolve());
+                });
             });
-        });
-        request.on('timeout', () => request.destroy(new Error(`GET ${url} timed out`)));
-        request.on('error', (error) => {
-            void fs.promises.unlink(downloadPath).catch(() => undefined);
-            reject(error);
-        });
+            request.on('timeout', () => request.destroy(new Error(`GET ${url} timed out`)));
+            request.on('error', (error) => {
+                void fs.promises.unlink(downloadPath).catch(() => undefined);
+                reject(error);
+            });
+        };
+        get();
     });
 
     await new Promise((r) => setTimeout(r, 100));
@@ -533,48 +556,6 @@ export function SanitizeLogText(text: string, secrets: readonly string[] = []): 
             return isEmail || isToken ? '*****' : part;
         })
         .join('');
-}
-
-/**
- * Lists running processes whose executable file name is `name` (e.g. Unity.Licensing.Client), wherever it lives.
- * @param name The executable file name, without .exe.
- */
-export async function FindProcessesByName(name: string): Promise<ProcInfo[]> {
-    const results: ProcInfo[] = [];
-    const target = name.toLowerCase();
-
-    try {
-        if (process.platform === 'win32') {
-            const output = await Exec('powershell', [
-                '-NoProfile',
-                '-Command',
-                'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId)`t$($_.ParentProcessId)`t$($_.Name)" }'
-            ], { silent: true, showCommand: false });
-
-            for (const line of output.split(/\r?\n/)) {
-                const [pid, ppid, executable] = line.split('\t');
-
-                if (pid && ppid && executable && executable.toLowerCase().replace(/\.exe$/, '') === target) {
-                    results.push({ pid: parseInt(pid, 10), ppid: parseInt(ppid, 10), name: executable });
-                }
-            }
-        } else {
-            const output = await Exec('ps', ['-axo', 'pid=,ppid=,comm='], { silent: true, showCommand: false });
-
-            for (const line of output.split('\n')) {
-                const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/);
-
-                // comm is the executable path on macOS and a name cut to 15 characters on Linux
-                if (match && (path.basename(match[3]!).toLowerCase() === target || target.startsWith(match[3]!.toLowerCase()) && match[3]!.length >= 15)) {
-                    results.push({ pid: parseInt(match[1]!, 10), ppid: parseInt(match[2]!, 10), name: match[3]! });
-                }
-            }
-        }
-    } catch (error) {
-        logger.debug(`Failed to list processes named ${name}: ${error}`);
-    }
-
-    return results.filter(proc => proc.pid !== process.pid);
 }
 
 /**
@@ -804,89 +785,6 @@ export async function KillProcess(procInfo: ProcInfo, signal: NodeJS.Signals = '
             throw error;
         }
     }
-}
-
-/**
- * Kills all child processes of the given process.
- * @param procInfo The process information of the parent process.
- */
-export async function KillChildProcesses(procInfo: ProcInfo): Promise<void> {
-    logger.debug(`Killing child processes of [${procInfo.pid}] ${procInfo.name}...`);
-    try {
-        if (process.platform === 'win32') {
-            const command = `Get-CimInstance Win32_Process -Filter "ParentProcessId=${procInfo.pid}" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
-            await Exec('powershell', [
-                '-NoProfile',
-                '-Command',
-                command
-            ], { silent: true, showCommand: false });
-        } else { // linux and macos
-            const psOutput = await Exec('ps', ['-eo', 'pid,ppid,comm'], { silent: true, showCommand: false });
-            const lines = psOutput.split('\n').slice(1); // Skip header line
-            const killPromises: Promise<void>[] = [];
-
-            for (const line of lines) {
-                const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/);
-
-                if (match) {
-                    const pid: number = parseInt(match[1]!, 10);
-                    const ppid: number = parseInt(match[2]!, 10);
-                    const name: string = match[3]!.trim();
-
-                    if (ppid === procInfo.pid) {
-                        killPromises.push(KillProcess({ pid, ppid, name }));
-                    }
-                }
-            }
-
-            await Promise.all(killPromises);
-        }
-    } catch (error) {
-        logger.error(`Failed to kill child processes of pid ${procInfo.pid}:\n${JSON.stringify(error)}`);
-    }
-}
-
-/**
- * Lists running processes whose executable lives under a directory, such as an editor's own helpers
- * (Unity.Licensing.Client, UnityShaderCompiler, bee_backend and the like).
- * @param directory The directory the executables live under.
- * @returns The matching processes.
- */
-export async function FindProcessesUnder(directory: string): Promise<ProcInfo[]> {
-    const root = path.resolve(directory).toLowerCase();
-    const results: ProcInfo[] = [];
-
-    try {
-        if (process.platform === 'win32') {
-            const output = await Exec('powershell', [
-                '-NoProfile',
-                '-Command',
-                'Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath } | ForEach-Object { "$($_.ProcessId)`t$($_.ParentProcessId)`t$($_.ExecutablePath)" }'
-            ], { silent: true, showCommand: false });
-
-            for (const line of output.split(/\r?\n/)) {
-                const [pid, ppid, executable] = line.split('\t');
-
-                if (pid && ppid && executable && path.resolve(executable).toLowerCase().startsWith(root)) {
-                    results.push({ pid: parseInt(pid, 10), ppid: parseInt(ppid, 10), name: executable });
-                }
-            }
-        } else {
-            const output = await Exec('ps', ['-axo', 'pid=,ppid=,args='], { silent: true, showCommand: false });
-
-            for (const line of output.split('\n')) {
-                const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/);
-
-                if (match && match[3]!.toLowerCase().startsWith(root)) {
-                    results.push({ pid: parseInt(match[1]!, 10), ppid: parseInt(match[2]!, 10), name: match[3]! });
-                }
-            }
-        }
-    } catch (error) {
-        logger.debug(`Failed to list processes under ${directory}: ${error}`);
-    }
-
-    return results.filter(proc => proc.pid !== process.pid);
 }
 
 /**

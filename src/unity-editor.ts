@@ -11,12 +11,19 @@ import {
     GetArgumentValueAsString,
     ProcInfo,
     KillProcess,
-    KillChildProcesses,
     Exec,
-    FindProcessesUnder,
     redactSensitiveLiterals,
 } from './utilities';
 import { UnityCli } from './unity-cli';
+import {
+    IsExecutableNamed,
+    IsPathUnder,
+    ListProcesses,
+    OwnedRoot,
+    OwnedSpawnOptions,
+    SelectOwnedProcesses,
+    TrackOwnedProcess,
+} from './process-tracker';
 import {
     TailLogFile,
     LogTailResult,
@@ -172,22 +179,38 @@ export class UnityEditor {
         let editorLogPath: string | undefined = undefined;
 
         const editorRootPath = this.editorRootPath;
-        // helpers the editor starts from its own folder (licensing client, shader compiler, bee_backend) outlive it as
-        // orphans, out of reach of a parent-pid search; anything new under the editor folder after the run is ours
-        const preexistingEditorProcesses = new Set((await FindProcessesUnder(editorRootPath)).map(proc => proc.pid));
+        let runStartedAt = 0;
+        let runPaths: string[] = [];
 
+        // the helpers the editor starts (shader compiler, bee_backend, licensing client) outlive it as orphans, so the
+        // sweep looks for this run's own process group (macOS, Linux) or descendants (Windows), never the whole machine:
+        // on a shared self-hosted runner another job's editor may run from the same install
         async function tryKillEditorProcesses(): Promise<void> {
             try {
-                if (procInfo) {
-                    await KillProcess(procInfo);
-                    await KillChildProcesses(procInfo);
+                if (!procInfo) {
+                    return;
+                }
+
+                const root: OwnedRoot = { pid: procInfo.pid, startedAt: runStartedAt };
+                const processes = await ListProcesses();
+                const owned = new Map(SelectOwnedProcesses([root], processes).map(proc => [proc.pid, proc] as const));
+
+                if (process.platform === 'win32') {
+                    // a helper whose parent already exited can no longer be traced to the run, so on Windows an
+                    // editor-folder process started during this run that names this run's project or log counts too
+                    for (const proc of processes) {
+                        if ((proc.createdAt ?? 0) >= runStartedAt - 2000 &&
+                            proc.executablePath && IsPathUnder(proc.executablePath, editorRootPath) &&
+                            runPaths.some(runPath => proc.commandLine.toLowerCase().includes(runPath.toLowerCase()))) {
+                            owned.set(proc.pid, proc);
+                        }
+                    }
                 }
 
                 // the licensing client is left alone: it may still be saving the license it just updated, and killing it
                 // then loses the license for the next run; return-license stops it at the end of the job instead
-                const leftovers = (await FindProcessesUnder(editorRootPath))
-                    .filter(proc => !preexistingEditorProcesses.has(proc.pid) && !/licensing/i.test(proc.name));
-                await Promise.all(leftovers.map(proc => KillProcess(proc)));
+                const leftovers = [...owned.values()].filter(proc => !IsExecutableNamed(proc, 'Unity.Licensing.Client'));
+                await Promise.all(leftovers.map(proc => KillProcess(proc).catch(() => undefined)));
             } catch (error) {
                 Logger.instance.error(`Failed to kill Unity process: ${error}`);
             }
@@ -267,6 +290,8 @@ export class UnityEditor {
             };
 
             const unityCli = allowUnityRun ? await this.getUnityCliForRun(command) : undefined;
+            runPaths = [logPath, ...(command.projectPath ? [command.projectPath] : [])];
+            runStartedAt = Date.now();
 
             if (unityCli) {
                 const runArgs = UnityEditor.GetUnityRunArgs(this.editorPath, command.projectPath!, logPath, command.args);
@@ -276,6 +301,7 @@ export class UnityEditor {
                     unityCli.executable,
                     runArgs, {
                     stdio: ['ignore', 'pipe', 'pipe'],
+                    ...OwnedSpawnOptions(),
                     env: baseEditorEnv
                 });
                 const collect = (data: Buffer) => { unityRunOutput += data.toString(); };
@@ -289,6 +315,7 @@ export class UnityEditor {
                     'xvfb-run',
                     [this.editorPath, ...command.args], {
                     stdio: ['ignore', 'ignore', 'ignore'],
+                    ...OwnedSpawnOptions(),
                     env: {
                         ...baseEditorEnv,
                         DISPLAY: baseEditorEnv.DISPLAY || ':99'
@@ -302,6 +329,7 @@ export class UnityEditor {
                     'arch',
                     ['-x86_64', this.editorPath, ...command.args], {
                     stdio: ['ignore', 'ignore', 'ignore'],
+                    ...OwnedSpawnOptions(),
                     env: baseEditorEnv
                 });
             } else {
@@ -309,6 +337,7 @@ export class UnityEditor {
                     this.editorPath,
                     command.args, {
                     stdio: ['ignore', 'ignore', 'ignore'],
+                    ...OwnedSpawnOptions(),
                     env: baseEditorEnv
                 });
             }
@@ -320,6 +349,9 @@ export class UnityEditor {
             process.once('SIGINT', onCancel);
             process.once('SIGTERM', onCancel);
             procInfo = { pid: unityProcess.pid, ppid: process.pid, name: this.editorPath };
+            // the licensing client the editor starts is left running after the run; recording the editor lets
+            // return-license find and stop it at the end of the job
+            TrackOwnedProcess(unityProcess, runStartedAt);
             this.logger.debug(`Unity process started with pid: ${procInfo.pid}`);
             exitCode = await new Promise((resolve, reject) => {
                 // the editor can start a licensing client that outlives it and inherits unity run's piped
@@ -385,6 +417,9 @@ export class UnityEditor {
                 } else if (exitCode !== 0) {
                     throw Error(`Unity failed with exit code ${exitCode}`);
                 }
+            } else {
+                // a cancelled run did not finish, so it must not end the command with exit code 0
+                throw Error('The Unity run was cancelled');
             }
         }
     }

@@ -11,6 +11,8 @@ import {
     Sha256FileHex,
     redactSensitiveLiterals,
 } from './utilities';
+import { OwnedSpawnOptions, TrackOwnedProcess } from './process-tracker';
+import { compare as compareSemver, valid } from 'semver';
 
 const CDN_BASE = 'https://public-cdn.cloud.unity3d.com/hub/prod/cli/';
 const TOOL_NAME = 'unity-cli';
@@ -87,7 +89,8 @@ export class UnityCli {
     }
 
     /**
-     * Finds an installed official Unity CLI from UNITY_CLI_PATH, the PATH, the tool cache, or the install script's default location.
+     * Finds an installed official Unity CLI from UNITY_CLI_PATH, the tool cache, the install script's default location, or the PATH.
+     * The PATH comes last, since other programs named unity live there, such as the Unity7 shell on Ubuntu desktops.
      */
     public static async Find(): Promise<UnityCli | undefined> {
         const candidates: string[] = [];
@@ -96,14 +99,14 @@ export class UnityCli {
             candidates.push(process.env.UNITY_CLI_PATH);
         }
 
+        candidates.push(...findCachedExecutables());
+        candidates.push(...defaultInstallLocations());
+
         for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
             if (dir && dir.length > 0) {
                 candidates.push(path.join(dir, EXE_NAME));
             }
         }
-
-        candidates.push(...findCachedExecutables());
-        candidates.push(...defaultInstallLocations());
 
         for (const candidate of candidates) {
             // only ever run a binary named unity(.exe), even when UNITY_CLI_PATH points elsewhere
@@ -129,7 +132,22 @@ export class UnityCli {
     public static async Install(version: string = 'latest'): Promise<UnityCli> {
         configureEnvironment();
         const requested = normalizeVersion(version);
-        const manifest = await fetchManifest(requested);
+        let manifest: UnityCliManifest;
+
+        try {
+            manifest = await fetchManifest(requested);
+        } catch (error) {
+            // with no network, the newest CLI already in the tool cache still does for latest
+            const cachedCli = requested === 'latest' ? await findNewestCachedCli() : undefined;
+
+            if (!cachedCli) {
+                throw error;
+            }
+
+            Logger.instance.warn(`Could not resolve the latest Unity CLI, using the cached ${cachedCli.version}.\n${error}`);
+            return exportCli(cachedCli);
+        }
+
         const platformKey = `${process.platform}-${process.arch}`;
         const binary = manifest.binaries[platformKey];
 
@@ -208,11 +226,15 @@ export class UnityCli {
                 let stdout = '';
                 let stderr = '';
                 let timedOut = false;
+                const startedAt = Date.now();
                 const child = spawn(this.executable, args, {
                     shell: false,
                     stdio: ['ignore', 'pipe', 'pipe'],
                     env: process.env,
+                    ...OwnedSpawnOptions(),
                 });
+                // helpers the CLI leaves running, such as its licensing client, stay reachable through this record
+                TrackOwnedProcess(child, startedAt);
                 const timer = options.timeoutMs
                     ? setTimeout(() => {
                         timedOut = true;
@@ -222,24 +244,35 @@ export class UnityCli {
                 const onSignal = () => child.kill('SIGTERM');
                 process.once('SIGINT', onSignal);
                 process.once('SIGTERM', onSignal);
-                const writeLines = (chunk: string) => {
-                    if (!options.stream) { return; }
-                    for (const line of chunk.split(/\r?\n/)) {
-                        // the CLI prints a plugin hint to stderr on every run
-                        if (line.length > 0 && !line.includes('<claude-code-hint')) {
-                            process.stdout.write(`${redact(line)}\n`);
-                        }
+                // a chunk can end mid-line, so each stream keeps its unfinished line until the rest arrives
+                const pending = { stdout: '', stderr: '' };
+                const writeLine = (line: string) => {
+                    // the CLI prints a plugin hint to stderr on every run
+                    if (line.length > 0 && !line.includes('<claude-code-hint')) {
+                        process.stdout.write(`${redact(line)}\n`);
                     }
+                };
+                const writeLines = (stream: 'stdout' | 'stderr', chunk: string) => {
+                    if (!options.stream) { return; }
+                    const lines = (pending[stream] + chunk).split(/\r?\n/);
+                    pending[stream] = lines.pop() ?? '';
+                    lines.forEach(writeLine);
+                };
+                const flushLines = () => {
+                    if (!options.stream) { return; }
+                    writeLine(pending.stdout);
+                    writeLine(pending.stderr);
+                    pending.stdout = pending.stderr = '';
                 };
                 child.stdout.on('data', (data: Buffer) => {
                     const chunk = data.toString();
                     stdout += chunk;
-                    writeLines(chunk);
+                    writeLines('stdout', chunk);
                 });
                 child.stderr.on('data', (data: Buffer) => {
                     const chunk = data.toString();
                     stderr += chunk;
-                    writeLines(chunk);
+                    writeLines('stderr', chunk);
                 });
                 const cleanup = () => {
                     if (timer) { clearTimeout(timer); }
@@ -252,6 +285,7 @@ export class UnityCli {
                 });
                 child.on('close', (code) => {
                     cleanup();
+                    flushLines();
                     const exitCode = timedOut ? 14 : (code ?? 1);
                     this.logger.debug(`unity exited with code ${exitCode}`);
                     resolve({ exitCode, stdout: redact(stdout), stderr: redact(stderr) });
@@ -482,7 +516,9 @@ async function getCliVersion(cliPath: string): Promise<string> {
         throw new Error(`${cliPath} --version failed with exit code ${exitCode}: ${stripHint(stderr).trim()}`);
     }
 
-    const match = stdout.match(/v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)/);
+    // the official CLI prints only its version; another program named unity prints more, such as "unity 7.7.0"
+    const lastLine = stdout.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0).pop() ?? '';
+    const match = /^v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(lastLine);
 
     if (!match || !match[1]) {
         throw new Error(`Unable to parse Unity CLI version from: ${stdout.trim()}`);
@@ -552,11 +588,28 @@ function findCachedExecutables(): string[] {
         return [];
     }
 
+    // newest first by semver, so 1.0.0-beta.14 sorts ahead of 1.0.0-beta.9
     return fs.readdirSync(toolDir)
-        .filter(version => fs.existsSync(path.join(toolDir, version, `${os.arch()}.complete`)))
-        .sort()
-        .reverse()
+        .filter(version => valid(version) !== null && fs.existsSync(path.join(toolDir, version, `${os.arch()}.complete`)))
+        .sort((a, b) => compareSemver(b, a))
         .map(version => path.join(toolDir, version, os.arch(), EXE_NAME));
+}
+
+/** The newest complete CLI in the tool cache that still runs, if any. */
+async function findNewestCachedCli(): Promise<UnityCli | undefined> {
+    for (const candidate of findCachedExecutables()) {
+        if (!isExecutableFile(candidate)) {
+            continue;
+        }
+
+        try {
+            return new UnityCli(candidate, await getCliVersion(candidate));
+        } catch (error) {
+            Logger.instance.debug(`Skipping ${candidate}: ${error}`);
+        }
+    }
+
+    return undefined;
 }
 
 function defaultInstallLocations(): string[] {

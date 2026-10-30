@@ -8,8 +8,6 @@ import {
     ResolveGlobToPath,
     DownloadFile,
     Exec,
-    FindProcessesByName,
-    FindProcessesUnder,
     KillProcess,
     SanitizeLogText,
     Sha256FileHex,
@@ -18,6 +16,13 @@ import {
     redactSensitiveLiterals,
     tryParseJson
 } from './utilities';
+import {
+    FindOwnedProcesses,
+    IsExecutableNamed,
+    IsPathUnder,
+    OwnedSpawnOptions,
+    TrackOwnedProcess,
+} from './process-tracker';
 
 export enum LicenseType {
     personal = 'personal',
@@ -644,6 +649,7 @@ export class LicensingClient {
         let output: string = '';
         let exitCode: number = 0;
         let timedOut = false;
+        let killedBy: NodeJS.Signals | null = null;
 
         // values that must never reach a log, even outside CI where ::add-mask:: does nothing
         const sensitiveFlags = ['--username', '--password', '--serial', '--return-floating'];
@@ -657,9 +663,13 @@ export class LicensingClient {
         try {
             exitCode = await new Promise<number>((resolve, reject) => {
                 fs.accessSync(this.licenseClientPath!, fs.constants.R_OK | fs.constants.X_OK);
+                const startedAt = Date.now();
                 const child = spawn(this.licenseClientPath!, args, {
-                    stdio: ['ignore', 'pipe', 'pipe']
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                    ...OwnedSpawnOptions(),
                 });
+                // the background instance the client can start stays reachable through this record
+                TrackOwnedProcess(child, startedAt);
 
                 const sigintHandler = () => child.kill('SIGINT');
                 const sigtermHandler = () => child.kill('SIGTERM');
@@ -694,18 +704,20 @@ export class LicensingClient {
                 // the client can start a background instance that inherits its stdout and stderr,
                 // so 'close' may never fire; settle on 'exit' and stop reading the pipes shortly after
                 let settled = false;
-                const settle = (code: number | null) => {
+                const settle = (code: number | null, signal: NodeJS.Signals | null) => {
                     if (settled) { return; }
                     settled = true;
                     removeListeners();
-                    resolve(timedOut ? -1 : code === null ? 0 : code);
+                    killedBy = signal;
+                    // a client killed by a signal did not finish its work, so it is a failure, not exit code 0
+                    resolve(timedOut ? -1 : code === null ? (signal ? -2 : 0) : code);
                 };
                 child.on('close', settle);
-                child.on('exit', (code) => {
+                child.on('exit', (code, signal) => {
                     setTimeout(() => {
                         child.stdout.destroy();
                         child.stderr.destroy();
-                        settle(code);
+                        settle(code, signal);
                     }, 1000);
                 });
             });
@@ -716,10 +728,8 @@ export class LicensingClient {
             }
 
             if (!silent || exitCode !== 0) {
-                // --debug output can carry tokens, so it gets the same sanitizing as the client log
-                const maskedOutput = args.includes('--debug')
-                    ? this.maskSerialInOutput(output).split(/\r?\n/).map(line => LicensingClient.sanitizeLogLine(line, secrets)).join('\n')
-                    : redact(this.maskSerialInOutput(output));
+                // any client output can carry emails and tokens, so it gets the same sanitizing as the client log
+                const maskedOutput = this.maskSerialInOutput(output).split(/\r?\n/).map(line => LicensingClient.sanitizeLogLine(line, secrets)).join('\n');
                 const splitLines = maskedOutput.split(/\r?\n/);
 
                 for (const line of splitLines) {
@@ -731,7 +741,7 @@ export class LicensingClient {
             this.logger.endGroup();
 
             if (exitCode !== 0) {
-                const message = timedOut ? 'Timed out' : this.getExitCodeMessage(exitCode);
+                const message = timedOut ? 'Timed out' : killedBy ? `Killed by ${killedBy}` : this.getExitCodeMessage(exitCode);
                 throw new Error(`License command failed with exit code ${exitCode}: ${message}`);
             }
         }
@@ -768,8 +778,9 @@ export class LicensingClient {
     }
 
     /**
-     * Stops Unity.Licensing.Client instances left running in the background, such as the one the official Unity CLI starts.
-     * A command line activation can wait on that instance indefinitely. Only done in CI, so a developer's own session is left alone.
+     * Stops Unity.Licensing.Client instances that this job's unity-cli commands started, directly or through the
+     * official Unity CLI or an editor run. A command line activation can wait on such an instance indefinitely.
+     * Clients other jobs started are left alone, even on a shared self-hosted runner. Only done in CI.
      */
     public static async StopBackgroundClients(): Promise<void> {
         if (process.env.CI !== 'true') {
@@ -777,7 +788,7 @@ export class LicensingClient {
         }
 
         // matched on the executable's own name, so a process that only mentions it on its command line is left alone
-        const clients = await FindProcessesByName('Unity.Licensing.Client');
+        const clients = (await FindOwnedProcesses()).filter(proc => IsExecutableNamed(proc, 'Unity.Licensing.Client'));
         await Promise.all(clients.map(client => KillProcess(client).catch(() => undefined)));
     }
 
@@ -1191,7 +1202,9 @@ export async function ActivateLicense(options: ActivateOptions): Promise<string 
     }
 
     await LicensingClient.StopBackgroundClients();
-    return await new LicensingClient().Activate(options);
+    const token = await new LicensingClient().Activate(options);
+    await logLicenseBinding();
+    return token;
 }
 
 /**
@@ -1207,7 +1220,7 @@ async function logLicenseBinding(): Promise<void> {
             Logger.instance.info(`The license file is bound to this machine's identity: ${bindings.some(binding => content.includes(binding)) ? 'yes' : 'no'}`);
         }
     } catch (error) {
-        Logger.instance.debug(`Could not compare the license file with this machine's identity: ${error}`);
+        Logger.instance.info(`Could not compare the license file with this machine's identity: ${error instanceof Error ? error.message : error}`);
     }
 }
 
@@ -1245,7 +1258,8 @@ export async function ReturnLicense(licenseType: LicenseType, token: string | un
 }
 
 /**
- * Stops background processes the official Unity CLI left running from its own folder. Only done in CI.
+ * Stops background processes the official Unity CLI left running from its own folder, when this job's unity-cli
+ * commands started them. Only done in CI.
  */
 async function stopUnityCliHelpers(): Promise<void> {
     const cliPath = process.env.UNITY_CLI_PATH;
@@ -1254,7 +1268,9 @@ async function stopUnityCliHelpers(): Promise<void> {
         return;
     }
 
-    const helpers = await FindProcessesUnder(path.dirname(cliPath));
+    const cliDirectory = path.dirname(cliPath);
+    const helpers = (await FindOwnedProcesses())
+        .filter(proc => IsPathUnder(proc.executablePath ?? proc.commandLine.split(' ')[0] ?? '', cliDirectory));
     await Promise.all(helpers.map(helper => KillProcess(helper).catch(() => undefined)));
 }
 
@@ -1333,6 +1349,9 @@ async function activateFromLicenseFile(licenseFile: string): Promise<boolean> {
         content = await fs.promises.readFile(trimmed, 'utf-8');
     } else if (trimmed.startsWith('<')) {
         content = trimmed;
+    } else if (/\.ulf$/i.test(trimmed) || /^([A-Za-z]:[\\/]|[\\/~.])/.test(trimmed)) {
+        // base64 of a license starts with "PD" or "PE", so this is a path to a file that is not there
+        throw new Error(`The license file was not found: ${trimmed}`);
     } else {
         content = Buffer.from(trimmed, 'base64').toString('utf-8');
     }
