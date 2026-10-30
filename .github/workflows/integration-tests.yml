@@ -12,8 +12,7 @@ on:
       editors:
         description: Which editors to test
         type: choice
-        # license-refresh runs one macOS and one Linux row, which store fresh UNITY_LICENSE_* secrets with few sign-ins
-        options: [unity-6-and-newer, legacy, license-refresh]
+        options: [unity-6-and-newer, legacy]
         default: unity-6-and-newer
 concurrency:
   # the monthly legacy run gets its own group, so a push to main does not cancel it
@@ -51,15 +50,72 @@ jobs:
         id: setup-jobs
         with:
           # pull requests and pushes test Unity 6 and newer; 4.7.2 through 2022.3 run monthly or on demand
-          build-options: ${{ (github.event_name == 'schedule' || inputs.editors == 'legacy') && './.github/workflows/build-options-legacy.json' || inputs.editors == 'license-refresh' && './.github/workflows/build-options-license-refresh.json' || './.github/workflows/build-options.json' }}
+          build-options: ${{ (github.event_name == 'schedule' || inputs.editors == 'legacy') && './.github/workflows/build-options-legacy.json' || './.github/workflows/build-options.json' }}
           # one group per editor version; every group runs at once, since macOS and Linux rows share one seat per OS
           # and Windows rows return theirs
           group-by: unity-version
     outputs:
       jobs: ${{ steps.setup-jobs.outputs.jobs }}
+  # One sign-in per OS for the whole run. macOS and Linux runners share one machine identity, so the license activated
+  # here serves every macOS or Linux row of this run, which then needs no sign-in of its own. It is passed on encrypted,
+  # because artifacts of a public repository can be downloaded by anyone, and it is never returned: a return would
+  # revoke it for every job on that identity, other repositories' included. license-cleanup deletes it after the run.
+  license:
+    if: github.event.pull_request.draft == false
+    name: license ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.x
+          cache: npm
+      - name: Setup unity-cli
+        run: |
+          npm ci
+          npm run build
+          npm run link
+      - name: Activate License
+        id: activate
+        shell: pwsh
+        env:
+          UNITY_USERNAME: ${{ secrets.UNITY_USERNAME }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          if (-not $env:UNITY_USERNAME -or -not $env:UNITY_PASSWORD) {
+            # pull requests from forks get no secrets; their rows fall back to their own activation
+            echo '::warning::No Unity credentials, so this run has no shared license'
+            exit 0
+          }
+          unity-cli upm-install --json
+          unity-cli license-context
+          unity-cli activate-license --license personal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $dir = Join-Path $env:RUNNER_TEMP 'unity-license'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          # the key never reaches a command line: openssl reads it from the environment
+          $env:LICENSE_KEY = "$($env:UNITY_PASSWORD):$($env:GITHUB_RUN_ID)"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -in (unity-cli license-file-path) -out (Join-Path $dir 'unity-license.enc') -pass env:LICENSE_KEY
+          if ($LASTEXITCODE -ne 0) { throw 'Could not encrypt the run license' }
+          "encrypted=true" >> $env:GITHUB_OUTPUT
+      - uses: actions/upload-artifact@v7
+        if: ${{ steps.activate.outputs.encrypted == 'true' }}
+        with:
+          name: unity-license-${{ runner.os }}
+          path: ${{ runner.temp }}/unity-license/unity-license.enc
+          retention-days: 1
+          if-no-files-found: error
   validate:
-    if: ${{ needs.setup.outputs.jobs }}
-    needs: setup
+    # the rows still run when the license job fails, and activate with the account instead
+    if: ${{ !cancelled() && needs.setup.result == 'success' && needs.setup.outputs.jobs }}
+    needs: [setup, license]
     name: build ${{ matrix.jobs.name }}
     permissions:
       contents: read
@@ -73,7 +129,8 @@ jobs:
       matrix: ${{ toJSON(matrix.jobs.matrix) }}
       utp-test-profile: normal
   validate-negative-scenarios:
-    if: github.event.pull_request.draft == false && github.event_name != 'schedule' && inputs.editors != 'legacy' && inputs.editors != 'license-refresh'
+    if: ${{ !cancelled() && github.event.pull_request.draft == false && github.event_name != 'schedule' && inputs.editors != 'legacy' }}
+    needs: license
     name: build negative-scenarios
     permissions:
       contents: read
@@ -110,6 +167,26 @@ jobs:
             echo "::error::No Unity rows ran (setup: ${SETUP_RESULT}, validate: ${VALIDATE_RESULT})"
             exit 1
           fi
+  license-cleanup:
+    needs: [license, validate, validate-negative-scenarios]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write # to delete this run's license artifacts
+    steps:
+      - name: Delete the run license
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ids = gh api "repos/$($env:GITHUB_REPOSITORY)/actions/runs/$($env:GITHUB_RUN_ID)/artifacts?per_page=100" --paginate --jq '.artifacts[] | select(.name | startswith("unity-license-")) | .id'
+          if ($LASTEXITCODE -ne 0) { throw 'Could not list the run artifacts' }
+          foreach ($id in $ids) {
+            gh api -X DELETE "repos/$($env:GITHUB_REPOSITORY)/actions/artifacts/$id"
+            if ($LASTEXITCODE -ne 0) { throw "Could not delete artifact $id" }
+          }
+          echo "Deleted $(@($ids).Count) license artifacts"
   timeline:
     needs: [setup, validate, validate-negative-scenarios]
     if: always()

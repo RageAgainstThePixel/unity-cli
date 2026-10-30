@@ -14,12 +14,6 @@ on:
         required: true
       UNITY_PASSWORD:
         required: true
-      CI_TOKEN:
-        required: false
-      UNITY_LICENSE_MACOS:
-        required: false
-      UNITY_LICENSE_LINUX:
-        required: false
 jobs:
   build:
     # rows are grouped by editor version, so the name carries the OS and target
@@ -174,16 +168,38 @@ jobs:
               echo "- path: \`${UNITY_EDITOR_PATH:-n/a}\`"
             } >> "$GITHUB_STEP_SUMMARY"
           fi
-      # macOS and Linux runners all report the same machine identity to Unity, so one license per OS serves every job:
-      # those rows activate from the license kept in the UNITY_LICENSE_MACOS / UNITY_LICENSE_LINUX repo secrets and never
-      # return it. When that secret is missing or no longer valid, the row activates with the account and stores the new
-      # license there with CI_TOKEN for the next run. Windows runners are a new machine every job, so Windows rows
-      # activate with the account and return the license.
+      # macOS and Linux runners all report the same machine identity to Unity, so the license the caller's license job
+      # activated once for this run serves every macOS or Linux row; it arrives as an encrypted artifact and is never
+      # returned. Without it, or when it no longer fits this machine, the row activates with the account. Windows runners
+      # are a new machine every job, so Windows rows activate with the account and return the license.
+      - name: Download run license
+        id: download-run-license
+        if: ${{ runner.os != 'Windows' && matrix.unity-version != 'none' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: unity-license-${{ runner.os }}
+          path: ${{ runner.temp }}/unity-license
+      - name: Decrypt run license
+        id: run-license
+        if: ${{ steps.download-run-license.outcome == 'success' }}
+        continue-on-error: true
+        shell: pwsh
+        env:
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'unity-license'
+          $license = Join-Path $dir 'Unity_lic.ulf'
+          # the key never reaches a command line: openssl reads it from the environment
+          $env:LICENSE_KEY = "$($env:UNITY_PASSWORD):$($env:GITHUB_RUN_ID)"
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in (Join-Path $dir 'unity-license.enc') -out $license -pass env:LICENSE_KEY
+          if ($LASTEXITCODE -ne 0) { throw 'Could not decrypt the run license' }
+          "path=$license" >> $env:GITHUB_OUTPUT
       - name: Activate License
         id: activate-license
         if: ${{ matrix.unity-version != 'none' }}
         env:
-          UNITY_LICENSE: ${{ runner.os == 'macOS' && secrets.UNITY_LICENSE_MACOS || runner.os == 'Linux' && secrets.UNITY_LICENSE_LINUX || '' }}
+          UNITY_LICENSE: ${{ steps.run-license.outputs.path }}
           # read by activate-license from the environment, so the credentials never sit on a command line
           UNITY_USERNAME: ${{ secrets.UNITY_USERNAME }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
@@ -191,31 +207,12 @@ jobs:
           unity-cli license-context
           major="${UNITY_EDITOR_VERSION%%.*}"
           # 4.x and 5.x editors need their own license version, so they always activate with the account
-          shared_identity=false
-          if [ "${RUNNER_OS}" != "Windows" ] && [ "${major}" -ge 2017 ]; then
-            shared_identity=true
-          else
+          if [ "${RUNNER_OS}" = "Windows" ] || [ "${major}" -lt 2017 ]; then
             unset UNITY_LICENSE
           fi
-          echo "shared-identity=${shared_identity}" >> "$GITHUB_OUTPUT"
           # activate-license writes license-source=license-file|account to this step's outputs
           unity-cli activate-license --license personal
-      - name: Store license secret
-        # only when a shared-identity row had to activate with the account, i.e. the stored license was missing or stale,
-        # and never in a pull_request run, so a token that can write secrets is only exposed to pushes and manual runs
-        if: ${{ github.event_name != 'pull_request' && steps.activate-license.outputs.shared-identity == 'true' && steps.activate-license.outputs.license-source == 'account' }}
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.CI_TOKEN }}
-        run: |
-          if [ -z "${GH_TOKEN}" ]; then
-            echo "::warning::CI_TOKEN is not available, so the license is not stored for the next run"
-            exit 0
-          fi
-          secret_name="UNITY_LICENSE_$(echo "${RUNNER_OS}" | tr '[:lower:]' '[:upper:]')"
-          # gh reads the value from stdin, so the license never appears on a command line or in the log
-          gh secret set "${secret_name}" --repo "${GITHUB_REPOSITORY}" < "$(unity-cli license-file-path)"
-          echo "Stored the license in ${secret_name}"
+          rm -rf "${RUNNER_TEMP}/unity-license"
       - name: Create Unity Project
         if: ${{ matrix.unity-version != 'none' }}
         run: |
