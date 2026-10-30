@@ -1254,7 +1254,7 @@ async function logLicenseBinding(): Promise<void> {
     }
 }
 
-/** When `return-license` returns: `auto` skips a shared runner identity, `always` and `never` do what they say. */
+/** When `return-license` returns: `auto` skips a personal license on a shared runner identity, `always` and `never` do what they say. */
 export type ReturnWhen = 'auto' | 'always' | 'never';
 
 /**
@@ -1269,21 +1269,35 @@ export function IsSharedRunnerIdentity(): boolean {
  * Returns a Unity license through the official Unity CLI first, then the Unity Licensing Client.
  * @param licenseType The type of license to return.
  * @param token The floating license token from activation. A floating license with a token is returned by the Unity Licensing Client.
- * @param when `auto` (the default) skips returning a personal or professional license on a shared runner identity.
+ * @param when `auto` (the default) skips returning a personal license on a shared runner identity. Professional and
+ * floating licenses always return under `auto`: a professional seat that is never returned stays taken.
  */
 export async function ReturnLicense(licenseType: LicenseType, token: string | undefined = undefined, when: ReturnWhen = 'auto'): Promise<void> {
     try {
         if (when === 'never') {
             Logger.instance.info('Skipping the license return (--when never).');
-        } else if (when === 'auto' && licenseType !== LicenseType.floating && IsSharedRunnerIdentity()) {
+            warnProfessionalSeat(licenseType, 'was not returned');
+        } else if (when === 'auto' && licenseType === LicenseType.personal && IsSharedRunnerIdentity()) {
             Logger.instance.info('Skipping the license return: GitHub-hosted macOS and Linux runners share one machine identity, so a return would revoke the license for every job and repo on it. Use --when always to return anyway.');
         } else {
-            await returnLicense(licenseType, token);
+            try {
+                await returnLicense(licenseType, token);
+            } catch (error) {
+                warnProfessionalSeat(licenseType, 'could not be returned');
+                throw error;
+            }
         }
     } finally {
         // returning is the last licensing step of a job, so stop what the licensing calls left running in the background
         await LicensingClient.StopBackgroundClients();
         await stopUnityCliHelpers();
+    }
+}
+
+/** Warns that a professional seat stays taken until it is released by hand. */
+function warnProfessionalSeat(licenseType: LicenseType, outcome: string): void {
+    if (licenseType === LicenseType.professional) {
+        Logger.instance.warn(`The professional license ${outcome}, so its seat stays taken. Release it at id.unity.com > My Seats.`);
     }
 }
 

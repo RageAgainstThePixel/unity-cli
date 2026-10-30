@@ -11,6 +11,7 @@ import {
     GetArgumentValueAsString,
     ProcInfo,
     KillProcess,
+    Delay,
     Exec,
     redactSensitiveLiterals,
 } from './utilities';
@@ -31,6 +32,13 @@ import {
 
 /** Thrown when `unity run` refuses the editor arguments before it starts the editor. */
 class UnityRunRejectedError extends Error { }
+
+/** Thrown when `unity run` refuses to start because another editor still has the project open. */
+class UnityProjectOpenError extends Error {
+    constructor(message: string, public readonly pid: number) {
+        super(message);
+    }
+}
 
 export interface EditorCommand {
     args: string[];
@@ -159,6 +167,14 @@ export class UnityEditor {
         try {
             await this.runEditor(command, true);
         } catch (error) {
+            if (error instanceof UnityProjectOpenError) {
+                // an earlier editor whose launcher went away can still hold the project, so wait for it and launch once more
+                this.logger.warn(`${error.message}\nWaiting for the editor (PID ${error.pid}) to exit before launching again...`);
+                await UnityEditor.WaitForProcessExit(error.pid, UnityEditor.PROJECT_OPEN_TIMEOUT_MS);
+                await this.runEditor(command, true);
+                return;
+            }
+
             if (!(error instanceof UnityRunRejectedError)) {
                 throw error;
             }
@@ -167,6 +183,33 @@ export class UnityEditor {
             this.logger.warn(`${error.message}\nLaunching the editor directly instead.`);
             await this.runEditor(command, false);
         }
+    }
+
+    /** How long to wait for another editor to release the project before launching again. */
+    private static readonly PROJECT_OPEN_TIMEOUT_MS = 10 * 60 * 1000;
+
+    /**
+     * Waits for a process to exit.
+     * @param pid The process id.
+     * @param timeoutMs The longest to wait; past it, the wait ends without an error.
+     */
+    private static async WaitForProcessExit(pid: number, timeoutMs: number): Promise<void> {
+        const deadline = Date.now() + timeoutMs;
+
+        while (Date.now() < deadline) {
+            try {
+                process.kill(pid, 0);
+            } catch (error: NodeJS.ErrnoException | any) {
+                // EPERM means the process exists but belongs to another user
+                if (error?.code !== 'EPERM') {
+                    return;
+                }
+            }
+
+            await Delay(1000);
+        }
+
+        Logger.instance.warn(`Process ${pid} was still running after ${timeoutMs / 1000} seconds`);
     }
 
     private async runEditor(command: EditorCommand, allowUnityRun: boolean): Promise<void> {
@@ -401,6 +444,12 @@ export class UnityEditor {
 
                     if (output.includes('conflicts with a reserved Unity flag')) {
                         throw new UnityRunRejectedError(`unity run rejected the editor arguments:\n${output}`);
+                    }
+
+                    const projectOpen = /already open in a running Editor \(PID (\d+)\)/.exec(output);
+
+                    if (projectOpen) {
+                        throw new UnityProjectOpenError(`unity run did not start the editor:\n${output}`, parseInt(projectOpen[1]!, 10));
                     }
 
                     if (output.length > 0) {

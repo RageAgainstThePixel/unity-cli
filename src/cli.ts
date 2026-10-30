@@ -120,7 +120,7 @@ program.command('return-license')
     .description('Return a Unity license. Tries the official Unity CLI first, then the Unity Licensing Client.')
     .option('-l, --license <license>', 'License type (personal, professional, floating)')
     .option('-t, --token <token>', 'Floating license token from activation. When given, the floating license is returned with the Unity Licensing Client.')
-    .option('--when <when>', 'auto, always or never. auto skips returning a personal or professional license on GitHub-hosted macOS and Linux runners, which share one machine identity: a return there revokes the license for every job and repo on that identity. Defaults to auto.', 'auto')
+    .option('--when <when>', 'auto, always or never. auto skips returning a personal license on GitHub-hosted macOS and Linux runners, which share one machine identity: a return there revokes the license for every job and repo on that identity. Professional and floating licenses always return under auto. Defaults to auto.', 'auto')
     .option('--verbose', 'Enable verbose logging.')
     .action(async (options) => {
         if (options.verbose) {

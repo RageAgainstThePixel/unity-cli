@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { Logger } from '../src/logging';
 import { FindAbsolutePath, UnityCli } from '../src/unity-cli';
 import { moveMacInstalledItem, resolveEditorExecutable } from '../src/unity-installer';
 import {
@@ -67,7 +68,7 @@ describe('license activation order', () => {
 
     beforeEach(() => {
         delete process.env.UNITY_EDITOR_PATH;
-        // a GitHub-hosted macOS or Linux runner skips the return, which these tests exercise
+        // a GitHub-hosted macOS or Linux runner skips a personal return, which these tests exercise
         delete process.env.RUNNER_ENVIRONMENT;
     });
 
@@ -171,6 +172,60 @@ describe('license activation order', () => {
         await ReturnLicense(LicenseType.personal);
 
         expect(fallback).toHaveBeenCalledTimes(1);
+    });
+
+    describe('on a shared runner identity', () => {
+        const platform = process.platform;
+
+        beforeEach(() => {
+            process.env.RUNNER_ENVIRONMENT = 'github-hosted';
+            Object.defineProperty(process, 'platform', { value: 'linux' });
+        });
+
+        afterEach(() => {
+            Object.defineProperty(process, 'platform', { value: platform });
+        });
+
+        it('skips a personal return under auto', async () => {
+            const calls = mockCli({});
+
+            await ReturnLicense(LicenseType.personal);
+
+            expect(calls).toHaveLength(0);
+        });
+
+        it('returns a professional license under auto', async () => {
+            const calls = mockCli({
+                'license return': { exitCode: 0 },
+                'license status': { exitCode: 4, data: { active: false } },
+            });
+            const warn = jest.spyOn(Logger.instance, 'warn');
+
+            await ReturnLicense(LicenseType.professional);
+
+            expect(calls[0]).toEqual(['license', 'return', '--yes']);
+            expect(warn).not.toHaveBeenCalled();
+        });
+
+        it('warns about the seat when a professional return is skipped', async () => {
+            const calls = mockCli({});
+            const warn = jest.spyOn(Logger.instance, 'warn').mockImplementation(() => undefined);
+
+            await ReturnLicense(LicenseType.professional, undefined, 'never');
+
+            expect(calls).toHaveLength(0);
+            expect(warn).toHaveBeenCalledWith(expect.stringContaining('id.unity.com > My Seats'));
+        });
+
+        it('warns about the seat when a professional return fails', async () => {
+            mockCli({ 'license return': { exitCode: 3 } });
+            jest.spyOn(LicensingClient.prototype, 'Deactivate').mockRejectedValue(new Error('no seat'));
+            const warn = jest.spyOn(Logger.instance, 'warn').mockImplementation(() => undefined);
+
+            await expect(ReturnLicense(LicenseType.professional)).rejects.toThrow('no seat');
+
+            expect(warn).toHaveBeenCalledWith(expect.stringContaining('id.unity.com > My Seats'));
+        });
     });
 });
 
