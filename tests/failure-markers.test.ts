@@ -5,6 +5,7 @@ describe('ClassifyFailure', () => {
         'Machine activations limit reached for this account',
         'License command failed with exit code 26: Unity ID sign-in rate limit reached: too many sign-in attempts for this account',
         'Code 404 while processing request (status: Found 1 entitlement groups and 0 free entitlements matching requested entitlement ids)',
+        'License command failed with exit code 17: Seat activation or deactivation failed\n[Licensing::Client] Error: Machine activations limit reached for this account',
     ])('marks license exhaustion: %s', message => {
         expect(ClassifyFailure(message)).toBe(LICENSE_EXHAUSTED_MARKER);
     });

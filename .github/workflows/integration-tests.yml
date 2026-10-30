@@ -98,9 +98,14 @@ jobs:
             exit 0
           }
           unity-cli upm-install --json
-          unity-cli license-context
+          # activates before anything else installs the licensing client, as a fresh runner without the Hub does
+          # for downstream actions; license-context runs after, only to explain a failure
           unity-cli activate-license --license personal
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($LASTEXITCODE -ne 0) {
+            $code = $LASTEXITCODE
+            unity-cli license-context
+            exit $code
+          }
           $dir = Join-Path $env:RUNNER_TEMP 'unity-license'
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
           # the key never reaches a command line: openssl reads it from the environment

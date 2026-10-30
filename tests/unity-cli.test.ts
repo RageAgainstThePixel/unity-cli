@@ -184,3 +184,19 @@ describe('licensing client output redaction', () => {
         expect(logged).toContain('*****');
     });
 });
+
+describe('UnityCli.GetLicensingClientPath', () => {
+    it('installs the licensing client with license status, which works without a Unity ID session', async () => {
+        const cli = new UnityCli('unity', '1.0.0');
+        const calls: string[][] = [];
+        jest.spyOn(cli, 'RunJson').mockImplementation(async (args: string[]) => {
+            calls.push(args);
+            // a headless runner has no Unity ID session, so license commands exit 3 (not signed in)
+            const exitCode = args[0] === 'license' ? 3 : 0;
+            return { exitCode, envelope: { success: exitCode === 0, data: {} }, stdout: '', stderr: '' } as any;
+        });
+
+        await expect(cli.GetLicensingClientPath()).resolves.toBeUndefined();
+        expect(calls).toEqual([['license', 'status'], ['doctor']]);
+    });
+});

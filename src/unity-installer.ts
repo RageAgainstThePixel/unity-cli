@@ -586,11 +586,11 @@ export class UnityInstaller {
         await fs.promises.mkdir(destinationPath, { recursive: true });
 
         for (const item of await fs.promises.readdir(sourcePath)) {
-            await fs.promises.rm(path.join(destinationPath, item), { recursive: true, force: true });
-            await fs.promises.cp(path.join(sourcePath, item), path.join(destinationPath, item), { recursive: true, verbatimSymlinks: true });
+            await moveMacInstalledItem(path.join(sourcePath, item), path.join(destinationPath, item));
         }
 
-        await fs.promises.rm(sourcePath, { recursive: true, force: true });
+        await Exec('sudo', ['rm', '-rf', sourcePath], { silent: true, showCommand: true });
+        await takeOwnership(destinationPath);
     }
 
     /**
@@ -612,11 +612,10 @@ export class UnityInstaller {
                 continue;
             }
 
-            const src = path.join(unityAppPath, item);
-            await fs.promises.cp(src, path.join(targetPath, item), { recursive: true, verbatimSymlinks: true });
-            await fs.promises.rm(src, { recursive: true, force: true });
+            await moveMacInstalledItem(path.join(unityAppPath, item), path.join(targetPath, item));
         }
 
+        await takeOwnership(targetPath);
         await fs.promises.chmod(targetPath, 0o755);
     }
 
@@ -1023,6 +1022,22 @@ export function resolveEditorExecutable(location: string | undefined): string | 
  */
 function tempInstallerPath(extension: string): string {
     return path.join(GetTempDir(), `unity-installer-${randomUUID()}${extension}`);
+}
+
+/**
+ * Moves something a macOS package installed. The installer runs as root, so its files are root-owned, and older editors
+ * ship symlinks whose targets are gone, such as 5.6's MonoDevelop.app; `mv` as root keeps both as they are.
+ */
+async function moveMacInstalledItem(source: string, destination: string): Promise<void> {
+    await Exec('sudo', ['rm', '-rf', destination], { silent: true, showCommand: true });
+    await Exec('sudo', ['mv', source, destination], { silent: true, showCommand: true });
+}
+
+/** Gives the runner's user back a tree that root moved, so later installs and module moves can change it. */
+async function takeOwnership(target: string): Promise<void> {
+    const { uid, gid } = os.userInfo();
+    // -h changes a symlink itself, so a broken one does not fail the walk
+    await Exec('sudo', ['chown', '-R', '-h', `${uid}:${gid}`, target], { silent: true, showCommand: true });
 }
 
 /**

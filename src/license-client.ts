@@ -56,6 +56,23 @@ export interface ActivateOptions {
 /** How long one Unity Licensing Client command may run. */
 const LICENSING_CLIENT_TIMEOUT_MS = 10 * 60 * 1000;
 
+// literal alternations only, so matching stays linear on any line
+const LICENSING_DIAGNOSTIC_PATTERN = /error|fail|seat|entitlement|activation|limit|denied|invalid|expired/i;
+
+/**
+ * The lines of sanitized licensing client output that say why a command failed, such as a seat limit.
+ * @param lines The client output, already sanitized.
+ * @returns At most the last 3 matching lines, each cut to 300 characters, or undefined when none match.
+ */
+export function LicensingClientDiagnostic(lines: string[]): string | undefined {
+    const matches = lines
+        .map(line => line.trim())
+        .filter(line => line.length > 0 && LICENSING_DIAGNOSTIC_PATTERN.test(line))
+        .slice(-3)
+        .map(line => line.length > 300 ? `${line.slice(0, 300)}...` : line);
+    return matches.length > 0 ? matches.join('\n') : undefined;
+}
+
 export class LicensingClient {
     private readonly logger: Logger = Logger.instance;
 
@@ -727,12 +744,11 @@ export class LicensingClient {
                 await this.printClientLogProblems(logOffset, secrets);
             }
 
-            if (!silent || exitCode !== 0) {
-                // any client output can carry emails and tokens, so it gets the same sanitizing as the client log
-                const maskedOutput = this.maskSerialInOutput(output).split(/\r?\n/).map(line => LicensingClient.sanitizeLogLine(line, secrets)).join('\n');
-                const splitLines = maskedOutput.split(/\r?\n/);
+            // any client output can carry emails and tokens, so it gets the same sanitizing as the client log
+            const maskedLines = this.maskSerialInOutput(output).split(/\r?\n/).map(line => LicensingClient.sanitizeLogLine(line, secrets));
 
-                for (const line of splitLines) {
+            if (!silent || exitCode !== 0) {
+                for (const line of maskedLines) {
                     if (line === undefined || line.length === 0) { continue; }
                     this.logger.info(line);
                 }
@@ -747,6 +763,13 @@ export class LicensingClient {
                 // failure be marked for a rerun once those jobs finish
                 if (/maximum same user attempt retry count/i.test(output)) {
                     message = 'Unity ID sign-in rate limit reached: too many sign-in attempts for this account';
+                }
+
+                // the client's own reason, such as a seat limit, lets the failure be classified; exit 17 alone does not say
+                const diagnostic = LicensingClientDiagnostic(maskedLines);
+
+                if (diagnostic) {
+                    message += `\n${diagnostic}`;
                 }
 
                 throw new Error(`License command failed with exit code ${exitCode}: ${message}`);
