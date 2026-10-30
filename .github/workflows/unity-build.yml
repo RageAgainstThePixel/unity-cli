@@ -14,6 +14,9 @@ on:
         required: true
       UNITY_PASSWORD:
         required: true
+      CI_TOKEN:
+        description: Keys the encrypted run license that macOS and Linux rows activate from.
+        required: false
 jobs:
   build:
     # rows are grouped by editor version, so the name carries the OS and target
@@ -186,12 +189,12 @@ jobs:
         continue-on-error: true
         shell: pwsh
         env:
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          CI_TOKEN: ${{ secrets.CI_TOKEN }}
         run: |
           $dir = Join-Path $env:RUNNER_TEMP 'unity-license'
           $license = Join-Path $dir 'Unity_lic.ulf'
           # the key never reaches a command line: openssl reads it from the environment
-          $env:LICENSE_KEY = "$($env:UNITY_PASSWORD):$($env:GITHUB_RUN_ID)"
+          $env:LICENSE_KEY = "$($env:CI_TOKEN):$($env:GITHUB_RUN_ID)"
           openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in (Join-Path $dir 'unity-license.enc') -out $license -pass env:LICENSE_KEY
           if ($LASTEXITCODE -ne 0) { throw 'Could not decrypt the run license' }
           "path=$license" >> $env:GITHUB_OUTPUT

@@ -88,10 +88,13 @@ jobs:
         env:
           UNITY_USERNAME: ${{ secrets.UNITY_USERNAME }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          # the encryption key comes from a random token, never the account password, so the public artifact gives
+          # nobody a way to test password guesses offline
+          CI_TOKEN: ${{ secrets.CI_TOKEN }}
         run: |
-          if (-not $env:UNITY_USERNAME -or -not $env:UNITY_PASSWORD) {
+          if (-not $env:UNITY_USERNAME -or -not $env:UNITY_PASSWORD -or -not $env:CI_TOKEN) {
             # pull requests from forks get no secrets; their rows fall back to their own activation
-            echo '::warning::No Unity credentials, so this run has no shared license'
+            echo '::warning::No Unity credentials or CI_TOKEN, so this run has no shared license'
             exit 0
           }
           unity-cli upm-install --json
@@ -101,7 +104,7 @@ jobs:
           $dir = Join-Path $env:RUNNER_TEMP 'unity-license'
           New-Item -ItemType Directory -Force -Path $dir | Out-Null
           # the key never reaches a command line: openssl reads it from the environment
-          $env:LICENSE_KEY = "$($env:UNITY_PASSWORD):$($env:GITHUB_RUN_ID)"
+          $env:LICENSE_KEY = "$($env:CI_TOKEN):$($env:GITHUB_RUN_ID)"
           openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -in (unity-cli license-file-path) -out (Join-Path $dir 'unity-license.enc') -pass env:LICENSE_KEY
           if ($LASTEXITCODE -ne 0) { throw 'Could not encrypt the run license' }
           "encrypted=true" >> $env:GITHUB_OUTPUT
