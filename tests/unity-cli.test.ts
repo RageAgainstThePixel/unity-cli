@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { FindAbsolutePath, UnityCli } from '../src/unity-cli';
-import { resolveEditorExecutable } from '../src/unity-installer';
+import { moveMacInstalledItem, resolveEditorExecutable } from '../src/unity-installer';
 import {
     ActivateLicense,
     GetLegacyLicenseVersion,
@@ -198,5 +198,58 @@ describe('UnityCli.GetLicensingClientPath', () => {
 
         await expect(cli.GetLicensingClientPath()).resolves.toBeUndefined();
         expect(calls).toEqual([['license', 'status'], ['doctor']]);
+    });
+});
+
+describe('moveMacInstalledItem', () => {
+    // creating symlinks on Windows needs extra privileges, and the helper only runs on macOS
+    const posixIt = process.platform === 'win32' ? it.skip : it;
+
+    const makeTree = (root: string) => {
+        const source = path.join(root, 'source');
+        fs.mkdirSync(path.join(source, 'bin'), { recursive: true });
+        fs.writeFileSync(path.join(source, 'bin', 'tool'), '#!/bin/sh\n');
+        fs.chmodSync(path.join(source, 'bin', 'tool'), 0o755);
+        // a link whose target is gone, like 5.6's MonoDevelop.app
+        fs.symlinkSync('/Applications/MonoDevelop.app', path.join(source, 'MonoDevelop.app'));
+        fs.symlinkSync('bin/tool', path.join(source, 'tool-link'));
+        return source;
+    };
+
+    const expectMoved = (source: string, destination: string) => {
+        expect(fs.existsSync(source)).toBe(false);
+        expect(fs.readlinkSync(path.join(destination, 'MonoDevelop.app'))).toBe('/Applications/MonoDevelop.app');
+        expect(fs.readlinkSync(path.join(destination, 'tool-link'))).toBe('bin/tool');
+        expect(fs.statSync(path.join(destination, 'bin', 'tool')).mode & 0o777).toBe(0o755);
+    };
+
+    posixIt('moves a tree with a dangling symlink', async () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-cli-move-'));
+
+        try {
+            const source = makeTree(root);
+            const destination = path.join(root, 'destination');
+            await moveMacInstalledItem(source, destination);
+            expectMoved(source, destination);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    posixIt('copies symlinks and executables as they are across volumes', async () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-cli-move-'));
+
+        try {
+            const source = makeTree(root);
+            const destination = path.join(root, 'destination');
+            fs.mkdirSync(destination);
+            fs.writeFileSync(path.join(destination, 'stale'), '');
+            jest.spyOn(fs.promises, 'rename').mockRejectedValueOnce(Object.assign(new Error('cross-device link'), { code: 'EXDEV' }));
+            await moveMacInstalledItem(source, destination);
+            expectMoved(source, destination);
+            expect(fs.existsSync(path.join(destination, 'stale'))).toBe(false);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
     });
 });

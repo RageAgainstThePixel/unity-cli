@@ -585,6 +585,8 @@ export class UnityInstaller {
 
         const destinationPath = path.join(targetPath, 'PlaybackEngines');
         await fs.promises.mkdir(destinationPath, { recursive: true });
+        // the parent too, since removing PlaybackEngines afterwards needs write permission on it
+        await claimMacInstalledItem(path.dirname(sourcePath), false);
         await claimMacInstalledItem(sourcePath, true);
 
         for (const item of await fs.promises.readdir(sourcePath)) {
@@ -1049,7 +1051,7 @@ async function claimMacInstalledItem(source: string, recursive: boolean): Promis
  * Moves something a macOS package installed. Older editors ship symlinks whose targets are gone, such as 5.6's
  * MonoDevelop.app, which fs.cp fails on, so links are moved or recreated as they are.
  */
-async function moveMacInstalledItem(source: string, destination: string): Promise<void> {
+export async function moveMacInstalledItem(source: string, destination: string): Promise<void> {
     await fs.promises.rm(destination, { recursive: true, force: true });
 
     try {
