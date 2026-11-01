@@ -13,7 +13,7 @@ In unity's infinite wisdom, they decided to rip off yet another one of my open s
 
 v4 is the last feature release. The repository stays open for security and crash fixes only, and there are no new commands. `@rage-against-the-pixel/unity-cli` v3 and v4 stay on npm.
 
-Use Unity's official CLI for everything it covers. See [Use the Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli). That includes Hub-free editor installs and uninstalls, modules, project create and open, templates, builds, tests, serial, floating and offline licenses, and service-account auth.
+Use Unity's official CLI for everything it covers. See [Use the Unity CLI](https://docs.unity.com/en-us/unity-cli/use-unity-cli). That includes Hub-free editor installs and uninstalls, modules, project create and open, templates, builds, tests, serial, floating and offline licenses, and service-account auth. See [unity-cli vs the official Unity CLI](docs/official-unity-cli-comparison.md) for what each tool covers and why unity-cli still exists for older Unity versions.
 unity-cli v4 still covers:
 
 - Installing the official Unity CLI on first use, with SHA-256 verification, for CI runners.
@@ -35,6 +35,7 @@ Send feature requests that the official CLI already covers to Unity.
 - [Maintenance](#maintenance)
 - [Upgrading from v3](#upgrading-from-v3)
 - [Unity version support](docs/unity-version-support.md)
+- [unity-cli vs the official Unity CLI](docs/official-unity-cli-comparison.md)
 - [Installation](#installation)
 - [Usage](#usage)
   - [Common Commands](#common-commands)
