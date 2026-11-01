@@ -72,6 +72,84 @@ jobs:
           npm run build
           npm run link
           unity-cli --version
+      # checks setup-unity's security alerts against the live Unity Releases API; nothing here downloads an editor
+      - name: Security alert checks
+        if: ${{ inputs.utp-test-profile == 'negative' && runner.os == 'Linux' }}
+        timeout-minutes: 10
+        env:
+          # the apt step is not what is under test, and skipping it lets an allowed install reach its download quickly
+          UNITY_CLI_LINUX_DEPENDENCIES_INSTALLED: 'true'
+        run: |
+          set -euo pipefail
+          out="$(mktemp)"
+          # prints a captured run with workflow commands paused, so its alerts do not become this job's annotations
+          show() {
+            local token="captured-${RANDOM}${RANDOM}"
+            echo "::stop-commands::${token}"
+            cat "${out}"
+            echo "::${token}::"
+          }
+          fail() { echo "::error::$1"; show; exit 1; }
+          # the whole setup-unity run must stop on the alert, with nothing installed
+          expect_blocked() {
+            if unity-cli setup-unity "$@" > "${out}" 2>&1; then
+              fail "setup-unity $* passed, but its editor has a security alert"
+            fi
+            grep -q 'title=Unity Security Alert' "${out}" || fail "setup-unity $* did not report a Unity Security Alert"
+            ! grep -q 'Installing Unity' "${out}" || fail "setup-unity $* started an install before stopping on the alert"
+          }
+          # runs setup-unity in its own process group until it starts installing, then stops it before the download
+          run_until_install() {
+            local version="$1"
+            setsid unity-cli setup-unity --unity-version "${version}" > "${out}" 2>&1 &
+            local pid=$!
+            for _ in $(seq 1 300); do
+              if grep -q "Installing Unity ${version}" "${out}" || ! kill -0 "${pid}" 2> /dev/null; then
+                break
+              fi
+              sleep 1
+            done
+            # unity-cli stops the official CLI's install when it gets SIGTERM; anything left after that is killed
+            kill -TERM -- "-${pid}" 2> /dev/null || true
+            for _ in $(seq 1 60); do
+              kill -0 "${pid}" 2> /dev/null || break
+              sleep 1
+            done
+            kill -KILL -- "-${pid}" 2> /dev/null || true
+            pkill -KILL -f 'unity install' 2> /dev/null || true
+            wait "${pid}" 2> /dev/null || true
+            grep -q "Installing Unity ${version}" "${out}" || fail "setup-unity ${version} did not reach its install"
+          }
+
+          echo "::group::2022.3.62f1 without the opt-in"
+          expect_blocked --unity-version 2022.3.62f1
+          grep -q 'https://unity.com/security/sept-2025-01' "${out}" || fail 'the alert did not name the advisory'
+          grep -Eq 'Suggested: Unity 2022\.3\.[0-9]+f[0-9]+' "${out}" || fail 'the alert did not suggest a patched release'
+          grep -q 'pass --allow-security-alert or set UNITY_ALLOW_SECURITY_ALERT=1' "${out}" || fail 'the alert did not say how to opt in'
+          show
+          echo "::endgroup::"
+
+          echo "::group::5.6.2f1 without the opt-in"
+          expect_blocked --unity-version 5.6.2f1 --changeset 0000000000ab
+          grep -q 'CVE-2017-12939' "${out}" || fail 'the 5.x alert did not list CVE-2017-12939'
+          grep -q 'CVE-2019-9197' "${out}" || fail 'the 5.x alert did not list CVE-2019-9197'
+          show
+          echo "::endgroup::"
+
+          echo "::group::2022.3.62f1 with UNITY_ALLOW_SECURITY_ALERT=1"
+          export UNITY_ALLOW_SECURITY_ALERT=1
+          run_until_install 2022.3.62f1
+          unset UNITY_ALLOW_SECURITY_ALERT
+          grep -q '::warning title=Unity Security Alert' "${out}" || fail 'the allowed alert was not a warning'
+          ! grep -q '::error title=Unity Security Alert' "${out}" || fail 'the allowed alert was still an error'
+          show
+          echo "::endgroup::"
+
+          echo "::group::2022.3.62f3, which has no alert"
+          run_until_install 2022.3.62f3
+          ! grep -q 'Security Alert' "${out}" || fail 'an unlabelled release reported a security alert'
+          show
+          echo "::endgroup::"
       - name: Wait for Free Disk Space
         wait: free-disk-space
       # the editor's apt packages come from a mirror that has served them at about 40 kB/s, so the .deb files are kept
