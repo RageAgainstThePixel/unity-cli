@@ -71,8 +71,8 @@ v4 drops the Hub. Commands that need the official CLI install it on first use.
 | `sign-package` | Removed. Use `upm-pack` |
 | `uninstall-unity` | Deprecated, same options, forwards to `unity uninstall <version> --yes` |
 | `list-project-templates` | Deprecated, same options, forwards to `unity templates list --editor <version>` |
-| `create-project` | Deprecated, same options, forwards to `unity projects create <name> --path <path> --editor-version <version> --template <id> --no-cloud` |
-| `open-project` | Deprecated, same options, forwards to `unity open <project>` |
+| `create-project` | Deprecated, same options plus `--allow-security-alert`, forwards to `unity projects create <name> --path <path> --editor-version <version> --template <id> --no-cloud` |
+| `open-project` | Deprecated, same options plus `--allow-security-alert`, forwards to `unity open <project>` |
 | `upm-install`, `upm-version`, `upm-pack` | Unchanged |
 
 `setup-unity` exports `UNITY_CLI_PATH` instead of `UNITY_HUB_PATH`. Only the commands above are forwarded; unknown commands are not passed to `unity`.
@@ -217,9 +217,11 @@ unity-cli licensing-audit-logs
 
 With only `--unity-project`, it installs the modules for every build profile saved under the project's `Assets` folder (Unity 6 and newer). `--modules` or `--build-targets` replace that list.
 
-For 2017 and newer, it checks the [Unity Releases API](https://services.docs.unity.com/release/v1/) for a Security Alert label on the exact release, whether the editor is installed already or not. A labelled release stops the setup before anything is downloaded, with Unity's own text, the advisory link and the newest stable release on the same `major.minor` without a label (or a note that Unity has no patched release on that branch, in which case the advisory covers the binary patch tool). On GitHub Actions this is an error annotation titled `Unity Security Alert`. With `--allow-security-alert` or `UNITY_ALLOW_SECURITY_ALERT`, the same text is a warning and the setup continues. When the official CLI already returns a security warning for the release, its text is printed instead. If the Releases API cannot be reached, it warns and continues.
+For 2017 and newer, it checks the [Unity Releases API](https://services.docs.unity.com/release/v1/) for a Security Alert label on the exact release, whether the editor is installed already or not. A labelled release stops the setup before anything is downloaded, with one line: Unity's own label text with its link, then the newest stable release on the same `major.minor` without a label (or "No patched release on this branch", in which case the advisory covers the binary patch tool), followed by the exact command to re-run with `--allow-security-alert`. On GitHub Actions this is an error annotation titled `Unity Security Alert`. With `--allow-security-alert` or `UNITY_ALLOW_SECURITY_ALERT`, the same line is a warning marked `(allowed)` and the setup continues. When the official CLI already returns a security warning for the release, its text is printed instead. If the Releases API cannot be reached, it warns and continues.
 
-4.x and 5.x are not in the Releases API, so every one of them gets a fixed Security Alert that needs the same opt-in: Unity publishes no security metadata for them and never patched them against later advisories. They stay installable for archival work and older games. The alert lists the known editor CVEs that reach the requested version, [CVE-2017-12939](https://nvd.nist.gov/vuln/detail/CVE-2017-12939) (all 4.x and 5.x before 5.3.8p2, 5.4.5p5, 5.5.4p3 and 5.6.3p1) and [CVE-2019-9197](https://nvd.nist.gov/vuln/detail/CVE-2019-9197) (5.6 before 5.6.7f1), and points to [Unity's security advisories](https://unity.com/security) when neither applies. `run` checks the same way when it installs a project's editor, with `UNITY_ALLOW_SECURITY_ALERT` as its opt-in.
+4.x and 5.x are not in the Releases API, so every one of them gets a fixed Security Alert that needs the same opt-in: Unity publishes no security metadata for them and never patched them against later advisories. They stay installable for archival work and older games. The alert lists the known editor CVEs that reach the requested version, [CVE-2017-12939](https://nvd.nist.gov/vuln/detail/CVE-2017-12939) (all 4.x and 5.x before 5.3.8p2, 5.4.5p5, 5.5.4p3 and 5.6.3p1) and [CVE-2019-9197](https://nvd.nist.gov/vuln/detail/CVE-2019-9197) (5.6 before 5.6.7f1), and points to [Unity's security advisories](https://unity.com/security) in every case.
+
+Every command that installs or selects an editor runs this same check and takes the same `--allow-security-alert` flag: `setup-unity`, `run` (when it finds or installs a project's editor), `create-project` and `open-project`.
 
 It exports `UNITY_CLI_PATH`, `UNITY_EDITOR_PATH`, `UNITY_EDITOR_VERSION`, `UNITY_EDITOR_CHANGESET`, `UNITY_EDITOR_CHANNELS` and, with a project, `UNITY_PROJECT_PATH`. With a project and the `android` module, it also installs the project's Android target SDK.
 
@@ -239,6 +241,7 @@ Runs with a project go through the official CLI's `unity run` for 2019.1 and new
 - `--unity-project <unityProject>` The path to a Unity project. If unspecified, the `UNITY_PROJECT_PATH` environment variable will be used, otherwise no project will be specified.
 - `--log-name <logName>` The name of the log file.
 - `--log-level <logLevel>` Override the logger verbosity (debug, info, minimal, warning, error). Defaults to info.
+- `--allow-security-alert` Use a project editor that Unity marks with a Security Alert, with a warning instead of an error. Same as `UNITY_ALLOW_SECURITY_ALERT=1`.
 - `--verbose` Enable verbose logging. Deprecated, use `--log-level` instead.
 - `<args...>` Arguments to pass directly to the Unity Editor executable.
 

@@ -263,15 +263,15 @@ export function GetLegacySecurityAlert(unityVersion: UnityVersion): UnitySecurit
         const fixed = cve.fixed[`${parsed.major}.${parsed.minor}`];
         return !fixed || compareLegacyVersions(parsed, parseLegacyVersion(fixed)!) < 0;
     });
-    const details = cves.map(cve => {
-        const fixed = cve.fixed[`${parsed.major}.${parsed.minor}`];
-        return `${cve.id} ${cve.summary}${fixed ? `, fixed in ${fixed}` : ''} https://nvd.nist.gov/vuln/detail/${cve.id}`;
-    });
-    // worded like Unity's own Security Alert label, so both kinds of alert read alike
+    // the same shape as an API label: Unity's style of sentence, the link, the CVEs, then the patched release
     return {
         version: unityVersion.version,
-        summary: 'Applications built with this Editor version have known security issues, and Unity never patched it. Read more: https://unity.com/security',
-        details,
+        summary: [
+            'Applications built with this Editor version have known security issues. Read more: https://unity.com/security',
+            ...cves.map(cve => `${cve.id}: https://nvd.nist.gov/vuln/detail/${cve.id}`),
+            'No patched release on this branch',
+        ].join(' | '),
+        details: [],
     };
 }
 
@@ -301,35 +301,86 @@ function compareLegacyVersions(a: LegacyVersion, b: LegacyVersion): number {
 }
 
 /**
- * Formats a Unity Security Alert as one annotation: the summary on the first line, its details indented under it.
+ * Formats a Unity Security Alert as one annotation: the alert on one line and, when it stops the command, how to continue.
  * @param alert The alert.
  * @param allow Whether --allow-security-alert or UNITY_ALLOW_SECURITY_ALERT was given.
+ * @param rerunCommand The command that was run, with --allow-security-alert added, to show when the alert stops it.
  */
-export function FormatUnitySecurityAlert(alert: UnitySecurityAlert, allow: boolean): string {
+export function FormatUnitySecurityAlert(alert: UnitySecurityAlert, allow: boolean, rerunCommand: string | undefined = undefined): string {
     const lines = [
         `${SECURITY_ALERT_TITLE} for ${alert.version}${allow ? ' (allowed)' : ''}: ${alert.summary}`,
         ...alert.details.map(detail => `  ${detail}`),
     ];
 
     if (!allow) {
-        lines.push(`Pass --allow-security-alert or set ${SECURITY_ALERT_ENV}=1 to continue.`);
+        lines.push(rerunCommand
+            ? `To continue, re-run: ${rerunCommand} (or set ${SECURITY_ALERT_ENV}=1)`
+            : `Pass --allow-security-alert or set ${SECURITY_ALERT_ENV}=1 to continue.`);
     }
 
     return lines.join('\n');
 }
 
 /**
- * Reports a Unity Security Alert: a warning annotation with the opt-in, otherwise an error that stops the setup.
+ * Reports a Unity Security Alert: a warning annotation with the opt-in, otherwise an error that stops the command.
  * @param alert The alert, from the Releases API, the official CLI or the fixed 4.x and 5.x alert.
  * @param allow Whether --allow-security-alert or UNITY_ALLOW_SECURITY_ALERT was given.
+ * @param rerunCommand The command to re-run with the opt-in, shown when the alert stops it.
  */
-export function ReportUnitySecurityAlert(alert: UnitySecurityAlert, allow: boolean): void {
+export function ReportUnitySecurityAlert(alert: UnitySecurityAlert, allow: boolean, rerunCommand: string | undefined = undefined): void {
     if (allow) {
         Logger.instance.annotate(LogLevel.WARN, FormatUnitySecurityAlert(alert, true), undefined, undefined, undefined, undefined, undefined, SECURITY_ALERT_TITLE);
         return;
     }
 
-    throw new UnitySecurityAlertError(FormatUnitySecurityAlert(alert, false));
+    throw new UnitySecurityAlertError(FormatUnitySecurityAlert(alert, false, rerunCommand));
+}
+
+/** Argument names whose values are never echoed in a re-run command. */
+const SECRET_ARGUMENT = /pass(word)?|token|secret|serial|key|username|user|license|credential/i;
+
+/**
+ * The command line a user ran, with --allow-security-alert added, for the hint an alert prints when it stops the command.
+ * Values of arguments such as --password, -serial or --token=... are shown as <redacted>.
+ * @param args The arguments after the executable and script, as in process.argv.slice(2).
+ * @param executable The command name to show.
+ */
+export function BuildSecurityAlertRerunCommand(args: readonly string[], executable: string = 'unity-cli'): string {
+    const shown: string[] = [];
+    let redactNext = false;
+
+    for (const arg of args) {
+        if (redactNext) {
+            shown.push('<redacted>');
+            redactNext = false;
+            continue;
+        }
+
+        const flag = /^(--?[\w-]+)(=.*)?$/.exec(arg);
+
+        if (flag && SECRET_ARGUMENT.test(flag[1]!)) {
+            if (flag[2] !== undefined) {
+                shown.push(`${flag[1]}=<redacted>`);
+            } else {
+                shown.push(arg);
+                redactNext = true;
+            }
+
+            continue;
+        }
+
+        shown.push(arg);
+    }
+
+    if (!args.includes('--allow-security-alert')) {
+        shown.push('--allow-security-alert');
+    }
+
+    return [executable, ...shown].map(quoteArgument).join(' ');
+}
+
+function quoteArgument(arg: string): string {
+    return arg.length > 0 && !/[\s"'`$\\;&|()]/.test(arg) ? arg : `"${arg.replace(/"/g, '\\"')}"`;
 }
 
 /**

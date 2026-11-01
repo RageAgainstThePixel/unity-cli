@@ -7,6 +7,7 @@ import { ReportFailure } from '../src/failure-markers';
 import { UnityInstaller } from '../src/unity-installer';
 import { UnityVersion } from '../src/unity-version';
 import {
+    BuildSecurityAlertRerunCommand,
     FormatUnitySecurityAlert,
     GetLegacySecurityAlert,
     GetUnitySecurityAlert,
@@ -202,36 +203,32 @@ describe('Unity Security Alert', () => {
         it('lists both editor CVEs for 5.6 before their fixes', () => {
             const alert = GetLegacySecurityAlert(new UnityVersion('5.6.2f1', undefined, 'X86_64'))!;
 
-            expect(FormatUnitySecurityAlert(alert, false)).toBe([
-                'Unity Security Alert for 5.6.2f1: Applications built with this Editor version have known security issues, and Unity never patched it. Read more: https://unity.com/security',
-                '  CVE-2017-12939 Windows editor RCE, fixed in 5.6.3p1 https://nvd.nist.gov/vuln/detail/CVE-2017-12939',
-                '  CVE-2019-9197 editor RCE, fixed in 5.6.7f1 https://nvd.nist.gov/vuln/detail/CVE-2019-9197',
-                'Pass --allow-security-alert or set UNITY_ALLOW_SECURITY_ALERT=1 to continue.',
+            expect(FormatUnitySecurityAlert(alert, false, 'unity-cli setup-unity -u 5.6.2f1 --allow-security-alert')).toBe([
+                'Unity Security Alert for 5.6.2f1: Applications built with this Editor version have known security issues. Read more: https://unity.com/security | CVE-2017-12939: https://nvd.nist.gov/vuln/detail/CVE-2017-12939 | CVE-2019-9197: https://nvd.nist.gov/vuln/detail/CVE-2019-9197 | No patched release on this branch',
+                'To continue, re-run: unity-cli setup-unity -u 5.6.2f1 --allow-security-alert (or set UNITY_ALLOW_SECURITY_ALERT=1)',
             ].join('\n'));
         });
 
         it('orders patch releases after the final release of the same patch number', () => {
-            expect(GetLegacySecurityAlert(new UnityVersion('5.3.8f1', undefined, 'X86_64'))!.details.join('\n')).toContain('CVE-2017-12939');
-            expect(GetLegacySecurityAlert(new UnityVersion('5.3.8p2', undefined, 'X86_64'))!.details.join('\n')).not.toContain('CVE-2017-12939');
+            expect(GetLegacySecurityAlert(new UnityVersion('5.3.8f1', undefined, 'X86_64'))!.summary).toContain('CVE-2017-12939');
+            expect(GetLegacySecurityAlert(new UnityVersion('5.3.8p2', undefined, 'X86_64'))!.summary).not.toContain('CVE-2017-12939');
         });
 
         it('lists only the CVEs that reach the version', () => {
             const legacy4 = GetLegacySecurityAlert(new UnityVersion('4.7.2', undefined, 'X86_64'))!;
-            expect(FormatUnitySecurityAlert(legacy4, true)).toBe([
-                'Unity Security Alert for 4.7.2 (allowed): Applications built with this Editor version have known security issues, and Unity never patched it. Read more: https://unity.com/security',
-                '  CVE-2017-12939 Windows editor RCE https://nvd.nist.gov/vuln/detail/CVE-2017-12939',
-            ].join('\n'));
+            expect(FormatUnitySecurityAlert(legacy4, true)).toBe(
+                'Unity Security Alert for 4.7.2 (allowed): Applications built with this Editor version have known security issues. Read more: https://unity.com/security | CVE-2017-12939: https://nvd.nist.gov/vuln/detail/CVE-2017-12939 | No patched release on this branch');
 
             const legacy55 = GetLegacySecurityAlert(new UnityVersion('5.5.0f3', undefined, 'X86_64'))!;
-            expect(legacy55.details.join('\n')).toContain('CVE-2017-12939');
-            expect(legacy55.details.join('\n')).not.toContain('CVE-2019-9197');
+            expect(legacy55.summary).toContain('CVE-2017-12939');
+            expect(legacy55.summary).not.toContain('CVE-2019-9197');
         });
 
         it('still alerts when no CVE names the version, pointing to Unity\'s advisories', () => {
             const alert = GetLegacySecurityAlert(new UnityVersion('5.6.7f1', 'e80cc3114ac1', 'X86_64'))!;
 
             expect(alert.details).toEqual([]);
-            expect(alert.summary).toBe('Applications built with this Editor version have known security issues, and Unity never patched it. Read more: https://unity.com/security');
+            expect(alert.summary).toBe('Applications built with this Editor version have known security issues. Read more: https://unity.com/security | No patched release on this branch');
         });
 
         it('does not apply to 2017 and newer', () => {
@@ -259,6 +256,13 @@ describe('Unity Security Alert', () => {
             expect(error.message).toBe('install skipped');
             expect(annotate).toHaveBeenCalledWith(LogLevel.WARN, expect.stringContaining('Unity Security Alert for 4.7.2 (allowed):'), undefined, undefined, undefined, undefined, undefined, SECURITY_ALERT_TITLE);
         });
+    });
+
+    it('rebuilds the command line for the re-run hint without secrets', () => {
+        expect(BuildSecurityAlertRerunCommand(['setup-unity', '-u', '2022.3.62f1', '-p', 'My Project'])).toBe('unity-cli setup-unity -u 2022.3.62f1 -p "My Project" --allow-security-alert');
+        expect(BuildSecurityAlertRerunCommand(['run', '--unity-project', 'p', '-quit', '-username', 'me@example.com', '-password', 'hunter2', '--token=abc']))
+            .toBe('unity-cli run --unity-project p -quit -username <redacted> -password <redacted> --token=<redacted> --allow-security-alert');
+        expect(BuildSecurityAlertRerunCommand(['setup-unity', '-u', '4.7.2', '--allow-security-alert'])).toBe('unity-cli setup-unity -u 4.7.2 --allow-security-alert');
     });
 
     it('accepts UNITY_ALLOW_SECURITY_ALERT=1 or true only', () => {
@@ -315,16 +319,37 @@ describe('Unity Security Alert', () => {
             const error = await installer.GetEditor(labelled(), [], ['f'], { securityAlert: 'enforce' }).catch(e => e);
 
             expect(error).toBeInstanceOf(UnitySecurityAlertError);
-            expect(error.message).toContain('Unity Security Alert for 2022.3.62f1: SECURITY_ALERT: Unity 2022.3.62f1 has a known security issue. Patched: 2022.3.62f3');
+            expect(error.message).toContain('Unity Security Alert for 2022.3.62f1: SECURITY_ALERT: Unity 2022.3.62f1 has a known security issue. | Patched: 2022.3.62f3');
             expect(error.message).not.toContain('Applications built with this Editor version');
             expect(annotate).toHaveBeenCalledWith(LogLevel.WARN, 'Some other warning');
         });
 
-        it('does not check when no policy is given', async () => {
-            const installer = new UnityInstaller(fakeCli() as never);
-            await installer.GetEditor(labelled());
+        it('enforces by default, and allows with UNITY_ALLOW_SECURITY_ALERT', async () => {
+            const blocked = await new UnityInstaller(fakeCli() as never).GetEditor(labelled()).catch(e => e);
+            expect(blocked).toBeInstanceOf(UnitySecurityAlertError);
 
-            expect(mockGetUnityReleases).not.toHaveBeenCalled();
+            process.env.UNITY_ALLOW_SECURITY_ALERT = '1';
+            const editor = await new UnityInstaller(fakeCli() as never).GetEditor(labelled());
+            expect(editor.editorPath).toBe(path.normalize(editorPath));
+        });
+
+        it('shows the command to re-run with the opt-in', async () => {
+            const error = await new UnityInstaller(fakeCli() as never)
+                .GetEditor(labelled(), [], ['f'], { securityAlert: 'enforce', rerunCommand: 'unity-cli setup-unity -u 2022.3.62f1 --allow-security-alert' })
+                .catch(e => e);
+            expect(error.message).toContain('To continue, re-run: unity-cli setup-unity -u 2022.3.62f1 --allow-security-alert (or set UNITY_ALLOW_SECURITY_ALERT=1)');
+        });
+
+        it('checks an editor a command selects without installing it, the same way', async () => {
+            const cli = fakeCli();
+            const installer = new UnityInstaller(cli as never);
+
+            await expect(installer.CheckSecurityAlert(labelled(), 'enforce')).rejects.toBeInstanceOf(UnitySecurityAlertError);
+            await expect(installer.CheckSecurityAlert(new UnityVersion('4.7.2', undefined, 'X86_64'), 'enforce')).rejects.toBeInstanceOf(UnitySecurityAlertError);
+            await expect(installer.CheckSecurityAlert(new UnityVersion('2022.3.62f3', '96770f904ca7', 'X86_64'), 'enforce')).resolves.toBeUndefined();
+            await installer.CheckSecurityAlert(labelled(), 'allow');
+            expect(annotate).toHaveBeenCalledWith(LogLevel.WARN, expect.stringContaining('Unity Security Alert for 2022.3.62f1 (allowed):'), undefined, undefined, undefined, undefined, undefined, SECURITY_ALERT_TITLE);
+            expect(cli.Run).not.toHaveBeenCalled();
         });
     });
 });

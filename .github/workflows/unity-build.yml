@@ -126,7 +126,20 @@ jobs:
           expect_blocked --unity-version 2022.3.62f1
           grep -q 'https://unity.com/security/sept-2025-01' "${out}" || fail 'the alert did not name the advisory'
           grep -Eq 'Patched: 2022\.3\.[0-9]+f[0-9]+' "${out}" || fail 'the alert did not name a patched release'
-          grep -q 'Pass --allow-security-alert or set UNITY_ALLOW_SECURITY_ALERT=1 to continue' "${out}" || fail 'the alert did not say how to opt in'
+          grep -q 'To continue, re-run: unity-cli setup-unity --unity-version 2022.3.62f1 --allow-security-alert (or set UNITY_ALLOW_SECURITY_ALERT=1)' "${out}" || fail 'the alert did not show the command to re-run with the opt-in'
+          show
+          echo "::endgroup::"
+
+          echo "::group::run on a 2022.3.62f1 project without the opt-in"
+          project="$(mktemp -d)"
+          mkdir -p "${project}/ProjectSettings"
+          echo 'm_EditorVersion: 2022.3.62f1' > "${project}/ProjectSettings/ProjectVersion.txt"
+          if env -u UNITY_EDITOR_PATH unity-cli run --unity-project "${project}" -quit > "${out}" 2>&1; then
+            fail 'run passed on a project whose editor has a security alert'
+          fi
+          grep -q 'title=Unity Security Alert' "${out}" || fail 'run did not report a Unity Security Alert'
+          grep -q -- '-quit --allow-security-alert (or set UNITY_ALLOW_SECURITY_ALERT=1)' "${out}" || fail 'run did not show the command to re-run with the opt-in'
+          ! grep -Eq 'Installing Unity [0-9]' "${out}" || fail 'run started an install before stopping on the alert'
           show
           echo "::endgroup::"
 
