@@ -124,8 +124,8 @@ jobs:
           echo "::group::2022.3.62f1 without the opt-in"
           expect_blocked --unity-version 2022.3.62f1
           grep -q 'https://unity.com/security/sept-2025-01' "${out}" || fail 'the alert did not name the advisory'
-          grep -Eq 'Suggested: Unity 2022\.3\.[0-9]+f[0-9]+' "${out}" || fail 'the alert did not suggest a patched release'
-          grep -q 'pass --allow-security-alert or set UNITY_ALLOW_SECURITY_ALERT=1' "${out}" || fail 'the alert did not say how to opt in'
+          grep -Eq 'Patched: 2022\.3\.[0-9]+f[0-9]+' "${out}" || fail 'the alert did not name a patched release'
+          grep -q 'Pass --allow-security-alert or set UNITY_ALLOW_SECURITY_ALERT=1 to continue' "${out}" || fail 'the alert did not say how to opt in'
           show
           echo "::endgroup::"
 

@@ -168,7 +168,7 @@ export class UnityInstaller {
             const alert = GetLegacySecurityAlert(resolvedVersion);
 
             if (alert) {
-                ReportUnitySecurityAlert(resolvedVersion, `${alert.message}\n${alert.suggestion}`, options.securityAlert === 'allow');
+                ReportUnitySecurityAlert(alert, options.securityAlert === 'allow');
             }
         }
 
@@ -327,9 +327,11 @@ export class UnityInstaller {
         const alert = await GetUnitySecurityAlert(unityVersion);
 
         if (cliSecurityWarnings.length > 0) {
-            ReportUnitySecurityAlert(unityVersion, [...cliSecurityWarnings, ...(alert ? [alert.suggestion] : [])].join('\n'), allow);
+            // the official CLI's own text in place of the label's, with the patched release from the Releases API
+            const summary = [...cliSecurityWarnings, ...(alert?.patched ? [alert.patched] : [])].join(' ');
+            ReportUnitySecurityAlert({ version: unityVersion.version, summary, details: [] }, allow);
         } else if (alert) {
-            ReportUnitySecurityAlert(unityVersion, `${alert.message}\n${alert.suggestion}`, allow);
+            ReportUnitySecurityAlert(alert, allow);
         }
     }
 

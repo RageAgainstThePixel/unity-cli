@@ -27,11 +27,15 @@ export interface UnityReleaseLabel {
     description?: string;
 }
 
-/** A Unity Security Alert for one release: Unity's own text, and the release to move to. */
+/** A Unity Security Alert for one release, as the first line of its annotation and the lines under it. */
 export interface UnitySecurityAlert {
     version: string;
-    message: string;
-    suggestion: string;
+    /** Unity's own text, the patched release and the advisory, on one line. */
+    summary: string;
+    /** The patched release on the same branch, or that there is none; kept apart for the official CLI's own text. */
+    patched?: string;
+    /** Indented lines under the summary, such as one per CVE. */
+    details: string[];
 }
 
 /** Thrown when an editor has a Unity Security Alert and the opt-in was not given. */
@@ -176,18 +180,15 @@ export async function GetUnitySecurityAlert(unityVersion: UnityVersion): Promise
         return undefined;
     }
 
+    // Unity's text as it is, then the patched release and the advisory, which covers the binary patch tool
     const { text, links } = ParseLabelDescription(label!.description);
-    const lines = [`Unity ${unityVersion.version} has a Unity ${sanitizeText(label!.labelText ?? 'Security Alert')}.`];
-
-    if (text.length > 0) {
-        lines.push(text);
-    }
-
-    for (const link of links) {
-        lines.push(`Advisory: ${link}`);
-    }
-
-    return { version: unityVersion.version, message: lines.join('\n'), suggestion: await getSuggestion(unityVersion, links) };
+    const patched = await getPatchedRelease(unityVersion);
+    return {
+        version: unityVersion.version,
+        summary: [text || sanitizeText(label!.labelText ?? ''), patched, ...links].filter(part => part.length > 0).join(' '),
+        patched,
+        details: [],
+    };
 }
 
 /** Known Unity Editor CVEs that affect 4.x and 5.x, with the first fixed release of each 5.x line. */
@@ -200,13 +201,13 @@ const LEGACY_EDITOR_CVES: {
 }[] = [
     {
         id: 'CVE-2017-12939',
-        summary: 'Windows editor remote code execution',
+        summary: 'Windows editor RCE',
         affects: (major) => major === 4 || major === 5,
         fixed: { '5.3': '5.3.8p2', '5.4': '5.4.5p5', '5.5': '5.5.4p3', '5.6': '5.6.3p1' },
     },
     {
         id: 'CVE-2019-9197',
-        summary: 'editor remote code execution through unvalidated input',
+        summary: 'editor RCE',
         affects: (major, minor) => major === 5 && minor === 6,
         fixed: { '5.6': '5.6.7f1' },
     },
@@ -234,27 +235,16 @@ export function GetLegacySecurityAlert(unityVersion: UnityVersion): UnitySecurit
         const fixed = cve.fixed[`${parsed.major}.${parsed.minor}`];
         return !fixed || compareLegacyVersions(parsed, parseLegacyVersion(fixed)!) < 0;
     });
-    const lines = [
-        `Unity ${unityVersion.version} has a Unity Security Alert.`,
-        'Unity publishes no security metadata for 4.x and 5.x editors and never patched them against later advisories. They are kept for archival work and older games.',
-    ];
-
-    if (cves.length > 0) {
-        lines.push(`Known editor CVEs for Unity ${unityVersion.version}:`);
-
-        for (const cve of cves) {
-            const fixed = cve.fixed[`${parsed.major}.${parsed.minor}`];
-            lines.push(`- ${cve.id}: ${cve.summary}${fixed ? `, fixed in ${fixed}` : ', never fixed on this line'}. https://nvd.nist.gov/vuln/detail/${cve.id}`);
-        }
-    } else {
-        lines.push('No editor CVE names this exact version, but it is unsupported and unpatched against later Unity security advisories.');
-    }
-
-    lines.push('Advisories: https://unity.com/security');
+    const details = cves.map(cve => {
+        const fixed = cve.fixed[`${parsed.major}.${parsed.minor}`];
+        return `${cve.id} ${cve.summary}${fixed ? `, fixed in ${fixed}` : ''} https://nvd.nist.gov/vuln/detail/${cve.id}`;
+    });
+    details.push('More: https://unity.com/security');
+    // worded like Unity's own Security Alert label, so both kinds of alert read alike
     return {
         version: unityVersion.version,
-        message: lines.join('\n'),
-        suggestion: 'Unity has no patched 4.x or 5.x release.',
+        summary: 'This Editor version has known security issues and Unity never patched it.',
+        details,
     };
 }
 
@@ -284,24 +274,41 @@ function compareLegacyVersions(a: LegacyVersion, b: LegacyVersion): number {
 }
 
 /**
- * Reports a Unity Security Alert: a warning annotation with the opt-in, otherwise an error that stops the setup.
- * @param unityVersion The release the alert is for.
- * @param alertText The alert text, from the Releases API or the official CLI.
+ * Formats a Unity Security Alert as one annotation: the summary on the first line, its details indented under it.
+ * @param alert The alert.
  * @param allow Whether --allow-security-alert or UNITY_ALLOW_SECURITY_ALERT was given.
  */
-export function ReportUnitySecurityAlert(unityVersion: UnityVersion, alertText: string, allow: boolean): void {
-    if (allow) {
-        Logger.instance.annotate(LogLevel.WARN, `${alertText}\nContinuing, since the security alert was allowed.`, undefined, undefined, undefined, undefined, undefined, SECURITY_ALERT_TITLE);
-        return;
+export function FormatUnitySecurityAlert(alert: UnitySecurityAlert, allow: boolean): string {
+    const lines = [
+        `${SECURITY_ALERT_TITLE} for ${alert.version}${allow ? ' (allowed)' : ''}: ${alert.summary}`,
+        ...alert.details.map(detail => `  ${detail}`),
+    ];
+
+    if (!allow) {
+        lines.push(`Pass --allow-security-alert or set ${SECURITY_ALERT_ENV}=1 to continue.`);
     }
 
-    throw new UnitySecurityAlertError(`${alertText}\nTo use Unity ${unityVersion.version} anyway, pass --allow-security-alert or set ${SECURITY_ALERT_ENV}=1.`);
+    return lines.join('\n');
 }
 
 /**
- * Suggests the newest stable release on the same major.minor without a label, or says there is none.
+ * Reports a Unity Security Alert: a warning annotation with the opt-in, otherwise an error that stops the setup.
+ * @param alert The alert, from the Releases API, the official CLI or the fixed 4.x and 5.x alert.
+ * @param allow Whether --allow-security-alert or UNITY_ALLOW_SECURITY_ALERT was given.
  */
-async function getSuggestion(unityVersion: UnityVersion, links: string[]): Promise<string> {
+export function ReportUnitySecurityAlert(alert: UnitySecurityAlert, allow: boolean): void {
+    if (allow) {
+        Logger.instance.annotate(LogLevel.WARN, FormatUnitySecurityAlert(alert, true), undefined, undefined, undefined, undefined, undefined, SECURITY_ALERT_TITLE);
+        return;
+    }
+
+    throw new UnitySecurityAlertError(FormatUnitySecurityAlert(alert, false));
+}
+
+/**
+ * Names the newest stable release on the same major.minor without a label, or says there is none.
+ */
+async function getPatchedRelease(unityVersion: UnityVersion): Promise<string> {
     const [major, minor] = unityVersion.version.split('.');
     const branch = `${major}.${minor}`;
     const releases: UnityRelease[] = [];
@@ -325,7 +332,7 @@ async function getSuggestion(unityVersion: UnityVersion, links: string[]): Promi
         }
     } catch (error) {
         Logger.instance.debug(`Could not look up a patched Unity ${branch} release: ${error}`);
-        return `Update to a Unity ${branch} release without a security alert.`;
+        return `Update to a newer ${branch} release.`;
     }
 
     const patched = releases
@@ -334,12 +341,7 @@ async function getSuggestion(unityVersion: UnityVersion, links: string[]): Promi
         .map(release => new UnityVersion(release.version!, release.shortRevision, unityVersion.architecture))
         .sort((a, b) => UnityVersion.compare(b, a))[0];
 
-    if (patched) {
-        return `Suggested: Unity ${patched.version}, the newest stable ${branch} release without a security alert.`;
-    }
-
-    const advisory = links.length > 0 ? ` See the advisory for the binary patch tool: ${links[0]}` : ' See the advisory for the binary patch tool.';
-    return `Unity has no patched release on the ${branch} branch.${advisory}`;
+    return patched ? `Patched: ${patched.version}.` : 'No patched release on this branch.';
 }
 
 async function findRelease(unityVersion: UnityVersion): Promise<UnityRelease | undefined> {
