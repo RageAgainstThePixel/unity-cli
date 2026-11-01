@@ -96,7 +96,8 @@ jobs:
               fail "setup-unity $* passed, but its editor has a security alert"
             fi
             grep -q 'title=Unity Security Alert' "${out}" || fail "setup-unity $* did not report a Unity Security Alert"
-            ! grep -q 'Installing Unity' "${out}" || fail "setup-unity $* started an install before stopping on the alert"
+            # an editor install logs "Installing Unity <version>"; the official CLI's own "Installing Unity CLI" is expected
+            ! grep -Eq 'Installing Unity [0-9]' "${out}" || fail "setup-unity $* started an install before stopping on the alert"
           }
           # runs setup-unity in its own process group until it starts installing, then stops it before the download
           run_until_install() {
