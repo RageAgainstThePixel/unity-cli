@@ -7,10 +7,14 @@ on:
 jobs:
   rerun:
     if: github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
-      actions: write
-      checks: read
-    uses: ./.github/workflows/rerun-marked-failures.yml
-    with:
-      run-id: ${{ github.event.workflow_run.id }}
-      run-attempt: ${{ github.event.workflow_run.run_attempt }}
+      actions: write # to rerun the failed jobs
+      checks: read # to read the failed jobs' annotations
+    steps:
+      # unity-cli marks a failure a rerun can clear with a notice annotation titled with one of these markers
+      - uses: RageAgainstThePixel/retry-failed-jobs@v1
+        with:
+          markers: unity-license-exhausted,unity-transient-failure
+          ignore-jobs: ci-result
