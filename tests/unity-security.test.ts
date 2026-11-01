@@ -8,6 +8,7 @@ import { UnityInstaller } from '../src/unity-installer';
 import { UnityVersion } from '../src/unity-version';
 import {
     BuildSecurityAlertRerunCommand,
+    QuoteShellArgument,
     FormatUnitySecurityAlert,
     GetLegacySecurityAlert,
     GetUnitySecurityAlert,
@@ -259,12 +260,34 @@ describe('Unity Security Alert', () => {
     });
 
     it('rebuilds the command line for the re-run hint without secrets', () => {
-        expect(BuildSecurityAlertRerunCommand(['setup-unity', '-u', '2022.3.62f1', '-p', 'My Project'])).toBe('unity-cli setup-unity -u 2022.3.62f1 -p "My Project" --allow-security-alert');
-        expect(BuildSecurityAlertRerunCommand(['run', '--unity-project', 'p', '-quit', '-username', 'me@example.com', '-password', 'hunter2', '--token=abc']))
+        expect(BuildSecurityAlertRerunCommand(['setup-unity', '-u', '2022.3.62f1', '-p', 'My Project'], 'unity-cli', 'linux')).toBe('unity-cli setup-unity -u 2022.3.62f1 -p \'My Project\' --allow-security-alert');
+        expect(BuildSecurityAlertRerunCommand(['run', '--unity-project', 'p', '-quit', '-username', 'me@example.com', '-password', 'hunter2', '--token=abc'], 'unity-cli', 'linux'))
             .toBe('unity-cli run --unity-project p -quit -username <redacted> -password <redacted> --token=<redacted> --allow-security-alert');
-        expect(BuildSecurityAlertRerunCommand(['setup-unity', '-u', '4.7.2', '--allow-security-alert'])).toBe('unity-cli setup-unity -u 4.7.2 --allow-security-alert');
+        expect(BuildSecurityAlertRerunCommand(['setup-unity', '-u', '4.7.2', '--allow-security-alert'], 'unity-cli', 'win32')).toBe('unity-cli setup-unity -u 4.7.2 --allow-security-alert');
     });
 
+    it('quotes re-run arguments for a POSIX shell', () => {
+        const q = (arg: string) => QuoteShellArgument(arg, 'linux');
+        expect(q('plain-arg_1.2')).toBe('plain-arg_1.2');
+        expect(q('my proj')).toBe('\'my proj\'');
+        expect(q('dir\\')).toBe('\'dir\\\'');
+        expect(q('it\'s')).toBe('\'it\'\\\'\'s\'');
+        expect(q('say "hi"')).toBe('\'say "hi"\'');
+        expect(q('$HOME')).toBe('\'$HOME\'');
+        expect(q('`date`')).toBe('\'`date`\'');
+        expect(q('')).toBe('\'\'');
+    });
+
+    it('quotes re-run arguments for PowerShell on Windows', () => {
+        const q = (arg: string) => QuoteShellArgument(arg, 'win32');
+        expect(q('C:\\Projects\\Game')).toBe('C:\\Projects\\Game');
+        expect(q('C:\\My Projects\\Game\\')).toBe('\'C:\\My Projects\\Game\\\'');
+        expect(q('it\'s')).toBe('\'it\'\'s\'');
+        expect(q('say "hi"')).toBe('\'say "hi"\'');
+        expect(q('$env:HOME')).toBe('\'$env:HOME\'');
+        expect(q('`n')).toBe('\'`n\'');
+        expect(q('')).toBe('\'\'');
+    });
     it('accepts UNITY_ALLOW_SECURITY_ALERT=1 or true only', () => {
         expect(IsSecurityAlertAllowedByEnv()).toBe(false);
         process.env.UNITY_ALLOW_SECURITY_ALERT = '1';

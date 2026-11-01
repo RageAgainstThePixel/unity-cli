@@ -341,12 +341,15 @@ const SECRET_ARGUMENT = /pass(word)?|token|secret|serial|key|username|user|licen
 
 /**
  * The command line a user ran, with --allow-security-alert added, for the hint an alert prints when it stops the command.
- * Values of arguments such as --password, -serial or --token=... are shown as <redacted>.
+ * Values of arguments such as --password, -serial or --token=... are shown as <redacted>. Arguments are quoted to paste
+ * into the shell of the platform: POSIX shells off Windows, PowerShell on Windows.
  * @param args The arguments after the executable and script, as in process.argv.slice(2).
  * @param executable The command name to show.
+ * @param platform The platform whose shell the command is quoted for.
  */
-export function BuildSecurityAlertRerunCommand(args: readonly string[], executable: string = 'unity-cli'): string {
-    const shown: string[] = [];
+export function BuildSecurityAlertRerunCommand(args: readonly string[], executable: string = 'unity-cli', platform: NodeJS.Platform = process.platform): string {
+    const quote = (arg: string) => QuoteShellArgument(arg, platform);
+    const shown: string[] = [executable];
     let redactNext = false;
 
     for (const arg of args) {
@@ -362,25 +365,40 @@ export function BuildSecurityAlertRerunCommand(args: readonly string[], executab
             if (flag[2] !== undefined) {
                 shown.push(`${flag[1]}=<redacted>`);
             } else {
-                shown.push(arg);
+                shown.push(quote(arg));
                 redactNext = true;
             }
 
             continue;
         }
 
-        shown.push(arg);
+        shown.push(quote(arg));
     }
 
     if (!args.includes('--allow-security-alert')) {
         shown.push('--allow-security-alert');
     }
 
-    return [executable, ...shown].map(quoteArgument).join(' ');
+    return shown.join(' ');
 }
 
-function quoteArgument(arg: string): string {
-    return arg.length > 0 && !/[\s"'`$\\;&|()]/.test(arg) ? arg : `"${arg.replace(/"/g, '\\"')}"`;
+/**
+ * Quotes an argument so it pastes into a shell as one word, leaving it as it is when nothing in it needs quoting.
+ * Single quotes keep everything inside literal in both shells, so only a single quote itself needs care: POSIX shells
+ * close the quote around an escaped one ('\''), and PowerShell doubles it ('').
+ * @param arg The argument.
+ * @param platform `win32` for PowerShell; any other platform for a POSIX shell.
+ */
+export function QuoteShellArgument(arg: string, platform: NodeJS.Platform = process.platform): string {
+    const windows = platform === 'win32';
+    // a backslash is an ordinary character in PowerShell, so Windows paths stay unquoted
+    const special = windows ? /[\s"'`$;&|(){}@#,<>]/ : /[\s"'`$\\;&|(){}<>*?#~!]/;
+
+    if (arg.length > 0 && !special.test(arg)) {
+        return arg;
+    }
+
+    return `'${arg.split('\'').join(windows ? '\'\'' : '\'\\\'\'')}'`;
 }
 
 /**
