@@ -1,4 +1,5 @@
 import { Logger, LogLevel } from './logging';
+import { UnitySecurityAlertError } from './unity-security';
 
 /** Annotation title for a failure a later rerun can clear because a license seat was taken. */
 export const LICENSE_EXHAUSTED_MARKER = 'unity-license-exhausted';
@@ -39,6 +40,13 @@ export function ClassifyFailure(message: string): string | undefined {
  */
 export function ReportFailure(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
+
+    // a titled error annotation, so the alert reads as Unity's own on the run summary; a rerun would only repeat it
+    if (error instanceof UnitySecurityAlertError) {
+        Logger.instance.annotate(LogLevel.ERROR, message, undefined, undefined, undefined, undefined, undefined, error.title);
+        return;
+    }
+
     const marker = ClassifyFailure(message);
 
     if (marker) {

@@ -210,10 +210,13 @@ unity-cli licensing-audit-logs
 - `-b`, `--build-targets <buildTargets>` The Unity build target to get/install as comma-separated values (e.g. `iOS,Android`).
 - `-m`, `--modules <modules>` The Unity module to get/install as comma-separated values (e.g. `ios,android`).
 - `-i`, `--install-path <installPath>` The path to install the Unity Editor to. By default, it will be installed to the official CLI's install path.
+- `--allow-security-alert` Install or select an editor that Unity marks with a Security Alert, with a warning instead of an error. Same as setting `UNITY_ALLOW_SECURITY_ALERT=1` (or `true`).
 - `--verbose` Enable verbose logging.
 - `--json` Prints the last line of output as JSON string.
 
 With only `--unity-project`, it installs the modules for every build profile saved under the project's `Assets` folder (Unity 6 and newer). `--modules` or `--build-targets` replace that list.
+
+For 2017 and newer, it checks the [Unity Releases API](https://services.docs.unity.com/release/v1/) for a Security Alert label on the exact release, whether the editor is installed already or not. A labelled release stops the setup before anything is downloaded, with Unity's own text, the advisory link and the newest stable release on the same `major.minor` without a label (or a note that Unity has no patched release on that branch, in which case the advisory covers the binary patch tool). On GitHub Actions this is an error annotation titled `Unity Security Alert`. With `--allow-security-alert` or `UNITY_ALLOW_SECURITY_ALERT`, the same text is a warning and the setup continues. When the official CLI already returns a security warning for the release, its text is printed instead. If the Releases API cannot be reached, it warns and continues. 4.x and 5.x are not checked, since the Releases API does not list them.
 
 It exports `UNITY_CLI_PATH`, `UNITY_EDITOR_PATH`, `UNITY_EDITOR_VERSION`, `UNITY_EDITOR_CHANGESET`, `UNITY_EDITOR_CHANNELS` and, with a project, `UNITY_PROJECT_PATH`. With a project and the `android` module, it also installs the project's Android target SDK.
 

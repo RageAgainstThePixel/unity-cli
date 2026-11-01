@@ -6,6 +6,7 @@ export * from './unity-cli';
 export * from './unity-editor';
 export * from './unity-installer';
 export * from './unity-project';
+export * from './unity-security';
 export * from './unity-version';
 export * from './utilities';
 export * from './unity-logging';

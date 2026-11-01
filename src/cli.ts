@@ -10,6 +10,7 @@ import { Logger, LogLevel } from './logging';
 import { UnityCli } from './unity-cli';
 import { UnityEditor } from './unity-editor';
 import { UnityInstaller } from './unity-installer';
+import { IsSecurityAlertAllowedByEnv, SECURITY_ALERT_ENV } from './unity-security';
 import { UnityVersion } from './unity-version';
 import { UnityProject } from './unity-project';
 import { CheckAndroidSdkInstalled } from './android-sdk';
@@ -198,6 +199,7 @@ program.command('setup-unity')
     .option('-b, --build-targets <buildTargets>', 'The Unity build target to get/install as comma-separated values (e.g. iOS,Android).')
     .option('-m, --modules <modules>', 'The Unity module to get/install as comma-separated values (e.g. ios,android).')
     .option('-i, --install-path <installPath>', 'The path to install the Unity Editor to. By default, it will be installed to the Unity CLI install path.')
+    .option('--allow-security-alert', `Install or select an editor that Unity marks with a Security Alert, with a warning instead of an error. Same as ${SECURITY_ALERT_ENV}=1.`)
     .option('--verbose', 'Enable verbose logging.')
     .option('--json', 'Prints the last line of output as JSON string.')
     .action(async (options) => {
@@ -207,6 +209,7 @@ program.command('setup-unity')
 
         Logger.instance.debugOptions(options);
 
+        const allowSecurityAlert = options.allowSecurityAlert === true || IsSecurityAlertAllowedByEnv();
         let unityProject: UnityProject | undefined;
 
         if (options.unityProject) {
@@ -280,7 +283,9 @@ program.command('setup-unity')
             await installer.SetInstallPath(options.installPath);
         }
 
-        const unityEditor = await installer.GetEditor(unityVersion, modules, channels);
+        const unityEditor = await installer.GetEditor(unityVersion, modules, channels, {
+            securityAlert: allowSecurityAlert ? 'allow' : 'enforce',
+        });
         const output: { [key: string]: string } = {
             'UNITY_CLI_PATH': unityCli.executable,
             'UNITY_EDITOR_PATH': unityEditor.editorPath,

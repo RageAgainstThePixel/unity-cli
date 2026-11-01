@@ -13,6 +13,7 @@ This repo tests Unity editors on CI in three tiers:
 - Partial versions (`6000.5`, `2021.3.x`) resolve only within the requested channel(s). Default is **stable (`f`)**.
 - If no matching stable release exists (e.g. `6000.7` while only betas ship), `setup-unity` **fails closed** instead of letting the installer guess a beta.
 - Use `--channel b` (or `a`) when you intentionally want pre-release streams.
+- Releases Unity labels with a Security Alert stop `setup-unity` unless `--allow-security-alert` or `UNITY_ALLOW_SECURITY_ALERT=1` is given. The error names the newest unlabelled stable release on the same branch. See [Setup Unity Editor](../README.md#setup-unity-editor).
 - Weekly [unity-release-discovery](../.github/workflows/unity-release-discovery.yml) compares the Releases API to the matrix, writes the report to the run summary, and warns on the run when a stream is missing from it.
 
 ## Dependencies
