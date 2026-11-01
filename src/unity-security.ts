@@ -71,8 +71,8 @@ export function IsSecurityLabel(label: UnityReleaseLabel | undefined | null): bo
 }
 
 /**
- * Turns a label description into plain text and the links it carries. Tags are dropped and their text kept,
- * so Unity's own wording prints as it is; only https links are returned.
+ * Turns a label description into plain text and the links it carries. Tags are dropped and their text kept, so
+ * Unity's own wording prints as it is, and an https link follows its text, as in "Read more: https://...".
  * @param description The label's HTML description.
  */
 export function ParseLabelDescription(description: string | undefined): { text: string; links: string[] } {
@@ -83,6 +83,7 @@ export function ParseLabelDescription(description: string | undefined): { text: 
     const links: string[] = [];
     let text = '';
     let index = 0;
+    let openLink: string | undefined;
 
     while (index < description.length) {
         const char = description[index]!;
@@ -99,10 +100,18 @@ export function ParseLabelDescription(description: string | undefined): { text: 
             break;
         }
 
-        const href = /\bhref\s*=\s*["']([^"']*)["']/i.exec(description.slice(index, end));
+        const tag = description.slice(index, end);
+        const href = /\bhref\s*=\s*["']([^"']*)["']/i.exec(tag);
 
-        if (href?.[1] && /^https:\/\/[^\s]+$/i.test(href[1]) && !links.includes(href[1])) {
-            links.push(href[1]);
+        if (href?.[1] && /^https:\/\/[^\s]+$/i.test(href[1])) {
+            openLink = href[1];
+
+            if (!links.includes(href[1])) {
+                links.push(href[1]);
+            }
+        } else if (/^<\/a\b/i.test(tag) && openLink) {
+            text += `: ${openLink}`;
+            openLink = undefined;
         }
 
         index = end + 1;
@@ -185,7 +194,8 @@ export async function GetUnitySecurityAlert(unityVersion: UnityVersion): Promise
     const patched = await getPatchedRelease(unityVersion);
     return {
         version: unityVersion.version,
-        summary: [text || sanitizeText(label!.labelText ?? ''), patched, ...links].filter(part => part.length > 0).join(' '),
+        // a link the text does not already carry still prints after it
+        summary: [text || sanitizeText(label!.labelText ?? ''), patched, ...links.filter(link => !text.includes(link))].filter(part => part.length > 0).join(' '),
         patched,
         details: [],
     };
@@ -239,11 +249,10 @@ export function GetLegacySecurityAlert(unityVersion: UnityVersion): UnitySecurit
         const fixed = cve.fixed[`${parsed.major}.${parsed.minor}`];
         return `${cve.id} ${cve.summary}${fixed ? `, fixed in ${fixed}` : ''} https://nvd.nist.gov/vuln/detail/${cve.id}`;
     });
-    details.push('More: https://unity.com/security');
     // worded like Unity's own Security Alert label, so both kinds of alert read alike
     return {
         version: unityVersion.version,
-        summary: 'This Editor version has known security issues and Unity never patched it.',
+        summary: 'Applications built with this Editor version have known security issues, and Unity never patched it. Read more: https://unity.com/security',
         details,
     };
 }

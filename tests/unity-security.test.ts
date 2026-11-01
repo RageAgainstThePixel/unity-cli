@@ -114,7 +114,7 @@ describe('Unity Security Alert', () => {
 
     it('reads Unity\'s text without the HTML and keeps the advisory link', () => {
         expect(ParseLabelDescription(SECURITY_LABEL.description)).toEqual({
-            text: 'Applications built with this Editor version have a known security issue. Update Editor before publishing. Read more.',
+            text: 'Applications built with this Editor version have a known security issue. Update Editor before publishing. Read more: https://unity.com/security/sept-2025-01.',
             links: ['https://unity.com/security/sept-2025-01'],
         });
         expect(ParseLabelDescription('a &amp;lt; b <a href="javascript:alert(1)">x</a>')).toEqual({ text: 'a &lt; b x', links: [] });
@@ -133,9 +133,9 @@ describe('Unity Security Alert', () => {
 
         expect(alert).toBeDefined();
         expect(FormatUnitySecurityAlert(alert!, true)).toBe(
-            'Unity Security Alert for 2022.3.62f1 (allowed): Applications built with this Editor version have a known security issue. Update Editor before publishing. Read more. Patched: 2022.3.62f3. https://unity.com/security/sept-2025-01');
+            'Unity Security Alert for 2022.3.62f1 (allowed): Applications built with this Editor version have a known security issue. Update Editor before publishing. Read more: https://unity.com/security/sept-2025-01. Patched: 2022.3.62f3.');
         expect(FormatUnitySecurityAlert(alert!, false)).toBe(
-            'Unity Security Alert for 2022.3.62f1: Applications built with this Editor version have a known security issue. Update Editor before publishing. Read more. Patched: 2022.3.62f3. https://unity.com/security/sept-2025-01\n' +
+            'Unity Security Alert for 2022.3.62f1: Applications built with this Editor version have a known security issue. Update Editor before publishing. Read more: https://unity.com/security/sept-2025-01. Patched: 2022.3.62f3.\n' +
             'Pass --allow-security-alert or set UNITY_ALLOW_SECURITY_ALERT=1 to continue.');
     });
 
@@ -148,7 +148,7 @@ describe('Unity Security Alert', () => {
         const alert = await GetUnitySecurityAlert(new UnityVersion('2018.4.36f1', '6cd387d23174', 'X86_64'));
 
         expect(alert!.patched).toBe('No patched release on this branch.');
-        expect(alert!.summary).toContain('No patched release on this branch. https://unity.com/security/sept-2025-01');
+        expect(alert!.summary).toContain('Read more: https://unity.com/security/sept-2025-01. No patched release on this branch.');
     });
 
     it('reads every page of the branch and suggests an older unlabelled release when the newer ones are labelled', async () => {
@@ -185,10 +185,9 @@ describe('Unity Security Alert', () => {
             const alert = GetLegacySecurityAlert(new UnityVersion('5.6.2f1', undefined, 'X86_64'))!;
 
             expect(FormatUnitySecurityAlert(alert, false)).toBe([
-                'Unity Security Alert for 5.6.2f1: This Editor version has known security issues and Unity never patched it.',
+                'Unity Security Alert for 5.6.2f1: Applications built with this Editor version have known security issues, and Unity never patched it. Read more: https://unity.com/security',
                 '  CVE-2017-12939 Windows editor RCE, fixed in 5.6.3p1 https://nvd.nist.gov/vuln/detail/CVE-2017-12939',
                 '  CVE-2019-9197 editor RCE, fixed in 5.6.7f1 https://nvd.nist.gov/vuln/detail/CVE-2019-9197',
-                '  More: https://unity.com/security',
                 'Pass --allow-security-alert or set UNITY_ALLOW_SECURITY_ALERT=1 to continue.',
             ].join('\n'));
         });
@@ -201,9 +200,8 @@ describe('Unity Security Alert', () => {
         it('lists only the CVEs that reach the version', () => {
             const legacy4 = GetLegacySecurityAlert(new UnityVersion('4.7.2', undefined, 'X86_64'))!;
             expect(FormatUnitySecurityAlert(legacy4, true)).toBe([
-                'Unity Security Alert for 4.7.2 (allowed): This Editor version has known security issues and Unity never patched it.',
+                'Unity Security Alert for 4.7.2 (allowed): Applications built with this Editor version have known security issues, and Unity never patched it. Read more: https://unity.com/security',
                 '  CVE-2017-12939 Windows editor RCE https://nvd.nist.gov/vuln/detail/CVE-2017-12939',
-                '  More: https://unity.com/security',
             ].join('\n'));
 
             const legacy55 = GetLegacySecurityAlert(new UnityVersion('5.5.0f3', undefined, 'X86_64'))!;
@@ -214,8 +212,8 @@ describe('Unity Security Alert', () => {
         it('still alerts when no CVE names the version, pointing to Unity\'s advisories', () => {
             const alert = GetLegacySecurityAlert(new UnityVersion('5.6.7f1', 'e80cc3114ac1', 'X86_64'))!;
 
-            expect(alert.details).toEqual(['More: https://unity.com/security']);
-            expect(alert.summary).toBe('This Editor version has known security issues and Unity never patched it.');
+            expect(alert.details).toEqual([]);
+            expect(alert.summary).toBe('Applications built with this Editor version have known security issues, and Unity never patched it. Read more: https://unity.com/security');
         });
 
         it('does not apply to 2017 and newer', () => {
