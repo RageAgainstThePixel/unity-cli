@@ -1,4 +1,22 @@
-import { ClassifyFailure, LICENSE_EXHAUSTED_MARKER, TRANSIENT_FAILURE_MARKER } from '../src/failure-markers';
+import { ClassifyFailure, FindLicenseExhaustedLine, LICENSE_EXHAUSTED_MARKER, TRANSIENT_FAILURE_MARKER } from '../src/failure-markers';
+
+describe('FindLicenseExhaustedLine', () => {
+    it('carries the licensing client\'s seat error into the editor failure, so it is marked retryable', () => {
+        const line = FindLicenseExhaustedLine([
+            '[Licensing::Module] Error: Access token is unavailable; failed to update',
+            '  [Licensing::Client] Error: Code 404 while processing request (status: Found 0 entitlement groups and 0 free entitlements matching requested entitlement ids)',
+            '[Licensing::Module] Error: \'com.unity.editor.headless\' was not found.',
+        ]);
+
+        expect(line).toBe('[Licensing::Client] Error: Code 404 while processing request (status: Found 0 entitlement groups and 0 free entitlements matching requested entitlement ids)');
+        expect(ClassifyFailure(`Unity failed with exit code 6: ${line}`)).toBe(LICENSE_EXHAUSTED_MARKER);
+    });
+
+    it('finds nothing in ordinary error lines', () => {
+        expect(FindLicenseExhaustedLine(["Assets/Foo.cs(2,8): error CS1029: #error: 'Intentional compiler error'", 'download failed: ETIMEDOUT'])).toBeUndefined();
+        expect(FindLicenseExhaustedLine([])).toBeUndefined();
+    });
+});
 
 describe('ClassifyFailure', () => {
     it.each([

@@ -3,8 +3,16 @@ import * as os from 'os';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { spawn } from 'child_process';
-import { Logger } from './logging';
+import { Logger, LogLevel } from './logging';
 import { UnityEditor } from './unity-editor';
+import {
+    FormatCliWarning,
+    GetLegacySecurityAlert,
+    GetUnitySecurityAlert,
+    IsSecurityAlertAllowedByEnv,
+    IsSecurityCliWarning,
+    ReportUnitySecurityAlert,
+} from './unity-security';
 import { UnityVersion } from './unity-version';
 import { FindAbsolutePath, UnityCli } from './unity-cli';
 import { IsPathUnder } from './process-tracker';
@@ -88,6 +96,26 @@ const ARCHIVE_MODULE_NAMES: { [module: string]: string } = {
 };
 
 /**
+ * How a Unity Security Alert on the requested editor is handled: `enforce` stops the setup, `allow` warns and continues.
+ */
+export type SecurityAlertPolicy = 'enforce' | 'allow';
+
+export interface GetEditorOptions {
+    /**
+     * How a Unity Security Alert on the editor is handled: the Releases API label for 2017 and newer, a fixed alert for
+     * 4.x and 5.x. Defaults to `allow` with UNITY_ALLOW_SECURITY_ALERT, otherwise `enforce`.
+     */
+    securityAlert?: SecurityAlertPolicy;
+    /** The command to re-run with --allow-security-alert, shown when an alert stops it. */
+    rerunCommand?: string;
+}
+
+/** The policy when none is given: `allow` with UNITY_ALLOW_SECURITY_ALERT=1 or true, otherwise `enforce`. */
+export function DefaultSecurityAlertPolicy(): SecurityAlertPolicy {
+    return IsSecurityAlertAllowedByEnv() ? 'allow' : 'enforce';
+}
+
+/**
  * Finds or installs Unity Editors.
  * - 2017.4 and newer install through the official Unity CLI (`unity install`).
  * - 5.x installs from Unity's download archive, because the official CLI reads one-digit majors as Unity 6 shorthand.
@@ -141,17 +169,24 @@ export class UnityInstaller {
      * @param modules The module ids to install alongside the editor.
      * @param channels The release channels to accept when resolving a partial version: f, p, b, a or x. Default is ['f'].
      */
-    public async GetEditor(unityVersion: UnityVersion, modules: string[] = [], channels: string[] = ['f']): Promise<UnityEditor> {
+    public async GetEditor(unityVersion: UnityVersion, modules: string[] = [], channels: string[] = ['f'], options: GetEditorOptions = {}): Promise<UnityEditor> {
         this.logger.ci(`Getting release info for Unity ${unityVersion.toString()}...`);
         const resolvedVersion = await this.resolveVersion(unityVersion, channels);
         let editorPath: string;
+
+        const policy = options.securityAlert ?? DefaultSecurityAlertPolicy();
+
+        // the Releases API does not list 4.x and 5.x, so their fixed alert is reported before anything is found or downloaded
+        if (resolvedVersion.isLessThan('2017.0.0')) {
+            await this.CheckSecurityAlert(resolvedVersion, policy, options.rerunCommand);
+        }
 
         if (resolvedVersion.isLegacy()) {
             editorPath = await this.installLegacyEditor(resolvedVersion);
         } else if (resolvedVersion.isLessThan('2017.0.0')) {
             editorPath = await this.installArchiveEditor(resolvedVersion, modules);
         } else {
-            editorPath = await this.installCliEditor(resolvedVersion, modules);
+            editorPath = await this.installCliEditor(resolvedVersion, modules, policy, options.rerunCommand);
         }
 
         await fs.promises.access(editorPath, fs.constants.X_OK);
@@ -191,10 +226,13 @@ export class UnityInstaller {
         }
     }
 
-    private async installCliEditor(unityVersion: UnityVersion, modules: string[]): Promise<string> {
+    private async installCliEditor(unityVersion: UnityVersion, modules: string[], policy: SecurityAlertPolicy, rerunCommand: string | undefined): Promise<string> {
         const cli = await this.GetCli();
+        const info = await this.getEditorInfo(cli, unityVersion);
+        // before anything is found, registered or downloaded
+        await this.checkSecurityAlert(unityVersion, info.warnings, policy === 'allow', rerunCommand);
         let editorPath = await this.findCliEditor(cli, unityVersion);
-        const requestedModules = modules.length > 0 ? await this.filterModules(cli, unityVersion, modules) : [];
+        const requestedModules = modules.length > 0 ? this.filterModules(info.modules, unityVersion, modules) : [];
 
         if (!editorPath) {
             if (process.platform === 'linux') {
@@ -270,13 +308,74 @@ export class UnityInstaller {
     }
 
     /**
+     * Reads a release's modules and warnings with `unity editors info`.
+     * @returns The module ids, undefined when they could not be read, and the warnings the CLI returned.
+     */
+    private async getEditorInfo(cli: UnityCli, unityVersion: UnityVersion): Promise<{ modules: string[] | undefined; warnings: unknown[] }> {
+        const { exitCode, envelope } = await cli.RunJson<{ modules?: { id: string }[] }>(['editors', 'info', unityVersion.version]);
+        const warnings = Array.isArray(envelope?.warnings) ? envelope.warnings : [];
+        return { modules: exitCode === 0 ? envelope?.data?.modules?.map(module => module.id) : undefined, warnings };
+    }
+
+    /**
+     * Stops on a Unity Security Alert unless it is allowed. The official CLI's own security warning is printed as it
+     * is when it has one; otherwise the Unity Releases API label is. Other CLI warnings are logged as warnings.
+     * @param unityVersion The exact release.
+     * @param cliWarnings The warnings from `unity editors info`.
+     * @param allow Whether the alert was allowed with --allow-security-alert or UNITY_ALLOW_SECURITY_ALERT.
+     */
+    /**
+     * Checks an exact release for a Unity Security Alert, the same way every command that installs or selects an editor
+     * does: a warning with the opt-in, otherwise an error that stops the command.
+     * @param unityVersion The exact release.
+     * @param policy `allow` or `enforce`. Defaults to `allow` with UNITY_ALLOW_SECURITY_ALERT, otherwise `enforce`.
+     * @param rerunCommand The command to re-run with --allow-security-alert, shown when the alert stops it.
+     */
+    public async CheckSecurityAlert(unityVersion: UnityVersion, policy: SecurityAlertPolicy = DefaultSecurityAlertPolicy(), rerunCommand: string | undefined = undefined): Promise<void> {
+        if (unityVersion.isLessThan('2017.0.0')) {
+            const alert = GetLegacySecurityAlert(unityVersion);
+
+            if (alert) {
+                ReportUnitySecurityAlert(alert, policy === 'allow', rerunCommand);
+            }
+
+            return;
+        }
+
+        const info = await this.getEditorInfo(await this.GetCli(), unityVersion);
+        await this.checkSecurityAlert(unityVersion, info.warnings, policy === 'allow', rerunCommand);
+    }
+
+    private async checkSecurityAlert(unityVersion: UnityVersion, cliWarnings: unknown[], allow: boolean, rerunCommand: string | undefined): Promise<void> {
+        const cliSecurityWarnings = cliWarnings.filter(IsSecurityCliWarning).map(FormatCliWarning).filter(text => text.length > 0);
+        this.reportCliWarnings(cliWarnings.filter(warning => !IsSecurityCliWarning(warning)));
+        const alert = await GetUnitySecurityAlert(unityVersion);
+
+        if (cliSecurityWarnings.length > 0) {
+            // the official CLI's own text in place of the label's, with the patched release from the Releases API
+            const summary = [...cliSecurityWarnings, ...(alert?.patched ? [alert.patched] : [])].join(' | ');
+            ReportUnitySecurityAlert({ version: unityVersion.version, summary, details: [] }, allow, rerunCommand);
+        } else if (alert) {
+            ReportUnitySecurityAlert(alert, allow, rerunCommand);
+        }
+    }
+
+    private reportCliWarnings(warnings: unknown[]): void {
+        for (const warning of warnings) {
+            const text = FormatCliWarning(warning);
+
+            // an annotation escapes line breaks, so CLI text cannot start a workflow command of its own
+            if (text.length > 0) {
+                this.logger.annotate(LogLevel.WARN, text);
+            }
+        }
+    }
+
+    /**
      * Drops modules the release does not offer, since `unity install` fails on an unknown module id.
      */
-    private async filterModules(cli: UnityCli, unityVersion: UnityVersion, modules: string[]): Promise<string[]> {
-        const { exitCode, envelope } = await cli.RunJson<{ modules?: { id: string }[] }>(['editors', 'info', unityVersion.version]);
-        const available = envelope?.data?.modules?.map(module => module.id);
-
-        if (exitCode !== 0 || !available || available.length === 0) {
+    private filterModules(available: string[] | undefined, unityVersion: UnityVersion, modules: string[]): string[] {
+        if (!available || available.length === 0) {
             this.logger.debug(`Could not read the module list for Unity ${unityVersion.version}, requesting modules as given`);
             return [...modules];
         }

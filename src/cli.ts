@@ -10,6 +10,7 @@ import { Logger, LogLevel } from './logging';
 import { UnityCli } from './unity-cli';
 import { UnityEditor } from './unity-editor';
 import { UnityInstaller } from './unity-installer';
+import { BuildSecurityAlertRerunCommand, IsSecurityAlertAllowedByEnv, SECURITY_ALERT_ENV, UnitySecurityAlertError } from './unity-security';
 import { UnityVersion } from './unity-version';
 import { UnityProject } from './unity-project';
 import { CheckAndroidSdkInstalled } from './android-sdk';
@@ -26,6 +27,7 @@ import { PromptForSecretInput } from './utilities';
 import { UpmCli, UpmPackOptions } from './upm-cli';
 import { ReportFailure } from './failure-markers';
 
+const SECURITY_ALERT_OPTION_HELP = `Install or select an editor that Unity marks with a Security Alert, with a warning instead of an error. Same as ${SECURITY_ALERT_ENV}=1.`;
 const pkgPath = path.join(__dirname, '..', 'package.json');
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
 updateNotifier({ pkg }).notify();
@@ -198,6 +200,7 @@ program.command('setup-unity')
     .option('-b, --build-targets <buildTargets>', 'The Unity build target to get/install as comma-separated values (e.g. iOS,Android).')
     .option('-m, --modules <modules>', 'The Unity module to get/install as comma-separated values (e.g. ios,android).')
     .option('-i, --install-path <installPath>', 'The path to install the Unity Editor to. By default, it will be installed to the Unity CLI install path.')
+    .option('--allow-security-alert', SECURITY_ALERT_OPTION_HELP)
     .option('--verbose', 'Enable verbose logging.')
     .option('--json', 'Prints the last line of output as JSON string.')
     .action(async (options) => {
@@ -207,6 +210,7 @@ program.command('setup-unity')
 
         Logger.instance.debugOptions(options);
 
+        const allowSecurityAlert = options.allowSecurityAlert === true;
         let unityProject: UnityProject | undefined;
 
         if (options.unityProject) {
@@ -280,7 +284,7 @@ program.command('setup-unity')
             await installer.SetInstallPath(options.installPath);
         }
 
-        const unityEditor = await installer.GetEditor(unityVersion, modules, channels);
+        const unityEditor = await installer.GetEditor(unityVersion, modules, channels, securityAlertOptions(allowSecurityAlert));
         const output: { [key: string]: string } = {
             'UNITY_CLI_PATH': unityCli.executable,
             'UNITY_EDITOR_PATH': unityEditor.editorPath,
@@ -323,6 +327,7 @@ program.command('run')
     .option('--unity-project <unityProject>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable will be used, otherwise no project will be specified.')
     .option('--log-name <logName>', 'The name of the log file.')
     .option('--log-level <logLevel>', 'Override the logger verbosity (debug, info, minimal, warning, error). Defaults to info.')
+    .option('--allow-security-alert', SECURITY_ALERT_OPTION_HELP)
     .option('--verbose', 'Enable verbose logging. Deprecated, use --log-level instead.')
     .allowUnknownOption(true)
     .argument('<args...>', 'Arguments to pass to the Unity Editor executable.')
@@ -404,8 +409,12 @@ program.command('run')
 
             if (!unityEditor) {
                 try {
-                    unityEditor = await new UnityInstaller().GetEditor(unityProject.version);
-                } catch {
+                    unityEditor = await new UnityInstaller().GetEditor(unityProject.version, [], ['f'], securityAlertOptions(options.allowSecurityAlert === true));
+                } catch (error) {
+                    if (error instanceof UnitySecurityAlertError) {
+                        throw error;
+                    }
+
                     Logger.instance.error(`Could not find Unity Editor version ${unityProject.version.version} installed for project at ${unityProject.projectPath}. Please specify the editor path with --unity-editor or set the UNITY_EDITOR_PATH environment variable.`);
                     process.exit(1);
                 }
@@ -493,6 +502,7 @@ program.command('create-project')
     .option('-t, --template <projectTemplate>', 'The template package id to create the project from; an id prefix picks the first matching template.', 'com.unity.template.3d')
     .option('-u, --unity-version <unityVersion>', 'The Unity version to create the project with (e.g. 2022.3.1f1, 6000.2). If unspecified, then --unity-editor must be specified.')
     .option('-e, --unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, -u, --unity-version, or the UNITY_EDITOR_PATH environment variable must be set.')
+    .option('--allow-security-alert', SECURITY_ALERT_OPTION_HELP)
     .option('--verbose', 'Enable verbose logging.')
     .option('--json', 'Prints the output as JSON.')
     .action(async (options) => {
@@ -502,6 +512,11 @@ program.command('create-project')
 
         Logger.instance.debugOptions(options);
         const version = await forwardedEditorVersion(options, true);
+
+        if (version) {
+            await checkEditorSecurityAlert(new UnityVersion(version), options.allowSecurityAlert === true);
+        }
+
         const target = path.resolve(options.path?.toString()?.trim() || process.cwd());
         const name = options.name?.toString()?.trim();
         const args = ['projects', 'create', name || path.basename(target), '--path', name ? target : path.dirname(target)];
@@ -543,6 +558,7 @@ program.command('open-project')
     .option('-p, --unity-project <unityProject>', 'The path to a Unity project. If unspecified, the UNITY_PROJECT_PATH environment variable or the current working directory will be used.')
     .option('-u, --unity-version <unityVersion>', 'The Unity version to open the project with. If specified, it will override the version read from the project.')
     .option('-t, --build-target <buildTarget>', 'The Unity build target to switch the project to (e.g. StandaloneWindows64, StandaloneOSX, iOS, Android).')
+    .option('--allow-security-alert', SECURITY_ALERT_OPTION_HELP)
     .option('--verbose', 'Enable verbose logging.')
     .action(async (options) => {
         if (options.verbose) {
@@ -553,6 +569,14 @@ program.command('open-project')
         const projectPath = options.unityProject?.toString()?.trim() || process.env.UNITY_PROJECT_PATH || process.cwd();
         const args = ['open', projectPath];
         const version = options.unityVersion?.toString()?.trim();
+        // the editor that opens the project: the requested version, or the one the project was saved with
+        const editorVersion = version
+            ? await new UnityInstaller(await UnityCli.Get()).resolveVersion(new UnityVersion(version))
+            : await UnityProject.GetProject(projectPath).then(project => project?.version, () => undefined);
+
+        if (editorVersion) {
+            await checkEditorSecurityAlert(editorVersion, options.allowSecurityAlert === true);
+        }
         const buildTarget = options.buildTarget?.toString()?.trim();
 
         if (version) {
@@ -565,6 +589,28 @@ program.command('open-project')
 
         await forwardToUnityCli('open-project', args);
     });
+
+/**
+ * The security alert handling for a command: `allow` with --allow-security-alert or UNITY_ALLOW_SECURITY_ALERT,
+ * otherwise `enforce`, with the command line to re-run when an alert stops it.
+ * @param allowFlag Whether --allow-security-alert was given.
+ */
+function securityAlertOptions(allowFlag: boolean): { securityAlert: 'allow' | 'enforce'; rerunCommand: string } {
+    return {
+        securityAlert: allowFlag || IsSecurityAlertAllowedByEnv() ? 'allow' : 'enforce',
+        rerunCommand: BuildSecurityAlertRerunCommand(process.argv.slice(2)),
+    };
+}
+
+/**
+ * Runs the same security alert check setup-unity runs, for a command that selects an editor without installing it.
+ * @param unityVersion The editor version the command selects.
+ * @param allowFlag Whether --allow-security-alert was given.
+ */
+async function checkEditorSecurityAlert(unityVersion: UnityVersion, allowFlag: boolean): Promise<void> {
+    const { securityAlert, rerunCommand } = securityAlertOptions(allowFlag);
+    await new UnityInstaller(await UnityCli.Get()).CheckSecurityAlert(unityVersion, securityAlert, rerunCommand);
+}
 
 /**
  * The editor version a forwarded v3 command names, from --unity-version or the editor at --unity-editor / UNITY_EDITOR_PATH.

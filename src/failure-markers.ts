@@ -1,4 +1,5 @@
 import { Logger, LogLevel } from './logging';
+import { UnitySecurityAlertError } from './unity-security';
 
 /** Annotation title for a failure a later rerun can clear because a license seat was taken. */
 export const LICENSE_EXHAUSTED_MARKER = 'unity-license-exhausted';
@@ -32,6 +33,16 @@ export function ClassifyFailure(message: string): string | undefined {
 }
 
 /**
+ * The first line that names an exhausted license seat, such as the licensing client's "0 free entitlements" in the
+ * Editor log of a run that stopped on exit 198, so the error that ends the run can carry it.
+ * @param lines The lines to look through.
+ * @returns The line, trimmed, or undefined when none names one.
+ */
+export function FindLicenseExhaustedLine(lines: readonly string[]): string | undefined {
+    return lines.map(line => line.trim()).find(line => ClassifyFailure(line) === LICENSE_EXHAUSTED_MARKER);
+}
+
+/**
  * Logs a command failure. Failures a rerun can clear get a notice annotation titled with their marker, which the
  * rerun workflow looks for; every failure is then logged as an error as before. The marker is a notice because GitHub
  * keeps only 10 error annotations per step, and a step that already reported editor errors would drop it.
@@ -39,6 +50,13 @@ export function ClassifyFailure(message: string): string | undefined {
  */
 export function ReportFailure(error: unknown): void {
     const message = error instanceof Error ? error.message : String(error);
+
+    // a titled error annotation, so the alert reads as Unity's own on the run summary; a rerun would only repeat it
+    if (error instanceof UnitySecurityAlertError) {
+        Logger.instance.annotate(LogLevel.ERROR, message, undefined, undefined, undefined, undefined, undefined, error.title);
+        return;
+    }
+
     const marker = ClassifyFailure(message);
 
     if (marker) {

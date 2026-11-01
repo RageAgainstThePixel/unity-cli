@@ -64,15 +64,54 @@ jobs:
     permissions:
       contents: read
       checks: write # to publish unit test results via checks github api
+    env:
+      LEGACY: ${{ github.event_name == 'schedule' || inputs.editors == 'legacy' }}
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        if: ${{ env.LEGACY != 'true' }}
         with:
-          sparse-checkout: .github/
+          node-version: 24.x
+          cache: npm
+      # pull requests and pushes test the streams the official CLI offers (the LTS lines, the current release, the
+      # beta and the alpha), so a stream joins when Unity lists it and leaves when Unity stops; build-options.json keeps
+      # the platform rows and the fallback list. The monthly run tests every major.minor line in build-options-legacy.json.
+      - name: Unity streams
+        id: streams
+        if: ${{ env.LEGACY != 'true' }}
+        shell: bash
+        env:
+          UNITY_NON_INTERACTIVE: '1'
+          UNITY_NO_BANNER: '1'
+          UNITY_NO_UPDATE_CHECK: '1'
+        run: |
+          set -euo pipefail
+          options='./.github/workflows/build-options.json'
+          generated="${RUNNER_TEMP}/build-options.json"
+          # errexit does not apply inside a function called as a condition, so every step returns on failure itself
+          list_streams() {
+            npm ci --no-audit --no-fund > /dev/null || return 1
+            npm run build > /dev/null || return 1
+            # unity-cli installs the official CLI with SHA-256 verification; no license is needed to list releases
+            local cli
+            cli="$(node -e "require('./dist/index.js').UnityCli.Get().then(c => console.log(c.executable), e => { console.error(e); process.exit(1); })" | tail -n 1)" || return 1
+            [ -n "${cli}" ] || return 1
+            "${cli}" editors --releases --format json |
+              jq -c '[.data.items[].version | select(test("^[0-9]+\\.[0-9]+\\.")) | capture("^(?<s>[0-9]+\\.[0-9]+)").s] | unique_by(split(".") | map(tonumber))'
+          }
+          if streams="$(list_streams)" && [ "$(jq 'length' <<< "${streams}")" -gt 0 ]; then
+            jq --argjson streams "${streams}" '."unity-version" = $streams' "${options}" > "${generated}"
+          else
+            # a failed listing falls back to the file's own list rather than failing the step
+            echo "::warning::Could not list Unity releases, testing the fallback streams"
+            cp "${options}" "${generated}"
+          fi
+          echo "Testing Unity streams: $(jq -r '."unity-version" | join(", ")' "${generated}")"
+          echo "path=${generated}" >> "${GITHUB_OUTPUT}"
       - uses: RageAgainstThePixel/job-builder@v1
         id: setup-jobs
         with:
-          # pull requests and pushes test Unity 6 and newer; 4.7.2 through 2022.3 run monthly or on demand
-          build-options: ${{ (github.event_name == 'schedule' || inputs.editors == 'legacy') && './.github/workflows/build-options-legacy.json' || './.github/workflows/build-options.json' }}
+          build-options: ${{ env.LEGACY == 'true' && './.github/workflows/build-options-legacy.json' || steps.streams.outputs.path }}
           # one group per editor version; every group runs at once, since macOS and Linux rows share one seat per OS
           # and Windows rows return theirs
           group-by: unity-version
@@ -106,7 +145,7 @@ jobs:
           npm run link
       - name: Activate License
         id: activate
-        shell: pwsh
+        shell: bash
         env:
           UNITY_USERNAME: ${{ secrets.UNITY_USERNAME }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
@@ -114,27 +153,31 @@ jobs:
           # nobody a way to test password guesses offline
           CI_TOKEN: ${{ secrets.CI_TOKEN }}
         run: |
-          if (-not $env:UNITY_USERNAME -or -not $env:UNITY_PASSWORD -or -not $env:CI_TOKEN) {
+          set -euo pipefail
+          if [ -z "${UNITY_USERNAME}" ] || [ -z "${UNITY_PASSWORD}" ] || [ -z "${CI_TOKEN}" ]; then
             # pull requests from forks get no secrets; their rows fall back to their own activation
             echo '::warning::No Unity credentials or CI_TOKEN, so this run has no shared license'
             exit 0
-          }
+          fi
           unity-cli upm-install --json
           # activates before anything else installs the licensing client, as a fresh runner without the Hub does
           # for downstream actions; license-context runs after, only to explain a failure
-          unity-cli activate-license --license personal
-          if ($LASTEXITCODE -ne 0) {
-            $code = $LASTEXITCODE
-            unity-cli license-context
-            exit $code
-          }
-          $dir = Join-Path $env:RUNNER_TEMP 'unity-license'
-          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          code=0
+          unity-cli activate-license --license personal || code=$?
+          if [ "${code}" -ne 0 ]; then
+            unity-cli license-context || true
+            exit "${code}"
+          fi
+          dir="${RUNNER_TEMP}/unity-license"
+          mkdir -p "${dir}"
+          license_file="$(unity-cli license-file-path)"
           # the key never reaches a command line: openssl reads it from the environment
-          $env:LICENSE_KEY = "$($env:CI_TOKEN):$($env:GITHUB_RUN_ID)"
-          openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -in (unity-cli license-file-path) -out (Join-Path $dir 'unity-license.enc') -pass env:LICENSE_KEY
-          if ($LASTEXITCODE -ne 0) { throw 'Could not encrypt the run license' }
-          "encrypted=true" >> $env:GITHUB_OUTPUT
+          export LICENSE_KEY="${CI_TOKEN}:${GITHUB_RUN_ID}"
+          if ! openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -in "${license_file}" -out "${dir}/unity-license.enc" -pass env:LICENSE_KEY; then
+            echo 'Could not encrypt the run license' >&2
+            exit 1
+          fi
+          echo "encrypted=true" >> "${GITHUB_OUTPUT}"
       - uses: actions/upload-artifact@v7
         if: ${{ steps.activate.outputs.encrypted == 'true' }}
         with:
@@ -158,6 +201,8 @@ jobs:
     with:
       matrix: ${{ toJSON(matrix.jobs.matrix) }}
       utp-test-profile: normal
+      # the legacy set tests 4.x through 2018 on purpose, and Unity labels those with a Security Alert
+      allow-security-alert: ${{ github.event_name == 'schedule' || inputs.editors == 'legacy' }}
   validate-negative-scenarios:
     if: ${{ !cancelled() && github.event.pull_request.draft == false && github.event_name != 'schedule' && inputs.editors != 'legacy' }}
     needs: license
@@ -168,7 +213,7 @@ jobs:
     secrets: inherit
     uses: ./.github/workflows/unity-build.yml
     with:
-      matrix: '{"include":[{"os":"ubuntu-latest","unity-version":"6000.1","build-target":"StandaloneLinux64","name":"negative-scenarios"}]}'
+      matrix: '{"include":[{"os":"ubuntu-latest","unity-version":"6000.3","build-target":"StandaloneLinux64","name":"negative-scenarios"}]}'
       utp-test-profile: negative
   # one check that stands for the whole run, so rows can be regrouped or renamed without touching required checks
   ci-result:
@@ -206,17 +251,24 @@ jobs:
       actions: write # to delete this run's license artifacts
     steps:
       - name: Delete the run license
-        shell: pwsh
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $ids = gh api "repos/$($env:GITHUB_REPOSITORY)/actions/runs/$($env:GITHUB_RUN_ID)/artifacts?per_page=100" --paginate --jq '.artifacts[] | select(.name | startswith("unity-license-")) | .id'
-          if ($LASTEXITCODE -ne 0) { throw 'Could not list the run artifacts' }
-          foreach ($id in $ids) {
-            gh api -X DELETE "repos/$($env:GITHUB_REPOSITORY)/actions/artifacts/$id"
-            if ($LASTEXITCODE -ne 0) { throw "Could not delete artifact $id" }
-          }
-          echo "Deleted $(@($ids).Count) license artifacts"
+          set -euo pipefail
+          if ! ids="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" --paginate --jq '.artifacts[] | select(.name | startswith("unity-license-")) | .id')"; then
+            echo 'Could not list the run artifacts' >&2
+            exit 1
+          fi
+          count=0
+          for id in ${ids}; do
+            if ! gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}"; then
+              echo "Could not delete artifact ${id}" >&2
+              exit 1
+            fi
+            count=$((count + 1))
+          done
+          echo "Deleted ${count} license artifacts"
   timeline:
     needs: [setup, validate, validate-negative-scenarios]
     if: always()
