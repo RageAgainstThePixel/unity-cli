@@ -9,6 +9,10 @@ import {
 /** Annotation title for a Unity Security Alert, as an error without the opt-in and a warning with it. */
 export const SECURITY_ALERT_TITLE = 'Unity Security Alert';
 
+/** The Releases API's largest page, and a bound on the pages read for one branch. */
+const PAGE_SIZE = 25;
+const MAX_BRANCH_PAGES = 20;
+
 /** The environment variable that opts in to installing or selecting an editor with a security alert. */
 export const SECURITY_ALERT_ENV = 'UNITY_ALLOW_SECURITY_ALERT';
 
@@ -207,26 +211,34 @@ export function ReportUnitySecurityAlert(unityVersion: UnityVersion, alertText: 
 async function getSuggestion(unityVersion: UnityVersion, links: string[]): Promise<string> {
     const [major, minor] = unityVersion.version.split('.');
     const branch = `${major}.${minor}`;
-    let releases: UnityRelease[];
+    const releases: UnityRelease[] = [];
 
     try {
-        releases = await getReleases({
-            version: branch,
-            architecture: [unityVersion.architecture],
-            platform: getPlatform(),
-            limit: 25,
-            order: 'RELEASE_DATE_DESC',
-        });
+        // every page, so "no patched release" is never claimed from the first 25 rows alone
+        for (let page = 0; page < MAX_BRANCH_PAGES; page++) {
+            const results = await getReleases({
+                version: branch,
+                architecture: [unityVersion.architecture],
+                platform: getPlatform(),
+                limit: PAGE_SIZE,
+                offset: page * PAGE_SIZE,
+                order: 'RELEASE_DATE_DESC',
+            });
+            releases.push(...results);
+
+            if (results.length < PAGE_SIZE) {
+                break;
+            }
+        }
     } catch (error) {
         Logger.instance.debug(`Could not look up a patched Unity ${branch} release: ${error}`);
-        return `Update to a newer Unity ${branch} release without a security alert.`;
+        return `Update to a Unity ${branch} release without a security alert.`;
     }
 
     const patched = releases
         .filter(release => typeof release.version === 'string' && /^\d+\.\d+\.\d+f\d+$/.test(release.version) && release.version.startsWith(`${branch}.`))
         .filter(release => !(release as unknown as { label?: UnityReleaseLabel | null }).label)
         .map(release => new UnityVersion(release.version!, release.shortRevision, unityVersion.architecture))
-        .filter(version => UnityVersion.compare(version, unityVersion) > 0)
         .sort((a, b) => UnityVersion.compare(b, a))[0];
 
     if (patched) {

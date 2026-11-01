@@ -10,7 +10,7 @@ import { Logger, LogLevel } from './logging';
 import { UnityCli } from './unity-cli';
 import { UnityEditor } from './unity-editor';
 import { UnityInstaller } from './unity-installer';
-import { IsSecurityAlertAllowedByEnv, SECURITY_ALERT_ENV } from './unity-security';
+import { IsSecurityAlertAllowedByEnv, SECURITY_ALERT_ENV, UnitySecurityAlertError } from './unity-security';
 import { UnityVersion } from './unity-version';
 import { UnityProject } from './unity-project';
 import { CheckAndroidSdkInstalled } from './android-sdk';
@@ -409,8 +409,14 @@ program.command('run')
 
             if (!unityEditor) {
                 try {
-                    unityEditor = await new UnityInstaller().GetEditor(unityProject.version);
-                } catch {
+                    unityEditor = await new UnityInstaller().GetEditor(unityProject.version, [], ['f'], {
+                        securityAlert: IsSecurityAlertAllowedByEnv() ? 'allow' : 'enforce',
+                    });
+                } catch (error) {
+                    if (error instanceof UnitySecurityAlertError) {
+                        throw error;
+                    }
+
                     Logger.instance.error(`Could not find Unity Editor version ${unityProject.version.version} installed for project at ${unityProject.projectPath}. Please specify the editor path with --unity-editor or set the UNITY_EDITOR_PATH environment variable.`);
                     process.exit(1);
                 }

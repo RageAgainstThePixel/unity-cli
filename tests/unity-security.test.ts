@@ -148,6 +148,21 @@ describe('Unity Security Alert', () => {
         expect(alert!.suggestion).toBe('Unity has no patched release on the 2018.4 branch. See the advisory for the binary patch tool: https://unity.com/security/sept-2025-01');
     });
 
+    it('reads every page of the branch and suggests an older unlabelled release when the newer ones are labelled', async () => {
+        const labelledRows = Array.from({ length: 30 }, (_, i) => ({ version: `2022.3.${100 - i}f1`, shortRevision: `l${i}`, label: SECURITY_LABEL }));
+        const branchRows = [...labelledRows, { version: '2022.3.62f3', shortRevision: '96770f904ca7' }];
+        mockGetUnityReleases.mockImplementation(async (request: { query: { version: string; offset?: number; limit?: number } }) => {
+            const { version, offset = 0, limit = 25 } = request.query;
+            const rows = version === '2022.3' ? branchRows : [{ version: '2022.3.100f1', shortRevision: 'l0', label: SECURITY_LABEL }];
+            return { data: { results: rows.slice(offset, offset + limit) }, error: undefined };
+        });
+
+        const alert = await GetUnitySecurityAlert(new UnityVersion('2022.3.100f1', 'l0', 'X86_64'));
+
+        expect(alert!.suggestion).toBe('Suggested: Unity 2022.3.62f3, the newest stable 2022.3 release without a security alert.');
+        expect(mockGetUnityReleases.mock.calls.filter(call => call[0].query.version === '2022.3').map(call => call[0].query.offset)).toEqual([0, 25]);
+    });
+
     it('warns and continues when the Releases API cannot be reached', async () => {
         mockGetUnityReleases.mockRejectedValue(new Error('fetch failed'));
 
