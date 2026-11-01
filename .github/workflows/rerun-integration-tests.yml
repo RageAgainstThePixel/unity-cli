@@ -10,7 +10,7 @@ jobs:
     permissions:
       actions: write
       checks: read
-    uses: ./.github/workflows/rerun-marked-failures.yml
+    uses: RageAgainstThePixel/workflows/.github/workflows/rerun-marked-failures.yml@v1
     with:
       run-id: ${{ github.event.workflow_run.id }}
       run-attempt: ${{ github.event.workflow_run.run_attempt }}
