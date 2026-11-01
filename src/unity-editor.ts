@@ -16,6 +16,7 @@ import {
     redactSensitiveLiterals,
 } from './utilities';
 import { UnityCli } from './unity-cli';
+import { FindLicenseExhaustedLine } from './failure-markers';
 import {
     IsExecutableNamed,
     IsPathUnder,
@@ -464,7 +465,9 @@ export class UnityEditor {
                 if (exitCode === undefined) {
                     throw Error('Failed to start Unity!');
                 } else if (exitCode !== 0) {
-                    throw Error(`Unity failed with exit code ${exitCode}`);
+                    // a run that stopped because no license seat was free names it, so the failure is marked retryable
+                    const licenseLine = FindLicenseExhaustedLine(logTail?.errorLines ?? []);
+                    throw Error(`Unity failed with exit code ${exitCode}${licenseLine ? `: ${licenseLine}` : ''}`);
                 }
             } else {
                 // a cancelled run did not finish, so it must not end the command with exit code 0

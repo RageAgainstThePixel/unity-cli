@@ -33,6 +33,16 @@ export function ClassifyFailure(message: string): string | undefined {
 }
 
 /**
+ * The first line that names an exhausted license seat, such as the licensing client's "0 free entitlements" in the
+ * Editor log of a run that stopped on exit 198, so the error that ends the run can carry it.
+ * @param lines The lines to look through.
+ * @returns The line, trimmed, or undefined when none names one.
+ */
+export function FindLicenseExhaustedLine(lines: readonly string[]): string | undefined {
+    return lines.map(line => line.trim()).find(line => ClassifyFailure(line) === LICENSE_EXHAUSTED_MARKER);
+}
+
+/**
  * Logs a command failure. Failures a rerun can clear get a notice annotation titled with their marker, which the
  * rerun workflow looks for; every failure is then logged as an error as before. The marker is a notice because GitHub
  * keeps only 10 error annotations per step, and a step that already reported editor errors would drop it.
