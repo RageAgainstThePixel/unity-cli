@@ -194,17 +194,19 @@ jobs:
         id: run-license
         if: ${{ steps.download-run-license.outcome == 'success' }}
         continue-on-error: true
-        shell: pwsh
         env:
           CI_TOKEN: ${{ secrets.CI_TOKEN }}
         run: |
-          $dir = Join-Path $env:RUNNER_TEMP 'unity-license'
-          $license = Join-Path $dir 'Unity_lic.ulf'
+          set -euo pipefail
+          dir="${RUNNER_TEMP}/unity-license"
+          license="${dir}/Unity_lic.ulf"
           # the key never reaches a command line: openssl reads it from the environment
-          $env:LICENSE_KEY = "$($env:CI_TOKEN):$($env:GITHUB_RUN_ID)"
-          openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in (Join-Path $dir 'unity-license.enc') -out $license -pass env:LICENSE_KEY
-          if ($LASTEXITCODE -ne 0) { throw 'Could not decrypt the run license' }
-          "path=$license" >> $env:GITHUB_OUTPUT
+          export LICENSE_KEY="${CI_TOKEN}:${GITHUB_RUN_ID}"
+          if ! openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in "${dir}/unity-license.enc" -out "${license}" -pass env:LICENSE_KEY; then
+            echo 'Could not decrypt the run license' >&2
+            exit 1
+          fi
+          echo "path=${license}" >> "${GITHUB_OUTPUT}"
       - name: Activate License
         id: activate-license
         if: ${{ matrix.unity-version != 'none' }}
@@ -308,19 +310,22 @@ jobs:
       - name: Disable WebGL Compression
         # Brotli on the .wasm takes minutes per build and the tests never serve the player, so it only costs job time
         if: ${{ matrix.build-target == 'WebGL' && matrix.unity-version != 'none' }}
-        shell: pwsh
         run: |
-          $path = Join-Path $env:UNITY_PROJECT_PATH 'ProjectSettings/ProjectSettings.asset'
-          $text = Get-Content -Path $path -Raw
+          set -euo pipefail
+          path="${UNITY_PROJECT_PATH}/ProjectSettings/ProjectSettings.asset"
           # 0 is Brotli, 1 is Gzip and 2 is Disabled
-          if ($text -match '(?m)^([ \t]*)webGLCompressionFormat:.*$') {
-            $text = $text -replace '(?m)^([ \t]*)webGLCompressionFormat:.*$', '${1}webGLCompressionFormat: 2'
-          } else {
+          if grep -Eq '^[[:blank:]]*webGLCompressionFormat:' "${path}"; then
+            # -i with a suffix works with both GNU and BSD sed
+            sed -E -i.bak 's/^([[:blank:]]*)webGLCompressionFormat:.*$/\1webGLCompressionFormat: 2/' "${path}"
+            rm -f "${path}.bak"
+          else
             # the asset holds only the PlayerSettings document, whose keys sit two spaces in
-            $text = $text.TrimEnd() + "`n  webGLCompressionFormat: 2`n"
-          }
-          Set-Content -Path $path -Value $text -NoNewline
-          Select-String -Path $path -Pattern 'webGLCompressionFormat'
+            if [ -n "$(tail -c 1 "${path}")" ]; then
+              printf '\n' >> "${path}"
+            fi
+            printf '  webGLCompressionFormat: 2\n' >> "${path}"
+          fi
+          grep 'webGLCompressionFormat' "${path}"
       - name: Compute safe artifact name
         id: artifact-name
         env:
