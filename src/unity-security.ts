@@ -72,7 +72,8 @@ export function IsSecurityLabel(label: UnityReleaseLabel | undefined | null): bo
 
 /**
  * Turns a label description into plain text and the links it carries. Tags are dropped and their text kept, so
- * Unity's own wording prints as it is, and an https link follows its text, as in "Read more: https://...".
+ * Unity's own wording prints as it is: an http or https link follows its text, as in "Read more: https://...",
+ * <br> becomes a space, entities are decoded, and links with any other scheme are dropped.
  * @param description The label's HTML description.
  */
 export function ParseLabelDescription(description: string | undefined): { text: string; links: string[] } {
@@ -84,12 +85,23 @@ export function ParseLabelDescription(description: string | undefined): { text: 
     let text = '';
     let index = 0;
     let openLink: string | undefined;
+    let afterLink = false;
 
     while (index < description.length) {
         const char = description[index]!;
 
         if (char !== '<') {
-            text += char;
+            // terminals and log viewers take punctuation right after a URL into the link, so none is left there:
+            // at the end of the text it is dropped, and before more text it becomes a separator
+            if (afterLink && /[.,;:!?)]/.test(char)) {
+                if (hasTextAfter(description, index + 1)) {
+                    text += ' |';
+                }
+            } else {
+                text += char;
+            }
+
+            afterLink = false;
             index++;
             continue;
         }
@@ -103,7 +115,7 @@ export function ParseLabelDescription(description: string | undefined): { text: 
         const tag = description.slice(index, end);
         const href = /\bhref\s*=\s*["']([^"']*)["']/i.exec(tag);
 
-        if (href?.[1] && /^https:\/\/[^\s]+$/i.test(href[1])) {
+        if (href?.[1] && /^https?:\/\/[^\s"'<>]+$/i.test(href[1])) {
             openLink = href[1];
 
             if (!links.includes(href[1])) {
@@ -112,6 +124,9 @@ export function ParseLabelDescription(description: string | undefined): { text: 
         } else if (/^<\/a\b/i.test(tag) && openLink) {
             text += `: ${openLink}`;
             openLink = undefined;
+            afterLink = true;
+        } else if (/^<br\b/i.test(tag)) {
+            text += ' ';
         }
 
         index = end + 1;
@@ -119,13 +134,16 @@ export function ParseLabelDescription(description: string | undefined): { text: 
 
     // &amp; last, so an escaped entity such as &amp;lt; is not decoded twice
     text = text
+        .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Math.min(parseInt(code, 10), 0x10ffff)))
+        .replace(/&#x([0-9a-f]+);/gi, (_, code: string) => String.fromCodePoint(Math.min(parseInt(code, 16), 0x10ffff)))
         .replace(/&lt;/g, '<')
         .replace(/&gt;/g, '>')
         .replace(/&quot;/g, '"')
         .replace(/&#39;/g, '\'')
         .replace(/&nbsp;/g, ' ')
         .replace(/&amp;/g, '&');
-    return { text: sanitizeText(text), links };
+    // a <br> next to a space would otherwise leave two
+    return { text: sanitizeText(text).replace(/ {2,}/g, ' '), links };
 }
 
 /**
@@ -195,7 +213,7 @@ export async function GetUnitySecurityAlert(unityVersion: UnityVersion): Promise
     return {
         version: unityVersion.version,
         // a link the text does not already carry still prints after it
-        summary: [text || sanitizeText(label!.labelText ?? ''), patched, ...links.filter(link => !text.includes(link))].filter(part => part.length > 0).join(' '),
+        summary: [text || sanitizeText(label!.labelText ?? ''), patched, ...links.filter(link => !text.includes(link))].filter(part => part.length > 0).join(' | '),
         patched,
         details: [],
     };
@@ -341,7 +359,7 @@ async function getPatchedRelease(unityVersion: UnityVersion): Promise<string> {
         }
     } catch (error) {
         Logger.instance.debug(`Could not look up a patched Unity ${branch} release: ${error}`);
-        return `Update to a newer ${branch} release.`;
+        return `Update to a newer ${branch} release`;
     }
 
     const patched = releases
@@ -350,7 +368,7 @@ async function getPatchedRelease(unityVersion: UnityVersion): Promise<string> {
         .map(release => new UnityVersion(release.version!, release.shortRevision, unityVersion.architecture))
         .sort((a, b) => UnityVersion.compare(b, a))[0];
 
-    return patched ? `Patched: ${patched.version}.` : 'No patched release on this branch.';
+    return patched ? `Patched: ${patched.version}` : 'No patched release on this branch';
 }
 
 async function findRelease(unityVersion: UnityVersion): Promise<UnityRelease | undefined> {
@@ -381,6 +399,25 @@ function getPlatform(): Array<'MAC_OS' | 'LINUX' | 'WINDOWS'> {
         default:
             return ['LINUX'];
     }
+}
+
+/** Whether any text other than whitespace and tags follows a position in an HTML string. */
+function hasTextAfter(html: string, start: number): boolean {
+    let inTag = false;
+
+    for (let i = start; i < html.length; i++) {
+        const char = html[i]!;
+
+        if (char === '<') {
+            inTag = true;
+        } else if (char === '>') {
+            inTag = false;
+        } else if (!inTag && char.trim().length > 0) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /** Drops control characters, so text from the API or the CLI cannot move the cursor or recolor the log. */

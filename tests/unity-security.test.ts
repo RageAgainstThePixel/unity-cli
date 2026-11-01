@@ -114,10 +114,28 @@ describe('Unity Security Alert', () => {
 
     it('reads Unity\'s text without the HTML and keeps the advisory link', () => {
         expect(ParseLabelDescription(SECURITY_LABEL.description)).toEqual({
-            text: 'Applications built with this Editor version have a known security issue. Update Editor before publishing. Read more: https://unity.com/security/sept-2025-01.',
+            text: 'Applications built with this Editor version have a known security issue. Update Editor before publishing. Read more: https://unity.com/security/sept-2025-01',
             links: ['https://unity.com/security/sept-2025-01'],
         });
         expect(ParseLabelDescription('a &amp;lt; b <a href="javascript:alert(1)">x</a>')).toEqual({ text: 'a &lt; b x', links: [] });
+    });
+
+    it('converts label HTML into text with each link after its text', () => {
+        // attributes in any order, single or double quotes
+        expect(ParseLabelDescription('See <a href=\'https://a.example/x\' target="_blank">this</a> and <a target=\'_blank\' class="c" href="http://b.example/y">that</a>.')).toEqual({
+            text: 'See this: https://a.example/x and that: http://b.example/y',
+            links: ['https://a.example/x', 'http://b.example/y'],
+        });
+        // named and numeric entities, decoded once
+        expect(ParseLabelDescription('Fish &amp; chips &lt;b&gt; &quot;q&quot; &#39;s&#39; &#8212; &#x2014; &amp;lt;').text).toBe('Fish & chips <b> "q" \'s\' — — &lt;');
+        // <br> becomes a space and other tags are dropped
+        expect(ParseLabelDescription('Line one.<br/>Line <b>two</b>.<br> <i>Three</i>').text).toBe('Line one. Line two. Three');
+        // punctuation after a link before more text becomes a separator, so no URL ends in punctuation
+        expect(ParseLabelDescription('Read <a href="https://a.example/x">this</a>, then update.').text).toBe('Read this: https://a.example/x | then update.');
+        // no link
+        expect(ParseLabelDescription('No link here.')).toEqual({ text: 'No link here.', links: [] });
+        // only http and https links survive
+        expect(ParseLabelDescription('Bad <a href="javascript:alert(1)">x</a> <a href="data:text/html,hi">y</a>.')).toEqual({ text: 'Bad x y.', links: [] });
     });
 
     it('treats Security in the label text or the error color as a security alert', () => {
@@ -133,9 +151,9 @@ describe('Unity Security Alert', () => {
 
         expect(alert).toBeDefined();
         expect(FormatUnitySecurityAlert(alert!, true)).toBe(
-            'Unity Security Alert for 2022.3.62f1 (allowed): Applications built with this Editor version have a known security issue. Update Editor before publishing. Read more: https://unity.com/security/sept-2025-01. Patched: 2022.3.62f3.');
+            'Unity Security Alert for 2022.3.62f1 (allowed): Applications built with this Editor version have a known security issue. Update Editor before publishing. Read more: https://unity.com/security/sept-2025-01 | Patched: 2022.3.62f3');
         expect(FormatUnitySecurityAlert(alert!, false)).toBe(
-            'Unity Security Alert for 2022.3.62f1: Applications built with this Editor version have a known security issue. Update Editor before publishing. Read more: https://unity.com/security/sept-2025-01. Patched: 2022.3.62f3.\n' +
+            'Unity Security Alert for 2022.3.62f1: Applications built with this Editor version have a known security issue. Update Editor before publishing. Read more: https://unity.com/security/sept-2025-01 | Patched: 2022.3.62f3\n' +
             'Pass --allow-security-alert or set UNITY_ALLOW_SECURITY_ALERT=1 to continue.');
     });
 
@@ -147,8 +165,8 @@ describe('Unity Security Alert', () => {
     it('says when a branch has no patched release and points to the advisory', async () => {
         const alert = await GetUnitySecurityAlert(new UnityVersion('2018.4.36f1', '6cd387d23174', 'X86_64'));
 
-        expect(alert!.patched).toBe('No patched release on this branch.');
-        expect(alert!.summary).toContain('Read more: https://unity.com/security/sept-2025-01. No patched release on this branch.');
+        expect(alert!.patched).toBe('No patched release on this branch');
+        expect(alert!.summary).toContain('Read more: https://unity.com/security/sept-2025-01 | No patched release on this branch');
     });
 
     it('reads every page of the branch and suggests an older unlabelled release when the newer ones are labelled', async () => {
@@ -162,7 +180,7 @@ describe('Unity Security Alert', () => {
 
         const alert = await GetUnitySecurityAlert(new UnityVersion('2022.3.100f1', 'l0', 'X86_64'));
 
-        expect(alert!.patched).toBe('Patched: 2022.3.62f3.');
+        expect(alert!.patched).toBe('Patched: 2022.3.62f3');
         expect(mockGetUnityReleases.mock.calls.filter(call => call[0].query.version === '2022.3').map(call => call[0].query.offset)).toEqual([0, 25]);
     });
 
@@ -263,7 +281,7 @@ describe('Unity Security Alert', () => {
 
             expect(error).toBeInstanceOf(UnitySecurityAlertError);
             expect(error.message).toContain('Unity Security Alert for 2022.3.62f1:');
-            expect(error.message).toContain('Patched: 2022.3.62f3.');
+            expect(error.message).toContain('Patched: 2022.3.62f3');
             expect(error.message).toContain('Pass --allow-security-alert or set UNITY_ALLOW_SECURITY_ALERT=1 to continue.');
             expect(cli.RunJson.mock.calls.map(call => call[0].slice(0, 2).join(' '))).toEqual(['editors info']);
             expect(cli.Run).not.toHaveBeenCalled();
@@ -279,7 +297,7 @@ describe('Unity Security Alert', () => {
             const editor = await installer.GetEditor(labelled(), [], ['f'], { securityAlert: 'allow' });
 
             expect(editor.editorPath).toBe(path.normalize(editorPath));
-            expect(annotate).toHaveBeenCalledWith(LogLevel.WARN, expect.stringContaining('Patched: 2022.3.62f3.'), undefined, undefined, undefined, undefined, undefined, SECURITY_ALERT_TITLE);
+            expect(annotate).toHaveBeenCalledWith(LogLevel.WARN, expect.stringContaining('Patched: 2022.3.62f3'), undefined, undefined, undefined, undefined, undefined, SECURITY_ALERT_TITLE);
         });
 
         it('warns and continues with UNITY_ALLOW_SECURITY_ALERT', async () => {
@@ -297,7 +315,7 @@ describe('Unity Security Alert', () => {
             const error = await installer.GetEditor(labelled(), [], ['f'], { securityAlert: 'enforce' }).catch(e => e);
 
             expect(error).toBeInstanceOf(UnitySecurityAlertError);
-            expect(error.message).toContain('Unity Security Alert for 2022.3.62f1: SECURITY_ALERT: Unity 2022.3.62f1 has a known security issue. Patched: 2022.3.62f3.');
+            expect(error.message).toContain('Unity Security Alert for 2022.3.62f1: SECURITY_ALERT: Unity 2022.3.62f1 has a known security issue. Patched: 2022.3.62f3');
             expect(error.message).not.toContain('Applications built with this Editor version');
             expect(annotate).toHaveBeenCalledWith(LogLevel.WARN, 'Some other warning');
         });
