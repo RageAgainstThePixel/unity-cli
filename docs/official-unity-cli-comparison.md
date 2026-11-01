@@ -46,7 +46,7 @@ If the official CLI does what you need, use it directly. See [Use the Unity CLI]
 | 5.x | unity-cli, from the download archive (Windows, macOS) | Patched licensing client | Direct launch |
 | 4.x | unity-cli, from legacy installers (Windows, macOS) | Patched licensing client | Direct launch |
 
-Unity 6000.0 through the newest beta and alpha are tested on every pull request. 4.7.2 through 2022.3 are tested monthly. See [Unity version support](unity-version-support.md).
+The streams `unity editors --releases` lists are tested on every pull request. The newest release of every major.minor line, 4.7.2 onward, is tested monthly. See [Unity version support](unity-version-support.md).
 
 ## When to use which
 

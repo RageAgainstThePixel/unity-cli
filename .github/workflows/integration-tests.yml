@@ -64,15 +64,54 @@ jobs:
     permissions:
       contents: read
       checks: write # to publish unit test results via checks github api
+    env:
+      LEGACY: ${{ github.event_name == 'schedule' || inputs.editors == 'legacy' }}
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        if: ${{ env.LEGACY != 'true' }}
         with:
-          sparse-checkout: .github/
+          node-version: 24.x
+          cache: npm
+      # pull requests and pushes test the streams the official CLI offers (the LTS lines, the current release, the
+      # beta and the alpha), so a stream joins when Unity lists it and leaves when Unity stops; build-options.json keeps
+      # the platform rows and the fallback list. The monthly run tests every major.minor line in build-options-legacy.json.
+      - name: Unity streams
+        id: streams
+        if: ${{ env.LEGACY != 'true' }}
+        shell: pwsh
+        env:
+          UNITY_NON_INTERACTIVE: '1'
+          UNITY_NO_BANNER: '1'
+          UNITY_NO_UPDATE_CHECK: '1'
+        run: |
+          $optionsPath = './.github/workflows/build-options.json'
+          $options = Get-Content $optionsPath -Raw | ConvertFrom-Json
+          $streams = @()
+          try {
+            npm ci --no-audit --no-fund | Out-Null
+            npm run build | Out-Null
+            # unity-cli installs the official CLI with SHA-256 verification; no license is needed to list releases
+            $cli = node -e "require('./dist/index.js').UnityCli.Get().then(c => console.log(c.executable), e => { console.error(e); process.exit(1); })" | Select-Object -Last 1
+            if ($LASTEXITCODE -ne 0 -or -not $cli) { throw 'Could not install the official Unity CLI' }
+            $releases = & $cli editors --releases --format json | Out-String | ConvertFrom-Json
+            $streams = @($releases.data.items.version | ForEach-Object { if ($_ -match '^(\d+\.\d+)\.') { $Matches[1] } } | Sort-Object { [version]$_ } -Unique)
+          } catch {
+            echo "::warning::Could not list Unity releases, testing the fallback streams: $_"
+          }
+          if ($streams.Count -gt 0) {
+            $options.'unity-version' = $streams
+          }
+          echo "Testing Unity streams: $($options.'unity-version' -join ', ')"
+          $generated = Join-Path $env:RUNNER_TEMP 'build-options.json'
+          $options | ConvertTo-Json -Depth 10 | Set-Content -Path $generated
+          "path=$generated" >> $env:GITHUB_OUTPUT
+          # a failed listing already fell back, so its exit code must not fail the step
+          exit 0
       - uses: RageAgainstThePixel/job-builder@v1
         id: setup-jobs
         with:
-          # pull requests and pushes test Unity 6 and newer; 4.7.2 through 2022.3 run monthly or on demand
-          build-options: ${{ (github.event_name == 'schedule' || inputs.editors == 'legacy') && './.github/workflows/build-options-legacy.json' || './.github/workflows/build-options.json' }}
+          build-options: ${{ env.LEGACY == 'true' && './.github/workflows/build-options-legacy.json' || steps.streams.outputs.path }}
           # one group per editor version; every group runs at once, since macOS and Linux rows share one seat per OS
           # and Windows rows return theirs
           group-by: unity-version
@@ -170,7 +209,7 @@ jobs:
     secrets: inherit
     uses: ./.github/workflows/unity-build.yml
     with:
-      matrix: '{"include":[{"os":"ubuntu-latest","unity-version":"6000.1","build-target":"StandaloneLinux64","name":"negative-scenarios"}]}'
+      matrix: '{"include":[{"os":"ubuntu-latest","unity-version":"6000.3","build-target":"StandaloneLinux64","name":"negative-scenarios"}]}'
       utp-test-profile: negative
   # one check that stands for the whole run, so rows can be regrouped or renamed without touching required checks
   ci-result:
