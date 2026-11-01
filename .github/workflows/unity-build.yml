@@ -9,6 +9,11 @@ on:
         required: false
         type: string
         default: normal
+      allow-security-alert:
+        description: Opt in to editors with a Unity Security Alert, for the legacy editor set that tests them on purpose.
+        required: false
+        type: boolean
+        default: false
     secrets:
       UNITY_USERNAME:
         required: true
@@ -36,6 +41,8 @@ jobs:
     env:
       UNITY_PROJECT_PATH: '' # Create Unity Project step will set this if needed
       UNITY_CLI_WORKFLOW_SUMMARY: 'true' # opt-in: append rich markdown to GITHUB_STEP_SUMMARY from unity-cli log parsing
+      # read by setup-unity and run; empty for the Unity 6 and newer rows, which must stay unlabelled
+      UNITY_ALLOW_SECURITY_ALERT: ${{ inputs.allow-security-alert && '1' || '' }}
       # matrix values reach run scripts through the environment, never by expression interpolation
       MATRIX_OS: ${{ matrix.os }}
       MATRIX_UNITY_VERSION: ${{ matrix.unity-version }}

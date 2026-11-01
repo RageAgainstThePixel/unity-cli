@@ -158,6 +158,8 @@ jobs:
     with:
       matrix: ${{ toJSON(matrix.jobs.matrix) }}
       utp-test-profile: normal
+      # the legacy set tests 4.x through 2018 on purpose, and Unity labels those with a Security Alert
+      allow-security-alert: ${{ github.event_name == 'schedule' || inputs.editors == 'legacy' }}
   validate-negative-scenarios:
     if: ${{ !cancelled() && github.event.pull_request.draft == false && github.event_name != 'schedule' && inputs.editors != 'legacy' }}
     needs: license

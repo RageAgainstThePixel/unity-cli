@@ -190,6 +190,99 @@ export async function GetUnitySecurityAlert(unityVersion: UnityVersion): Promise
     return { version: unityVersion.version, message: lines.join('\n'), suggestion: await getSuggestion(unityVersion, links) };
 }
 
+/** Known Unity Editor CVEs that affect 4.x and 5.x, with the first fixed release of each 5.x line. */
+const LEGACY_EDITOR_CVES: {
+    id: string;
+    summary: string;
+    /** The lines it reaches; a line without a fixed release is affected throughout. */
+    affects: (major: number, minor: number) => boolean;
+    fixed: { [line: string]: string };
+}[] = [
+    {
+        id: 'CVE-2017-12939',
+        summary: 'Windows editor remote code execution',
+        affects: (major) => major === 4 || major === 5,
+        fixed: { '5.3': '5.3.8p2', '5.4': '5.4.5p5', '5.5': '5.5.4p3', '5.6': '5.6.3p1' },
+    },
+    {
+        id: 'CVE-2019-9197',
+        summary: 'editor remote code execution through unvalidated input',
+        affects: (major, minor) => major === 5 && minor === 6,
+        fixed: { '5.6': '5.6.7f1' },
+    },
+];
+
+/**
+ * The fixed Unity Security Alert for 4.x and 5.x editors, which the Releases API does not list. Unity publishes no
+ * security metadata for them and never patched them, so every one needs the opt-in; the text names the known editor
+ * CVEs that reach the requested version.
+ * @param unityVersion A 4.x or 5.x version, with or without its channel, such as 4.7.2 or 5.6.7f1.
+ * @returns The alert, or undefined for 2017 and newer.
+ */
+export function GetLegacySecurityAlert(unityVersion: UnityVersion): UnitySecurityAlert | undefined {
+    const parsed = parseLegacyVersion(unityVersion.version);
+
+    if (!parsed || parsed.major > 5) {
+        return undefined;
+    }
+
+    const cves = LEGACY_EDITOR_CVES.filter(cve => {
+        if (!cve.affects(parsed.major, parsed.minor)) {
+            return false;
+        }
+
+        const fixed = cve.fixed[`${parsed.major}.${parsed.minor}`];
+        return !fixed || compareLegacyVersions(parsed, parseLegacyVersion(fixed)!) < 0;
+    });
+    const lines = [
+        `Unity ${unityVersion.version} has a Unity Security Alert.`,
+        'Unity publishes no security metadata for 4.x and 5.x editors and never patched them against later advisories. They are kept for archival work and older games.',
+    ];
+
+    if (cves.length > 0) {
+        lines.push(`Known editor CVEs for Unity ${unityVersion.version}:`);
+
+        for (const cve of cves) {
+            const fixed = cve.fixed[`${parsed.major}.${parsed.minor}`];
+            lines.push(`- ${cve.id}: ${cve.summary}${fixed ? `, fixed in ${fixed}` : ', never fixed on this line'}. https://nvd.nist.gov/vuln/detail/${cve.id}`);
+        }
+    } else {
+        lines.push('No editor CVE names this exact version, but it is unsupported and unpatched against later Unity security advisories.');
+    }
+
+    lines.push('Advisories: https://unity.com/security');
+    return {
+        version: unityVersion.version,
+        message: lines.join('\n'),
+        suggestion: 'Unity has no patched 4.x or 5.x release.',
+    };
+}
+
+interface LegacyVersion { major: number; minor: number; patch: number; channel: string; build: number }
+
+function parseLegacyVersion(version: string): LegacyVersion | undefined {
+    const match = /^(\d+)\.(\d+)\.(\d+)(?:([abcfpx])(\d+))?$/.exec(version);
+
+    if (!match) {
+        return undefined;
+    }
+
+    return {
+        major: parseInt(match[1]!, 10),
+        minor: parseInt(match[2]!, 10),
+        patch: parseInt(match[3]!, 10),
+        channel: match[4] ?? 'f',
+        build: match[5] ? parseInt(match[5], 10) : 0,
+    };
+}
+
+/** Orders releases the way Unity ships them: on one patch number, alphas and betas, then the final release, then its patch releases. */
+function compareLegacyVersions(a: LegacyVersion, b: LegacyVersion): number {
+    const rank: { [channel: string]: number } = { a: 0, b: 1, c: 2, x: 2, f: 3, p: 4 };
+    return (a.major - b.major) || (a.minor - b.minor) || (a.patch - b.patch) ||
+        ((rank[a.channel] ?? 3) - (rank[b.channel] ?? 3)) || (a.build - b.build);
+}
+
 /**
  * Reports a Unity Security Alert: a warning annotation with the opt-in, otherwise an error that stops the setup.
  * @param unityVersion The release the alert is for.

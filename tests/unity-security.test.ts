@@ -7,6 +7,7 @@ import { ReportFailure } from '../src/failure-markers';
 import { UnityInstaller } from '../src/unity-installer';
 import { UnityVersion } from '../src/unity-version';
 import {
+    GetLegacySecurityAlert,
     GetUnitySecurityAlert,
     IsSecurityAlertAllowedByEnv,
     IsSecurityLabel,
@@ -175,6 +176,68 @@ describe('Unity Security Alert', () => {
         await expect(GetUnitySecurityAlert(new UnityVersion('5.6.7f1', 'e80cc3114ac1', 'X86_64'))).resolves.toBeUndefined();
         expect(mockGetUnityReleases).not.toHaveBeenCalled();
         expect(warn).not.toHaveBeenCalled();
+    });
+
+    describe('4.x and 5.x', () => {
+        it('lists both editor CVEs for 5.6 before their fixes', () => {
+            const alert = GetLegacySecurityAlert(new UnityVersion('5.6.2f1', undefined, 'X86_64'))!;
+
+            expect(alert.message).toContain('Unity 5.6.2f1 has a Unity Security Alert.');
+            expect(alert.message).toContain('Unity publishes no security metadata for 4.x and 5.x editors');
+            expect(alert.message).toContain('archival work and older games');
+            expect(alert.message).toContain('- CVE-2017-12939: Windows editor remote code execution, fixed in 5.6.3p1. https://nvd.nist.gov/vuln/detail/CVE-2017-12939');
+            expect(alert.message).toContain('- CVE-2019-9197: editor remote code execution through unvalidated input, fixed in 5.6.7f1. https://nvd.nist.gov/vuln/detail/CVE-2019-9197');
+            expect(alert.suggestion).toBe('Unity has no patched 4.x or 5.x release.');
+        });
+
+        it('orders patch releases after the final release of the same patch number', () => {
+            expect(GetLegacySecurityAlert(new UnityVersion('5.3.8f1', undefined, 'X86_64'))!.message).toContain('CVE-2017-12939');
+            expect(GetLegacySecurityAlert(new UnityVersion('5.3.8p2', undefined, 'X86_64'))!.message).not.toContain('CVE-2017-12939');
+        });
+
+        it('lists only the CVEs that reach the version', () => {
+            const legacy4 = GetLegacySecurityAlert(new UnityVersion('4.7.2', undefined, 'X86_64'))!;
+            expect(legacy4.message).toContain('CVE-2017-12939: Windows editor remote code execution, never fixed on this line.');
+            expect(legacy4.message).not.toContain('CVE-2019-9197');
+
+            const legacy55 = GetLegacySecurityAlert(new UnityVersion('5.5.0f3', undefined, 'X86_64'))!;
+            expect(legacy55.message).toContain('CVE-2017-12939');
+            expect(legacy55.message).not.toContain('CVE-2019-9197');
+        });
+
+        it('still alerts when no CVE names the version, pointing to Unity\'s advisories', () => {
+            const alert = GetLegacySecurityAlert(new UnityVersion('5.6.7f1', 'e80cc3114ac1', 'X86_64'))!;
+
+            expect(alert.message).not.toContain('CVE-');
+            expect(alert.message).toContain('unsupported and unpatched against later Unity security advisories');
+            expect(alert.message).toContain('Advisories: https://unity.com/security');
+        });
+
+        it('does not apply to 2017 and newer', () => {
+            expect(GetLegacySecurityAlert(new UnityVersion('2017.4.40f1', undefined, 'X86_64'))).toBeUndefined();
+        });
+
+        it('stops setup before anything is found or downloaded without the opt-in', async () => {
+            const cli = fakeCli();
+            const installer = new UnityInstaller(cli as never);
+            const error = await installer.GetEditor(new UnityVersion('5.6.7f1', 'e80cc3114ac1', 'X86_64'), [], ['f'], { securityAlert: 'enforce' }).catch(e => e);
+
+            expect(error).toBeInstanceOf(UnitySecurityAlertError);
+            expect(error.message).toContain('pass --allow-security-alert or set UNITY_ALLOW_SECURITY_ALERT=1');
+            expect(cli.RunJson).not.toHaveBeenCalled();
+            expect(cli.Run).not.toHaveBeenCalled();
+            expect(mockGetUnityReleases).not.toHaveBeenCalled();
+        });
+
+        it('warns with the opt-in and carries on to the install', async () => {
+            const installer = new UnityInstaller(fakeCli() as never);
+            // past the alert, 4.x installs need Windows or macOS, so the install itself is stopped here
+            jest.spyOn(installer as never, 'installLegacyEditor').mockRejectedValue(new Error('install skipped') as never);
+            const error = await installer.GetEditor(new UnityVersion('4.7.2', undefined, 'X86_64'), [], ['f'], { securityAlert: 'allow' }).catch(e => e);
+
+            expect(error.message).toBe('install skipped');
+            expect(annotate).toHaveBeenCalledWith(LogLevel.WARN, expect.stringContaining('Unity 4.7.2 has a Unity Security Alert.'), undefined, undefined, undefined, undefined, undefined, SECURITY_ALERT_TITLE);
+        });
     });
 
     it('accepts UNITY_ALLOW_SECURITY_ALERT=1 or true only', () => {

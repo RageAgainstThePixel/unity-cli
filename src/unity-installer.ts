@@ -7,6 +7,7 @@ import { Logger, LogLevel } from './logging';
 import { UnityEditor } from './unity-editor';
 import {
     FormatCliWarning,
+    GetLegacySecurityAlert,
     GetUnitySecurityAlert,
     IsSecurityCliWarning,
     ReportUnitySecurityAlert,
@@ -99,7 +100,7 @@ const ARCHIVE_MODULE_NAMES: { [module: string]: string } = {
 export type SecurityAlertPolicy = 'enforce' | 'allow';
 
 export interface GetEditorOptions {
-    /** Checks 2017 and newer editors for a Unity Security Alert. Not checked when omitted. */
+    /** Checks the editor for a Unity Security Alert: the Releases API label for 2017 and newer, a fixed alert for 4.x and 5.x. Not checked when omitted. */
     securityAlert?: SecurityAlertPolicy;
 }
 
@@ -161,6 +162,15 @@ export class UnityInstaller {
         this.logger.ci(`Getting release info for Unity ${unityVersion.toString()}...`);
         const resolvedVersion = await this.resolveVersion(unityVersion, channels);
         let editorPath: string;
+
+        // the Releases API does not list 4.x and 5.x, so their fixed alert is reported before anything is found or downloaded
+        if (options.securityAlert && resolvedVersion.isLessThan('2017.0.0')) {
+            const alert = GetLegacySecurityAlert(resolvedVersion);
+
+            if (alert) {
+                ReportUnitySecurityAlert(resolvedVersion, `${alert.message}\n${alert.suggestion}`, options.securityAlert === 'allow');
+            }
+        }
 
         if (resolvedVersion.isLegacy()) {
             editorPath = await this.installLegacyEditor(resolvedVersion);
