@@ -45,6 +45,7 @@ Send feature requests that the official CLI already covers to Unity.
     - [Activate License](#activate-license)
     - [Return License](#return-license)
     - [License Context](#license-context)
+    - [License File Path](#license-file-path)
     - [Licensing Client Logs](#licensing-client-logs)
     - [Licensing Audit Logs](#licensing-audit-logs)
   - [Unity Editor](#unity-editor)
@@ -56,6 +57,8 @@ Send feature requests that the official CLI already covers to Unity.
     - [Install Unity Package Manager](#install-unity-package-manager)
     - [UPM Version](#upm-version)
     - [Pack a Unity Package](#pack-a-unity-package)
+- [Retryable Failures](#retryable-failures)
+- [Environment Variables](#environment-variables)
 - [Logging](#logging)
   - [Local cli](#local-cli)
   - [Github Actions](#github-actions)
@@ -132,7 +135,7 @@ Every license command tries the official Unity CLI first. When it fails, unity-c
 unity-cli license-version
 ```
 
-##### Activate License
+#### Activate License
 
 `activate-license [options]`: Activate a Unity license.
 
@@ -152,7 +155,7 @@ UNITY_USERNAME=<your-email> UNITY_PASSWORD=<your-password> unity-cli activate-li
 > [!NOTE]
 > Prefer the environment variables over `--email` and `--password`: values on a command line are visible to other processes on the machine. The Unity Licensing Client fallback still receives them as arguments, which Unity's client requires, so the official CLI stays the first choice.
 
-##### Return License
+#### Return License
 
 `return-license [options]`: Return a Unity license.
 
@@ -264,7 +267,7 @@ unity-cli editor-logs
 
 ### Deprecated Commands
 
-`uninstall-unity`, `list-project-templates`, `create-project` and `open-project` keep their v3 options, print a deprecation warning that names the replacement, and forward to the official Unity CLI (see [Upgrading from v3](#upgrading-from-v3)). `create-project --template` takes a template id or id prefix; v3 regex patterns are no longer compiled, and only their leading literal part is matched. Run `unity-cli <command> --help` for the options.
+`uninstall-unity`, `list-project-templates`, `create-project` and `open-project` keep their v3 options, print a deprecation warning that names the replacement, and forward to the official Unity CLI (see [Upgrading from v3](#upgrading-from-v3)). `create-project --template` takes a template id or id prefix (default `com.unity.template.3d`); v3 regex patterns are no longer compiled, and only their leading literal part is matched. Run `unity-cli <command> --help` for the options.
 
 ### Unity Package Manager
 
@@ -307,6 +310,22 @@ unity-cli upm-version
 ```bash
 unity-cli upm-pack --source <path-to-package-folder> --destination <output-path>
 ```
+
+## Retryable Failures
+
+When a command fails because no license seats are free or the network dropped, unity-cli adds a notice titled `unity-license-exhausted` or `unity-transient-failure` on GitHub Actions. [retry-failed-jobs](https://github.com/RageAgainstThePixel/retry-failed-jobs) reruns the failed jobs when every failure carries one of those markers.
+
+## Environment Variables
+
+Besides the variables documented with each command:
+
+- `UNITY_USERNAME_BASE64`, `UNITY_PASSWORD_BASE64`: base64 encoded fallbacks for `UNITY_USERNAME` and `UNITY_PASSWORD`.
+- `UNITY_LICENSING_CLIENT_PATH`: the `Unity.Licensing.Client` executable to use instead of the copy the official CLI manages.
+- `UNITY_ALLOW_SECURITY_ALERT`: same as `--allow-security-alert`.
+- `UNITY_CLI_DIRECT_LAUNCH`: `true` launches the editor directly instead of through `unity run`.
+- `UNITY_CLI_LINUX_FFMPEG`: `true` also installs ffmpeg with the Linux editor dependencies, for video capture and import.
+- `UPM_CLI_PATH`: the `upm` executable to use instead of the managed install.
+- `UPM_CDN_BASE_URL`: overrides the CDN `upm-install` downloads from.
 
 ## Logging
 
