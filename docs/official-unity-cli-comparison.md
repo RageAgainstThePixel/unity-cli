@@ -26,7 +26,7 @@ If the official CLI does what you need, use it directly. See [Use the Unity CLI]
 | Editor logs in CI | Raw log | Live log, with GitHub Actions annotations, log groups and an optional job summary from the Editor log and Unity Test Protocol output |
 | Process cleanup | Not handled | Stops only the processes this run started, so shared self-hosted runners are safe |
 | Builds and tests | `unity build`, `unity test` | Not wrapped. Use the official commands, or `unity-cli run` with your own arguments |
-| Project create, open, templates | `unity projects create`, `unity open`, `unity templates list` | v3 commands kept as deprecated forwards to these |
+| Project create, open, templates | `unity projects create`, `unity open`, `unity templates` | v3 commands kept as deprecated forwards to these |
 | Uninstall | `unity uninstall` | v3 `uninstall-unity` kept as a deprecated forward |
 | Sign in | Browser or service account | Uses the official CLI first |
 | Serial, floating, offline licenses | `unity license activate` | Uses the official CLI first |

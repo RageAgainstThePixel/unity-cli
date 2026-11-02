@@ -32,6 +32,19 @@ describe('FindAbsolutePath', () => {
     });
 });
 
+describe('UnityCli.TemplatesListArgs', () => {
+    it('uses templates --editor-version on CLI 1.0.0-beta.15 and newer', () => {
+        expect(new UnityCli('unity', '1.0.0-beta.15').TemplatesListArgs('6000.0.58f2')).toEqual(['templates', '--editor-version', '6000.0.58f2']);
+        expect(new UnityCli('unity', '1.0.0').TemplatesListArgs('6000.0.58f2')).toEqual(['templates', '--editor-version', '6000.0.58f2']);
+        expect(new UnityCli('unity', '1.0.0-beta.15').TemplatesListArgs()).toEqual(['templates']);
+    });
+
+    it('uses templates list --editor on CLI 1.0.0-beta.14 and older', () => {
+        expect(new UnityCli('unity', '1.0.0-beta.14').TemplatesListArgs('6000.0.58f2')).toEqual(['templates', 'list', '--editor', '6000.0.58f2']);
+        expect(new UnityCli('unity', '1.0.0-beta.9').TemplatesListArgs()).toEqual(['templates', 'list']);
+    });
+});
+
 describe('resolveEditorExecutable', () => {
     it('finds the editor below an install directory', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-cli-resolve-'));

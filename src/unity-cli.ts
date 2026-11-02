@@ -344,6 +344,21 @@ export class UnityCli {
         return envelope.data as T;
     }
 
+    /**
+     * The arguments that list the project templates for an editor: `templates --editor-version <version>`, or
+     * `templates list --editor <version>` for CLI 1.0.0-beta.14 and older, which have no `--editor-version` on `templates`.
+     * @param editorVersion The editor version to list templates for. Omitted, the CLI uses its stored default.
+     */
+    public TemplatesListArgs(editorVersion: string | undefined = undefined): string[] {
+        const legacy = valid(this.version) !== null && compareSemver(this.version, '1.0.0-beta.15') < 0;
+
+        if (legacy) {
+            return ['templates', 'list', ...(editorVersion ? ['--editor', editorVersion] : [])];
+        }
+
+        return ['templates', ...(editorVersion ? ['--editor-version', editorVersion] : [])];
+    }
+
     /** Gets the directory the CLI installs editors to. */
     public async GetInstallPath(): Promise<string> {
         const data = await this.ExecJson(['install-path', '--get']);

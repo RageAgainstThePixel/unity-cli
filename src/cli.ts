@@ -480,7 +480,7 @@ program.command('uninstall-unity')
     });
 
 program.command('list-project-templates')
-    .description('[Deprecated] List available Unity project templates for an editor. Forwards to: unity templates list --editor <version>')
+    .description('[Deprecated] List available Unity project templates for an editor. Forwards to: unity templates --editor-version <version>')
     .option('-u, --unity-version <unityVersion>', 'The Unity version to list templates for (e.g. 2022.3.1f1, 6000.2). If unspecified, then --unity-editor must be specified.')
     .option('-e, --unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, -u, --unity-version or the UNITY_EDITOR_PATH environment variable must be set.')
     .option('--verbose', 'Enable verbose logging.')
@@ -492,7 +492,8 @@ program.command('list-project-templates')
 
         Logger.instance.debugOptions(options);
         const version = await forwardedEditorVersion(options, true);
-        await forwardToUnityCli('list-project-templates', ['templates', 'list', ...(version ? ['--editor', version] : [])], options.json === true);
+        const cli = await UnityCli.Get();
+        await forwardToUnityCli('list-project-templates', cli.TemplatesListArgs(version), options.json === true);
     });
 
 program.command('create-project')
@@ -540,8 +541,22 @@ program.command('create-project')
         }
 
         const cli = await UnityCli.Get();
-        const { envelope } = await cli.RunJson<{ name?: string; id?: string }[]>(['templates', 'list', ...(version ? ['--editor', version] : [])]);
-        const ids = (envelope?.data ?? []).map(t => t.name || t.id).filter((id): id is string => !!id);
+        const listArgs = cli.TemplatesListArgs(version);
+        const { exitCode, envelope, stdout, stderr } = await cli.RunJson<ListedTemplate[] | { items?: ListedTemplate[] }>(listArgs);
+
+        if (exitCode !== 0 || !envelope || envelope.success === false) {
+            const errors = envelope?.errors?.map(e => `${e.code}: ${e.message}`).join('\n') || `${stdout}\n${stderr}`.trim();
+            Logger.instance.error(`unity ${listArgs.join(' ')} failed with exit code ${exitCode}\n${errors}`);
+            process.exit(exitCode || 1);
+        }
+
+        // CLI 1.0.0-beta.15 and newer wrap the list in items
+        const templates = Array.isArray(envelope.data) ? envelope.data : envelope.data?.items;
+        const ids = (templates ?? [])
+            // entries without a type, such as 7000.0's 3d and 2d at version 0.0.0, are the Hub's blank projects, not template packages
+            .filter(t => !!t.type)
+            .map(t => t.name || t.id)
+            .filter((id): id is string => !!id);
         const templateId = ids.find(id => id === prefix) ?? ids.find(id => id.startsWith(prefix));
 
         if (!templateId) {
@@ -590,6 +605,13 @@ program.command('open-project')
         await forwardToUnityCli('open-project', args);
     });
 
+/** A template entry from `unity templates --format json`. */
+interface ListedTemplate {
+    name?: string;
+    id?: string;
+    type?: string;
+}
+
 /**
  * The security alert handling for a command: `allow` with --allow-security-alert or UNITY_ALLOW_SECURITY_ALERT,
  * otherwise `enforce`, with the command line to re-run when an alert stops it.
@@ -615,7 +637,7 @@ async function checkEditorSecurityAlert(unityVersion: UnityVersion, allowFlag: b
 /**
  * The editor version a forwarded v3 command names, from --unity-version or the editor at --unity-editor / UNITY_EDITOR_PATH.
  * Partial versions such as 2021.3.x become 2021.3, the short form `unity uninstall` accepts; with `exact`, they resolve
- * to the newest matching release instead, because `unity templates list` and `unity projects create` need a full version.
+ * to the newest matching release instead, because `unity templates` and `unity projects create` need a full version.
  */
 async function forwardedEditorVersion(options: { unityVersion?: string; unityEditor?: string }, exact: boolean = false): Promise<string | undefined> {
     const version = options.unityVersion?.toString()?.trim();
