@@ -343,6 +343,7 @@ When `GITHUB_ACTIONS=true`, the logger emits GitHub workflow commands automatica
 - Defaults to `info` level; add `--verbose` (or temporarily set `ACTIONS_STEP_DEBUG=true`) to surface `debug` lines.
 - `Logger.annotate(...)` escapes `%`, `\r`, and `\n`, then includes `file`, `line`, `endLine`, `col`, `endColumn`, and `title` metadata so annotations are clickable in the Checks UI.
 - `startGroup`/`endGroup` become `::group::` / `::endgroup::` blocks.
+- When a run fails, the Editor log's error lines are listed outside the collapsed log group, next to `Unity failed with exit code N`. Crashes come first: a segfault, abort or out-of-memory line, or a failed build step's exit code (e.g. `il2cpp exited with code 139 (Segmentation fault)`).
 - `CI_mask`, `CI_setEnvironmentVariable`, `CI_setOutput` and `CI_addPath` write to the corresponding GitHub-provided files when those features are configured.
 - **Job summary (`GITHUB_STEP_SUMMARY`) is opt-in:** set `UNITY_CLI_WORKFLOW_SUMMARY` to `1`, `true`, `yes`, or `on` (case-insensitive) so `CI_appendWorkflowSummary` can append the rich markdown block from Unity log / UTP parsing. If unset, summary output is skipped (annotations and stdout behavior are unchanged).
 

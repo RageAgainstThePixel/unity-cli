@@ -75,7 +75,187 @@ export function isErrorRecapLine(line: string): boolean {
         /\bfatal\b/i.test(line) ||
         /\bFailed to\b/i.test(line) ||
         /^Aborting batchmode/.test(line) ||
-        /No valid Unity Editor license found/.test(line);
+        /No valid Unity Editor license found/.test(line) ||
+        isCrashLine(line);
+}
+
+/**
+ * True for a line that reports a crashed process: a fatal signal, a core dump, an abort or running out of memory or stack.
+ * The failure recap lists these first, since they explain the generic errors that follow them.
+ * @param line A log line.
+ */
+export function isCrashLine(line: string): boolean {
+    return /\bSegmentation fault\b/i.test(line) ||
+        /\bcore dumped\b/i.test(line) ||
+        /\bSIG(?:SEGV|ABRT|BUS|ILL|FPE|KILL)\b/.test(line) ||
+        /\bAbort trap\b/i.test(line) ||
+        /\bBus error\b/i.test(line) ||
+        /\bOut of memory\b/i.test(line) ||
+        /\bStack overflow\b/i.test(line) ||
+        // the shell's bare reports for a process ended by SIGKILL or SIGABRT
+        /^(?:Killed|Aborted)$/.test(line.trim());
+}
+
+/**
+ * The lines of a multi-line error message that the failure recap lists: the first line, plus any crash lines and the
+ * exit code of a failed build step. Bee reports a failed tool as `##### CommandLine`, `##### ExitCode` and `##### Output`
+ * blocks under the command line, so without this the recap shows only the command line and loses the crash.
+ * @param message An error message, possibly spanning several lines.
+ * @returns The recap lines, crash and exit lines first.
+ */
+export function errorRecapLines(message: string): string[] {
+    const lines = message.split(/\r?\n/).map(line => line.trim()).filter(line => line.length > 0);
+
+    if (lines.length === 0) {
+        return [];
+    }
+
+    const first = lines[0]!;
+    const priority: string[] = [];
+    const exitIndex = lines.findIndex(line => line === '##### ExitCode');
+    const exitCode = exitIndex >= 0 ? lines[exitIndex + 1] : undefined;
+
+    const commandIndex = lines.findIndex(line => line === '##### CommandLine');
+    const command = (commandIndex >= 0 ? lines[commandIndex + 1] : undefined) ?? first;
+    const exitLine = exitCode ? buildStepExitLine(command, exitCode) : undefined;
+
+    if (exitLine) {
+        priority.push(exitLine);
+    }
+
+    for (const line of lines.slice(1)) {
+        if (isCrashLine(line) && line !== exitCode && !priority.includes(line)) {
+            priority.push(line);
+        }
+    }
+
+    return [...priority, first];
+}
+
+/**
+ * One recap line for a failed Bee build step, e.g. `il2cpp exited with code 139 (Segmentation fault)`.
+ * @param command The step's command line, if known.
+ * @param exitCode The line under `##### ExitCode`.
+ * @returns The line, or undefined when the step succeeded or the exit code is missing.
+ */
+function buildStepExitLine(command: string | undefined, exitCode: string): string | undefined {
+    if (exitCode.length === 0 || exitCode.startsWith('#####') || /^0\b/.test(exitCode)) {
+        return undefined;
+    }
+
+    return `${command ? commandToolName(command) : 'A build step'} exited with code ${exitCode}`;
+}
+
+/** The file name of the program a command line runs, without its directory or quotes. */
+function commandToolName(command: string): string {
+    const match = /^"([^"]+)"|^(\S+)/.exec(command.trim());
+    const program = match?.[1] ?? match?.[2] ?? command;
+
+    return program.split(/[\\/]/).pop() || program;
+}
+
+/**
+ * Collects the error lines a failed run lists after `Unity failed with exit code N`. Lines are kept once each, without
+ * stack frames, and capped. Crash lines and failed build step exits go first, in the order they appeared, and can push
+ * out ordinary lines once the cap is reached, so the cause is never the line that gets dropped.
+ */
+export class FailureRecap {
+    /** The recap lines, crash and exit lines first. */
+    readonly lines: string[] = [];
+    private readonly seen = new Set<string>();
+    private priorityCount = 0;
+    private expecting: 'command' | 'exit' | undefined;
+    private blockCommand: string | undefined;
+    private blockExitCode: string | undefined;
+
+    constructor(private readonly maxLines = MAX_RECAP_STORED_LINES) { }
+
+    /** How many distinct lines were recorded, including any beyond the cap. */
+    get count(): number {
+        return this.seen.size;
+    }
+
+    /**
+     * Records an error message reported through telemetry: its first line, plus its crash lines and failed step exit.
+     * @param message The message, possibly spanning several lines.
+     */
+    addMessage(message: string): void {
+        const recapLines = errorRecapLines(message);
+        recapLines.forEach((line, index) => this.add(line, index < recapLines.length - 1 || isCrashLine(line)));
+    }
+
+    /**
+     * Follows one plain Editor log line. Error and crash lines are recorded, and a Bee `##### CommandLine` /
+     * `##### ExitCode` block printed line by line becomes a single exit line, as it does for telemetry messages.
+     * @param line The log line.
+     * @param isError Whether the line is an error the recap lists.
+     */
+    addPlainLine(line: string, isError: boolean): void {
+        const trimmed = line.trim();
+
+        if (this.expecting === 'command') {
+            this.expecting = undefined;
+            this.blockCommand = trimmed;
+            return;
+        }
+
+        if (this.expecting === 'exit') {
+            this.expecting = undefined;
+            const exitLine = buildStepExitLine(this.blockCommand, trimmed);
+
+            if (exitLine) {
+                this.blockExitCode = trimmed;
+                this.add(exitLine, true);
+                return;
+            }
+        }
+
+        if (trimmed === '##### CommandLine') {
+            this.expecting = 'command';
+            this.blockCommand = undefined;
+            this.blockExitCode = undefined;
+            return;
+        }
+
+        if (trimmed === '##### ExitCode') {
+            this.expecting = 'exit';
+            return;
+        }
+
+        if ((isError || isCrashLine(trimmed)) && trimmed !== this.blockExitCode) {
+            this.add(trimmed);
+        }
+    }
+
+    /**
+     * Records one line.
+     * @param line The line.
+     * @param priority Whether it goes ahead of the ordinary lines.
+     */
+    add(line: string, priority = isCrashLine(line)): void {
+        const trimmed = line.trim();
+
+        if (trimmed.length === 0 || this.seen.has(trimmed) || isStackFrameLine(trimmed)) {
+            return;
+        }
+
+        this.seen.add(trimmed);
+
+        if (this.lines.length >= this.maxLines) {
+            // a full recap still takes a priority line, in place of its last ordinary one
+            if (!priority || this.priorityCount >= this.lines.length) {
+                return;
+            }
+
+            this.lines.pop();
+        }
+
+        if (priority) {
+            this.lines.splice(this.priorityCount++, 0, trimmed);
+        } else {
+            this.lines.push(trimmed);
+        }
+    }
 }
 
 // Detects workflow command markers to avoid emitting duplicate annotations
@@ -1194,21 +1374,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined, re
     const actionTableRenderer = new ActionTableRenderer(isStdoutTTY());
     const utpLogPath = buildUtpLogPath(logPath);
     let telemetryFlushed = false;
-    const errorLines: string[] = [];
-    const seenErrorLines = new Set<string>();
-    const recordErrorLine = (line: string): void => {
-        const trimmed = line.trim();
-
-        if (trimmed.length === 0 || seenErrorLines.has(trimmed) || isStackFrameLine(trimmed)) {
-            return;
-        }
-
-        seenErrorLines.add(trimmed);
-
-        if (errorLines.length < MAX_RECAP_STORED_LINES) {
-            errorLines.push(trimmed);
-        }
-    };
+    const recap = new FailureRecap();
     const buildIssueKey = (file: string | undefined, lineNo: number | undefined, message: string): string => {
         const normalized = normalizeAnnotationPath(file, projectPath);
         const canonicalFile = (normalized.absoluteFile ?? normalizePathSlashes(file ?? '')).toLowerCase();
@@ -1294,7 +1460,7 @@ export function TailLogFile(logPath: string, projectPath: string | undefined, re
 
                 if (utp.message && 'severity' in utp && isElevatedUtpSeverity(utp.severity)) {
                     // the message only; its stack trace stays out of the failure recap
-                    recordErrorLine(utp.message.split(/\r?\n/)[0] ?? '');
+                    recap.addMessage(utp.message);
                     const normalizedPath = normalizeAnnotationPath(utp.file, projectPath);
                     const stacktrace = sanitizeStackTrace(utp.stackTrace);
                     const message = stacktrace == undefined ? utp.message : `${utp.message}\n${stacktrace}`;
@@ -1331,16 +1497,15 @@ export function TailLogFile(logPath: string, projectPath: string | undefined, re
         } else {
             // Skip plain-log false positives (e.g. "Socket: bind failed, error: …" matching \berror\b).
             if (utpMessageMatchesBenignRemap(line)) {
+                recap.addPlainLine(line, false);
                 if (Logger.instance.logLevel !== LogLevel.UTP) {
                     process.stdout.write(`${line}\n`);
                 }
                 return;
             }
             const scan = parsePlainLogIssue(line);
-            if (((scan && scan.severity === Severity.Error) || isErrorRecapLine(line)) &&
-                !(scan && utpMessageMatchesBenignRemap(scan.message))) {
-                recordErrorLine(line);
-            }
+            recap.addPlainLine(line, ((scan && scan.severity === Severity.Error) || isErrorRecapLine(line)) &&
+                !(scan && utpMessageMatchesBenignRemap(scan.message)));
             if (scan) {
                 if (utpMessageMatchesBenignRemap(scan.message)) {
                     if (Logger.instance.logLevel !== LogLevel.UTP) {
@@ -1507,5 +1672,5 @@ export function TailLogFile(logPath: string, projectPath: string | undefined, re
         logEnded = true;
     }
 
-    return { tailPromise, stopLogTail, telemetry, errorLines, errorLineCount: () => seenErrorLines.size };
+    return { tailPromise, stopLogTail, telemetry, errorLines: recap.lines, errorLineCount: () => recap.count };
 }

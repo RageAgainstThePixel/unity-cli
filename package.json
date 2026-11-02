@@ -1,6 +1,6 @@
 {
   "name": "@rage-against-the-pixel/unity-cli",
-  "version": "4.1.0",
+  "version": "4.1.1",
   "description": "Bridges the gaps in the official Unity CLI for CI: Unity ID licensing, Unity 4.x and 5.x editors, Android SDK setup and Editor log annotations. Maintenance mode: security fixes only.",
   "author": "RageAgainstThePixel",
   "license": "MIT",
