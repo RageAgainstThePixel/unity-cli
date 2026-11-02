@@ -480,7 +480,7 @@ program.command('uninstall-unity')
     });
 
 program.command('list-project-templates')
-    .description('[Deprecated] List available Unity project templates for an editor. Forwards to: unity templates list --editor <version>')
+    .description('[Deprecated] List available Unity project templates for an editor. Forwards to: unity templates --editor-version <version>')
     .option('-u, --unity-version <unityVersion>', 'The Unity version to list templates for (e.g. 2022.3.1f1, 6000.2). If unspecified, then --unity-editor must be specified.')
     .option('-e, --unity-editor <unityEditor>', 'The path to the Unity Editor executable. If unspecified, -u, --unity-version or the UNITY_EDITOR_PATH environment variable must be set.')
     .option('--verbose', 'Enable verbose logging.')
@@ -492,7 +492,8 @@ program.command('list-project-templates')
 
         Logger.instance.debugOptions(options);
         const version = await forwardedEditorVersion(options, true);
-        await forwardToUnityCli('list-project-templates', ['templates', 'list', ...(version ? ['--editor', version] : [])], options.json === true);
+        const cli = await UnityCli.Get();
+        await forwardToUnityCli('list-project-templates', cli.TemplatesListArgs(version), options.json === true);
     });
 
 program.command('create-project')
@@ -519,7 +520,8 @@ program.command('create-project')
 
         const target = path.resolve(options.path?.toString()?.trim() || process.cwd());
         const name = options.name?.toString()?.trim();
-        const args = ['projects', 'create', name || path.basename(target), '--path', name ? target : path.dirname(target)];
+        const parent = name ? target : path.dirname(target);
+        const args = ['projects', 'create', name || path.basename(target), '--path', parent];
 
         if (version) {
             args.push('--editor-version', version);
@@ -540,8 +542,15 @@ program.command('create-project')
         }
 
         const cli = await UnityCli.Get();
-        const { envelope } = await cli.RunJson<{ name?: string; id?: string }[]>(['templates', 'list', ...(version ? ['--editor', version] : [])]);
-        const ids = (envelope?.data ?? []).map(t => t.name || t.id).filter((id): id is string => !!id);
+        let ids: string[];
+
+        try {
+            ids = await cli.ListTemplates(version);
+        } catch (error) {
+            Logger.instance.error(error instanceof Error ? error.message : `${error}`);
+            process.exit(1);
+        }
+
         const templateId = ids.find(id => id === prefix) ?? ids.find(id => id.startsWith(prefix));
 
         if (!templateId) {
@@ -549,6 +558,8 @@ program.command('create-project')
             process.exit(1);
         }
 
+        // the official CLI creates the project folder but needs its parent to exist, which v3 created
+        await fs.promises.mkdir(parent, { recursive: true });
         args.push('--template', templateId, '--no-cloud');
         await forwardToUnityCli('create-project', args, options.json === true);
     });
@@ -615,7 +626,7 @@ async function checkEditorSecurityAlert(unityVersion: UnityVersion, allowFlag: b
 /**
  * The editor version a forwarded v3 command names, from --unity-version or the editor at --unity-editor / UNITY_EDITOR_PATH.
  * Partial versions such as 2021.3.x become 2021.3, the short form `unity uninstall` accepts; with `exact`, they resolve
- * to the newest matching release instead, because `unity templates list` and `unity projects create` need a full version.
+ * to the newest matching release instead, because `unity templates` and `unity projects create` need a full version.
  */
 async function forwardedEditorVersion(options: { unityVersion?: string; unityEditor?: string }, exact: boolean = false): Promise<string | undefined> {
     const version = options.unityVersion?.toString()?.trim();

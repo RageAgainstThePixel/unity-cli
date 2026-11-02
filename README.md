@@ -73,7 +73,7 @@ v4 drops the Hub. Commands that need the official CLI install it on first use.
 | `hub`, `hub-path`, `hub-version`, `hub-logs`, `package-manager-logs` | Removed. Use `unity env`, `unity logs`, `unity doctor` |
 | `sign-package` | Removed. Use `upm-pack` |
 | `uninstall-unity` | Deprecated, same options, forwards to `unity uninstall <version> --yes` |
-| `list-project-templates` | Deprecated, same options, forwards to `unity templates list --editor <version>` |
+| `list-project-templates` | Deprecated, same options, forwards to `unity templates --editor-version <version>` (`unity templates list --editor <version>` on Unity CLI 1.0.0-beta.14 and older) |
 | `create-project` | Deprecated, same options plus `--allow-security-alert`, forwards to `unity projects create <name> --path <path> --editor-version <version> --template <id> --no-cloud` |
 | `open-project` | Deprecated, same options plus `--allow-security-alert`, forwards to `unity open <project>` |
 | `upm-install`, `upm-version`, `upm-pack` | Unchanged |

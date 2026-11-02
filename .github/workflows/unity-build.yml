@@ -338,13 +338,13 @@ jobs:
           # prefer the built-in 3D template like v3 did; the CLI's "3d" means URP, which older editors don't offer
           template="3d"
           if [ "${major}" -ge 2019 ]; then
-            # newer CLIs list templates with `unity templates`; older ones need `unity templates list`
-            templates_json="$(unity templates --editor "${UNITY_EDITOR_VERSION}" --json || unity templates list --editor "${UNITY_EDITOR_VERSION}" --json || true)"
+            # CLI 1.0.0-beta.15 and newer list templates with `unity templates --editor-version`; older ones need `unity templates list --editor`
+            templates_json="$(unity templates --editor-version "${UNITY_EDITOR_VERSION}" --json || unity templates list --editor "${UNITY_EDITOR_VERSION}" --json || true)"
             echo "${templates_json}"
             template="$(printf '%s' "${templates_json}" | node -e '
               let input = ""; process.stdin.on("data", c => input += c).on("end", () => {
                 let names = [];
-                try { names = (JSON.parse(input).data || []).map(t => t.name || t.id).filter(Boolean); } catch {}
+                try { const data = JSON.parse(input).data; names = ((Array.isArray(data) ? data : data && data.items) || []).map(t => t.name || t.id).filter(Boolean); } catch {}
                 const preferred = ["com.unity.template.3d", "com.unity.template.3d-cross-platform", "com.unity.template.universal", "com.unity.template.urp-blank"];
                 // without a list, editors before 2022 still offer the built-in 3D template but not URP
                 process.stdout.write(preferred.find(p => names.includes(p)) || (Number(process.argv[1]) < 2022 ? "com.unity.template.3d" : "3d"));
