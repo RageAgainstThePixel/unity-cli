@@ -45,6 +45,28 @@ describe('UnityCli.TemplatesListArgs', () => {
     });
 });
 
+describe('UnityCli.ListTemplates', () => {
+    const listed = [
+        { name: 'com.unity.template.3d', type: 'CORE' },
+        { name: '3d', version: '0.0.0' },
+        { id: 'com.unity.template.urp-blank', type: 'CORE' },
+    ];
+
+    it('reads the items list of CLI 1.0.0-beta.15 and newer', async () => {
+        const cli = new UnityCli('unity', '1.0.0-beta.15');
+        const exec = jest.spyOn(cli, 'ExecJson').mockResolvedValue({ items: listed });
+        await expect(cli.ListTemplates('6000.0.58f2')).resolves.toEqual(['com.unity.template.3d', 'com.unity.template.urp-blank']);
+        expect(exec).toHaveBeenCalledWith(['templates', '--editor-version', '6000.0.58f2']);
+    });
+
+    it('reads the bare list of CLI 1.0.0-beta.14 and older', async () => {
+        const cli = new UnityCli('unity', '1.0.0-beta.14');
+        const exec = jest.spyOn(cli, 'ExecJson').mockResolvedValue(listed);
+        await expect(cli.ListTemplates('6000.0.58f2')).resolves.toEqual(['com.unity.template.3d', 'com.unity.template.urp-blank']);
+        expect(exec).toHaveBeenCalledWith(['templates', 'list', '--editor', '6000.0.58f2']);
+    });
+});
+
 describe('resolveEditorExecutable', () => {
     it('finds the editor below an install directory', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-cli-resolve-'));

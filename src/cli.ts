@@ -520,7 +520,8 @@ program.command('create-project')
 
         const target = path.resolve(options.path?.toString()?.trim() || process.cwd());
         const name = options.name?.toString()?.trim();
-        const args = ['projects', 'create', name || path.basename(target), '--path', name ? target : path.dirname(target)];
+        const parent = name ? target : path.dirname(target);
+        const args = ['projects', 'create', name || path.basename(target), '--path', parent];
 
         if (version) {
             args.push('--editor-version', version);
@@ -541,22 +542,15 @@ program.command('create-project')
         }
 
         const cli = await UnityCli.Get();
-        const listArgs = cli.TemplatesListArgs(version);
-        const { exitCode, envelope, stdout, stderr } = await cli.RunJson<ListedTemplate[] | { items?: ListedTemplate[] }>(listArgs);
+        let ids: string[];
 
-        if (exitCode !== 0 || !envelope || envelope.success === false) {
-            const errors = envelope?.errors?.map(e => `${e.code}: ${e.message}`).join('\n') || `${stdout}\n${stderr}`.trim();
-            Logger.instance.error(`unity ${listArgs.join(' ')} failed with exit code ${exitCode}\n${errors}`);
-            process.exit(exitCode || 1);
+        try {
+            ids = await cli.ListTemplates(version);
+        } catch (error) {
+            Logger.instance.error(error instanceof Error ? error.message : `${error}`);
+            process.exit(1);
         }
 
-        // CLI 1.0.0-beta.15 and newer wrap the list in items
-        const templates = Array.isArray(envelope.data) ? envelope.data : envelope.data?.items;
-        const ids = (templates ?? [])
-            // entries without a type, such as 7000.0's 3d and 2d at version 0.0.0, are the Hub's blank projects, not template packages
-            .filter(t => !!t.type)
-            .map(t => t.name || t.id)
-            .filter((id): id is string => !!id);
         const templateId = ids.find(id => id === prefix) ?? ids.find(id => id.startsWith(prefix));
 
         if (!templateId) {
@@ -564,6 +558,8 @@ program.command('create-project')
             process.exit(1);
         }
 
+        // the official CLI creates the project folder but needs its parent to exist, which v3 created
+        await fs.promises.mkdir(parent, { recursive: true });
         args.push('--template', templateId, '--no-cloud');
         await forwardToUnityCli('create-project', args, options.json === true);
     });
@@ -604,13 +600,6 @@ program.command('open-project')
 
         await forwardToUnityCli('open-project', args);
     });
-
-/** A template entry from `unity templates --format json`. */
-interface ListedTemplate {
-    name?: string;
-    id?: string;
-    type?: string;
-}
 
 /**
  * The security alert handling for a command: `allow` with --allow-security-alert or UNITY_ALLOW_SECURITY_ALERT,
