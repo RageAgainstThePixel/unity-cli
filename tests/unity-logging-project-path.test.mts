@@ -1,4 +1,6 @@
-import { isFileUnderProjectPath, normalizeAnnotationPath } from '../src/unity-logging';
+import { describe, it, afterEach } from 'node:test';
+import * as assert from 'node:assert/strict';
+import { isFileUnderProjectPath, normalizeAnnotationPath } from '../dist/unity-logging.js';
 import * as path from 'path';
 
 describe('isFileUnderProjectPath', () => {
@@ -9,16 +11,16 @@ describe('isFileUnderProjectPath', () => {
     });
 
     it('returns true for file under unix-style project root', () => {
-        expect(isFileUnderProjectPath('/home/runner/proj/Assets/a.cs', '/home/runner/proj')).toBe(true);
+        assert.equal(isFileUnderProjectPath('/home/runner/proj/Assets/a.cs', '/home/runner/proj'), true);
     });
 
     it('returns false when file is outside project', () => {
-        expect(isFileUnderProjectPath('/other/Assets/a.cs', '/home/runner/proj')).toBe(false);
+        assert.equal(isFileUnderProjectPath('/other/Assets/a.cs', '/home/runner/proj'), false);
     });
 
     it('on win32 matches case-insensitively', () => {
         Object.defineProperty(process, 'platform', { value: 'win32' });
-        expect(isFileUnderProjectPath('D:/Work/MyProj/Assets/Foo.cs', 'd:/work/myproj')).toBe(true);
+        assert.equal(isFileUnderProjectPath('D:/Work/MyProj/Assets/Foo.cs', 'd:/work/myproj'), true);
     });
 });
 
@@ -32,14 +34,14 @@ describe('normalizeAnnotationPath', () => {
     it('resolves relative project file to project-relative annotation path', () => {
         const out = normalizeAnnotationPath('Assets/Scripts/Foo.cs', '/home/runner/proj');
         const expectedAbsolute = path.resolve('/home/runner/proj', 'Assets/Scripts/Foo.cs').replace(/\\/g, '/');
-        expect(out.absoluteFile).toBe(expectedAbsolute);
-        expect(out.annotationFile).toBe('Assets/Scripts/Foo.cs');
+        assert.equal(out.absoluteFile, expectedAbsolute);
+        assert.equal(out.annotationFile, 'Assets/Scripts/Foo.cs');
     });
 
     it('returns only absolute path when file is outside project root', () => {
         const out = normalizeAnnotationPath('/other/Foo.cs', '/home/runner/proj');
-        expect(out.absoluteFile).toBe('/other/Foo.cs');
-        expect(out.annotationFile).toBeUndefined();
+        assert.equal(out.absoluteFile, '/other/Foo.cs');
+        assert.equal(out.annotationFile, undefined);
     });
 
     // faking process.platform does not swap the path module, so Windows paths only resolve on Windows
@@ -48,13 +50,13 @@ describe('normalizeAnnotationPath', () => {
     windowsIt('normalizes windows relative paths for annotation output', () => {
         Object.defineProperty(process, 'platform', { value: 'win32' });
         const out = normalizeAnnotationPath('Assets\\UnityCliTests\\CompilerErrors.cs', 'D:\\Work\\MyProj');
-        expect(out.absoluteFile).toBe('D:/Work/MyProj/Assets/UnityCliTests/CompilerErrors.cs');
-        expect(out.annotationFile).toBe('Assets/UnityCliTests/CompilerErrors.cs');
+        assert.equal(out.absoluteFile, 'D:/Work/MyProj/Assets/UnityCliTests/CompilerErrors.cs');
+        assert.equal(out.annotationFile, 'Assets/UnityCliTests/CompilerErrors.cs');
     });
 
     windowsIt('supports windows case-insensitive project roots', () => {
         Object.defineProperty(process, 'platform', { value: 'win32' });
         const out = normalizeAnnotationPath('D:\\WORK\\MYPROJ\\Assets\\Bar.cs', 'd:/work/myproj');
-        expect(out.annotationFile).toBe('Assets/Bar.cs');
+        assert.equal(out.annotationFile, 'Assets/Bar.cs');
     });
 });

@@ -1,4 +1,6 @@
-import { ClassifyFailure, FindLicenseExhaustedLine, LICENSE_EXHAUSTED_MARKER, TRANSIENT_FAILURE_MARKER } from '../src/failure-markers';
+import { describe, it } from 'node:test';
+import * as assert from 'node:assert/strict';
+import { ClassifyFailure, FindLicenseExhaustedLine, LICENSE_EXHAUSTED_MARKER, TRANSIENT_FAILURE_MARKER } from '../dist/failure-markers.js';
 
 describe('FindLicenseExhaustedLine', () => {
     it('carries the licensing client\'s seat error into the editor failure, so it is marked retryable', () => {
@@ -8,44 +10,50 @@ describe('FindLicenseExhaustedLine', () => {
             '[Licensing::Module] Error: \'com.unity.editor.headless\' was not found.',
         ]);
 
-        expect(line).toBe('[Licensing::Client] Error: Code 404 while processing request (status: Found 0 entitlement groups and 0 free entitlements matching requested entitlement ids)');
-        expect(ClassifyFailure(`Unity failed with exit code 6: ${line}`)).toBe(LICENSE_EXHAUSTED_MARKER);
+        assert.equal(line, '[Licensing::Client] Error: Code 404 while processing request (status: Found 0 entitlement groups and 0 free entitlements matching requested entitlement ids)');
+        assert.equal(ClassifyFailure(`Unity failed with exit code 6: ${line}`), LICENSE_EXHAUSTED_MARKER);
     });
 
     it('finds nothing in ordinary error lines', () => {
-        expect(FindLicenseExhaustedLine(["Assets/Foo.cs(2,8): error CS1029: #error: 'Intentional compiler error'", 'download failed: ETIMEDOUT'])).toBeUndefined();
-        expect(FindLicenseExhaustedLine([])).toBeUndefined();
+        assert.equal(FindLicenseExhaustedLine(["Assets/Foo.cs(2,8): error CS1029: #error: 'Intentional compiler error'", 'download failed: ETIMEDOUT']), undefined);
+        assert.equal(FindLicenseExhaustedLine([]), undefined);
     });
 });
 
 describe('ClassifyFailure', () => {
-    it.each([
+    for (const message of [
         'Machine activations limit reached for this account',
         'License command failed with exit code 26: Unity ID sign-in rate limit reached: too many sign-in attempts for this account',
         'Code 404 while processing request (status: Found 1 entitlement groups and 0 free entitlements matching requested entitlement ids)',
         'License command failed with exit code 17: Seat activation or deactivation failed\n[Licensing::Client] Error: Machine activations limit reached for this account',
-    ])('marks license exhaustion: %s', message => {
-        expect(ClassifyFailure(message)).toBe(LICENSE_EXHAUSTED_MARKER);
-    });
+    ]) {
+        it(`marks license exhaustion: ${message}`, () => {
+            assert.equal(ClassifyFailure(message), LICENSE_EXHAUSTED_MARKER);
+        });
+    }
 
-    it.each([
+    for (const message of [
         'Error: GET https://cdn.packages.unity.com/upm-cli/releases/v9.36.0/upm-macos-arm64.zip.sha256 failed: HTTP 504',
         'Download failed: read ECONNRESET',
         'unity install failed: 503 Service Unavailable',
         'aborted',
         'Error: aborted',
-    ])('marks transient failures: %s', message => {
-        expect(ClassifyFailure(message)).toBe(TRANSIENT_FAILURE_MARKER);
-    });
+    ]) {
+        it(`marks transient failures: ${message}`, () => {
+            assert.equal(ClassifyFailure(message), TRANSIENT_FAILURE_MARKER);
+        });
+    }
 
-    it.each([
+    for (const message of [
         'Unity failed with exit code 6',
         'License command failed with exit code 2: Invalid credentials',
         'GET https://example.com failed: HTTP 404',
         'License command failed with exit code 17: Seat activation or deactivation failed',
         'License command failed with exit code 19: Acquiring license failed',
         'connect ECONNREFUSED 127.0.0.1:443',
-    ])('leaves other failures unmarked: %s', message => {
-        expect(ClassifyFailure(message)).toBeUndefined();
-    });
+    ]) {
+        it(`leaves other failures unmarked: ${message}`, () => {
+            assert.equal(ClassifyFailure(message), undefined);
+        });
+    }
 });

@@ -1,17 +1,20 @@
-import { Logger, LogLevel } from '../src/logging';
+import { describe, it, beforeEach, afterEach, mock } from 'node:test';
+import * as assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
+import { Logger, LogLevel } from '../dist/logging.js';
 
 describe('Credential Scrubbing', () => {
-    let writeSpy: jest.SpyInstance;
+    let writeSpy: ReturnType<typeof mock.method>;
     let originalLogLevel: LogLevel;
 
     beforeEach(() => {
-        writeSpy = jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
+        writeSpy = mock.method(process.stdout, 'write', () => true);
         originalLogLevel = Logger.instance.logLevel;
         Logger.instance.logLevel = LogLevel.DEBUG; // Ensure debug logging is enabled
     });
 
     afterEach(() => {
-        writeSpy.mockRestore();
+        writeSpy.mock.restore();
         Logger.instance.logLevel = originalLogLevel; // Restore original log level
     });
 
@@ -25,9 +28,9 @@ describe('Credential Scrubbing', () => {
 
             Logger.instance.debugOptions(options);
 
-            const output = writeSpy.mock.calls.map((call: any[]) => call[0]).join('');
-            expect(output).toContain('[REDACTED]');
-            expect(output).not.toContain('SuperSecret123');
+            const output = writeSpy.mock.calls.map(call => call.arguments[0]).join('');
+            assert.ok(output.includes('[REDACTED]'));
+            assert.ok(!output.includes('SuperSecret123'));
         });
 
         it('should scrub email from options', () => {
@@ -39,9 +42,9 @@ describe('Credential Scrubbing', () => {
 
             Logger.instance.debugOptions(options);
 
-            const output = writeSpy.mock.calls.map((call: any[]) => call[0]).join('');
-            expect(output).toContain('[REDACTED]');
-            expect(output).not.toContain('sensitive@example.com');
+            const output = writeSpy.mock.calls.map(call => call.arguments[0]).join('');
+            assert.ok(output.includes('[REDACTED]'));
+            assert.ok(!output.includes('sensitive@example.com'));
         });
 
         it('should scrub serial from options', () => {
@@ -53,9 +56,9 @@ describe('Credential Scrubbing', () => {
 
             Logger.instance.debugOptions(options);
 
-            const output = writeSpy.mock.calls.map((call: any[]) => call[0]).join('');
-            expect(output).toContain('[REDACTED]');
-            expect(output).not.toContain('ABC-123-DEF-456');
+            const output = writeSpy.mock.calls.map(call => call.arguments[0]).join('');
+            assert.ok(output.includes('[REDACTED]'));
+            assert.ok(!output.includes('ABC-123-DEF-456'));
         });
 
         it('should scrub token from options', () => {
@@ -67,9 +70,9 @@ describe('Credential Scrubbing', () => {
 
             Logger.instance.debugOptions(options);
 
-            const output = writeSpy.mock.calls.map((call: any[]) => call[0]).join('');
-            expect(output).toContain('[REDACTED]');
-            expect(output).not.toContain('secret-token-12345');
+            const output = writeSpy.mock.calls.map(call => call.arguments[0]).join('');
+            assert.ok(output.includes('[REDACTED]'));
+            assert.ok(!output.includes('secret-token-12345'));
         });
 
         it('should scrub organization from options', () => {
@@ -81,9 +84,9 @@ describe('Credential Scrubbing', () => {
 
             Logger.instance.debugOptions(options);
 
-            const output = writeSpy.mock.calls.map((call: any[]) => call[0]).join('');
-            expect(output).toContain('[REDACTED]');
-            expect(output).not.toContain('org-id-12345');
+            const output = writeSpy.mock.calls.map(call => call.arguments[0]).join('');
+            assert.ok(output.includes('[REDACTED]'));
+            assert.ok(!output.includes('org-id-12345'));
         });
 
         it('should scrub config from options', () => {
@@ -95,9 +98,9 @@ describe('Credential Scrubbing', () => {
 
             Logger.instance.debugOptions(options);
 
-            const output = writeSpy.mock.calls.map((call: any[]) => call[0]).join('');
-            expect(output).toContain('[REDACTED]');
-            expect(output).not.toContain('"server":"license.example.com"');
+            const output = writeSpy.mock.calls.map(call => call.arguments[0]).join('');
+            assert.ok(output.includes('[REDACTED]'));
+            assert.ok(!output.includes('"server":"license.example.com"'));
         });
 
         it('should preserve non-sensitive options', () => {
@@ -111,12 +114,12 @@ describe('Credential Scrubbing', () => {
 
             Logger.instance.debugOptions(options);
 
-            const output = writeSpy.mock.calls.map((call: any[]) => call[0]).join('');
-            expect(output).toContain('my-package');
-            expect(output).toContain('./output');
-            expect(output).toContain('true');
-            expect(output).not.toContain('test@example.com');
-            expect(output).not.toContain('secret');
+            const output = writeSpy.mock.calls.map(call => call.arguments[0]).join('');
+            assert.ok(output.includes('my-package'));
+            assert.ok(output.includes('./output'));
+            assert.ok(output.includes('true'));
+            assert.ok(!output.includes('test@example.com'));
+            assert.ok(!output.includes('secret'));
         });
 
         it('should scrub nested sensitive options', () => {
@@ -130,10 +133,10 @@ describe('Credential Scrubbing', () => {
 
             Logger.instance.debugOptions(options);
 
-            const output = writeSpy.mock.calls.map((call: any[]) => call[0]).join('');
-            expect(output).toContain('[REDACTED]');
-            expect(output).not.toContain('nested@example.com');
-            expect(output).not.toContain('nested-secret');
+            const output = writeSpy.mock.calls.map(call => call.arguments[0]).join('');
+            assert.ok(output.includes('[REDACTED]'));
+            assert.ok(!output.includes('nested@example.com'));
+            assert.ok(!output.includes('nested-secret'));
         });
 
         it('should scrub sensitive options in arrays', () => {
@@ -147,12 +150,12 @@ describe('Credential Scrubbing', () => {
 
             Logger.instance.debugOptions(options);
 
-            const output = writeSpy.mock.calls.map((call: any[]) => call[0]).join('');
-            expect(output).toContain('[REDACTED]');
-            expect(output).toContain('User 1');
-            expect(output).toContain('User 2');
-            expect(output).not.toContain('user1@example.com');
-            expect(output).not.toContain('user2@example.com');
+            const output = writeSpy.mock.calls.map(call => call.arguments[0]).join('');
+            assert.ok(output.includes('[REDACTED]'));
+            assert.ok(output.includes('User 1'));
+            assert.ok(output.includes('User 2'));
+            assert.ok(!output.includes('user1@example.com'));
+            assert.ok(!output.includes('user2@example.com'));
         });
 
         it('should handle null and undefined values', () => {
@@ -165,8 +168,8 @@ describe('Credential Scrubbing', () => {
 
             Logger.instance.debugOptions(options);
 
-            const output = writeSpy.mock.calls.map((call: any[]) => call[0]).join('');
-            expect(output).toBeDefined();
+            const output = writeSpy.mock.calls.map(call => call.arguments[0]).join('');
+            assert.notEqual(output, undefined);
         });
 
         it('should scrub all sensitive keys case-insensitively', () => {
@@ -179,40 +182,40 @@ describe('Credential Scrubbing', () => {
 
             Logger.instance.debugOptions(options);
 
-            const output = writeSpy.mock.calls.map((call: any[]) => call[0]).join('');
-            expect(output).toContain('[REDACTED]');
-            expect(output).not.toContain('secret1');
-            expect(output).not.toContain('test@example.com');
-            expect(output).not.toContain('org123');
+            const output = writeSpy.mock.calls.map(call => call.arguments[0]).join('');
+            assert.ok(output.includes('[REDACTED]'));
+            assert.ok(!output.includes('secret1'));
+            assert.ok(!output.includes('test@example.com'));
+            assert.ok(!output.includes('org123'));
         });
     });
 
     describe('maskCredential', () => {
         it('should call CI_mask for non-empty credentials', () => {
-            const maskSpy = jest.spyOn(Logger.instance, 'CI_mask');
+            const maskSpy = mock.method(Logger.instance, 'CI_mask');
 
             Logger.instance.maskCredential('my-secret-password');
 
-            expect(maskSpy).toHaveBeenCalledWith('my-secret-password');
-            maskSpy.mockRestore();
+            assert.ok(maskSpy.mock.calls.some(call => isDeepStrictEqual(call.arguments, ['my-secret-password'])));
+            maskSpy.mock.restore();
         });
 
         it('should not call CI_mask for undefined credentials', () => {
-            const maskSpy = jest.spyOn(Logger.instance, 'CI_mask');
+            const maskSpy = mock.method(Logger.instance, 'CI_mask');
 
             Logger.instance.maskCredential(undefined);
 
-            expect(maskSpy).not.toHaveBeenCalled();
-            maskSpy.mockRestore();
+            assert.equal(maskSpy.mock.callCount(), 0);
+            maskSpy.mock.restore();
         });
 
         it('should not call CI_mask for empty string credentials', () => {
-            const maskSpy = jest.spyOn(Logger.instance, 'CI_mask');
+            const maskSpy = mock.method(Logger.instance, 'CI_mask');
 
             Logger.instance.maskCredential('');
 
-            expect(maskSpy).not.toHaveBeenCalled();
-            maskSpy.mockRestore();
+            assert.equal(maskSpy.mock.callCount(), 0);
+            maskSpy.mock.restore();
         });
     });
 });

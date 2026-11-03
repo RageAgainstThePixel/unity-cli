@@ -1,4 +1,6 @@
-import { IsSharedRunnerIdentity } from '../src/license-client';
+import { describe, it, afterEach } from 'node:test';
+import * as assert from 'node:assert/strict';
+import { IsSharedRunnerIdentity } from '../dist/license-client.js';
 
 describe('IsSharedRunnerIdentity', () => {
     const environment = process.env.RUNNER_ENVIRONMENT;
@@ -16,20 +18,22 @@ describe('IsSharedRunnerIdentity', () => {
         setPlatform(platform);
     });
 
-    it.each([
+    for (const [runner, os, expected] of [
         ['github-hosted', 'darwin', true],
         ['github-hosted', 'linux', true],
         ['github-hosted', 'win32', false],
         ['self-hosted', 'darwin', false],
         [undefined, 'linux', false],
-    ] as const)('%s on %s is %s', (runner, os, expected) => {
-        if (runner === undefined) {
-            delete process.env.RUNNER_ENVIRONMENT;
-        } else {
-            process.env.RUNNER_ENVIRONMENT = runner;
-        }
+    ] as const) {
+        it(`${runner} on ${os} is ${expected}`, () => {
+            if (runner === undefined) {
+                delete process.env.RUNNER_ENVIRONMENT;
+            } else {
+                process.env.RUNNER_ENVIRONMENT = runner;
+            }
 
-        setPlatform(os);
-        expect(IsSharedRunnerIdentity()).toBe(expected);
-    });
+            setPlatform(os);
+            assert.equal(IsSharedRunnerIdentity(), expected);
+        });
+    }
 });
