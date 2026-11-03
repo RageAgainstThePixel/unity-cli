@@ -1,14 +1,16 @@
+import { describe, it, before, after } from 'node:test';
+import * as assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { UnityEditor } from '../src/unity-editor';
-import { UnityVersion } from '../src/unity-version';
+import { UnityEditor } from '../dist/unity-editor.js';
+import { UnityVersion } from '../dist/unity-version.js';
 
 describe('UnityEditor', () => {
     let tempRoot: string;
     let testEditor: UnityEditor;
 
-    beforeAll(() => {
+    before(() => {
         // a fake editor executable is enough for the pure helpers under test
         tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unity-cli-editor-'));
         const editorPath = process.platform === 'darwin'
@@ -19,14 +21,14 @@ describe('UnityEditor', () => {
         testEditor = new UnityEditor(editorPath, new UnityVersion('6000.0.0f1'));
     });
 
-    afterAll(() => {
+    after(() => {
         fs.rmSync(tempRoot, { recursive: true, force: true });
     });
 
     describe('GetUnityRunArgs', () => {
         it('passes the .app bundle on macOS', () => {
             const args = UnityEditor.GetUnityRunArgs('/Applications/Unity/Hub/Editor/6000.0.0f1/Unity.app/Contents/MacOS/Unity', '/project', '/logs/run.log', ['-quit']);
-            expect(args[3]).toBe('/Applications/Unity/Hub/Editor/6000.0.0f1/Unity.app');
+            assert.equal(args[3], '/Applications/Unity/Hub/Editor/6000.0.0f1/Unity.app');
         });
 
         it('lets unity run own -batchmode, -quit, -projectPath and -logFile', () => {
@@ -40,7 +42,7 @@ describe('UnityEditor', () => {
                 '-executeMethod', 'Build.Run',
             ]);
 
-            expect(args).toEqual([
+            assert.deepEqual(args, [
                 'run', '/project',
                 '--editor-path', '/editor/Unity',
                 '--log-file', '/logs/run.log',
@@ -58,38 +60,38 @@ describe('UnityEditor', () => {
             const args = ['-batchmode', '-username', 'test@example.com', '-quit'];
             const scrubbedArgs = testEditor.scrubSensitiveArgs(args);
 
-            expect(scrubbedArgs).toContain('-username');
-            expect(scrubbedArgs).toContain('[REDACTED]');
-            expect(scrubbedArgs).not.toContain('test@example.com');
-            expect(scrubbedArgs).toContain('-batchmode');
-            expect(scrubbedArgs).toContain('-quit');
+            assert.ok(scrubbedArgs.includes('-username'));
+            assert.ok(scrubbedArgs.includes('[REDACTED]'));
+            assert.ok(!scrubbedArgs.includes('test@example.com'));
+            assert.ok(scrubbedArgs.includes('-batchmode'));
+            assert.ok(scrubbedArgs.includes('-quit'));
         });
 
         it('should redact -password value', () => {
             const args = ['-batchmode', '-password', 'SuperSecret123', '-quit'];
             const scrubbedArgs = testEditor.scrubSensitiveArgs(args);
 
-            expect(scrubbedArgs).toContain('-password');
-            expect(scrubbedArgs).toContain('[REDACTED]');
-            expect(scrubbedArgs).not.toContain('SuperSecret123');
+            assert.ok(scrubbedArgs.includes('-password'));
+            assert.ok(scrubbedArgs.includes('[REDACTED]'));
+            assert.ok(!scrubbedArgs.includes('SuperSecret123'));
         });
 
         it('should redact -cloudOrganization value', () => {
             const args = ['-batchmode', '-cloudOrganization', 'org-id-12345', '-quit'];
             const scrubbedArgs = testEditor.scrubSensitiveArgs(args);
 
-            expect(scrubbedArgs).toContain('-cloudOrganization');
-            expect(scrubbedArgs).toContain('[REDACTED]');
-            expect(scrubbedArgs).not.toContain('org-id-12345');
+            assert.ok(scrubbedArgs.includes('-cloudOrganization'));
+            assert.ok(scrubbedArgs.includes('[REDACTED]'));
+            assert.ok(!scrubbedArgs.includes('org-id-12345'));
         });
 
         it('should redact -serial value', () => {
             const args = ['-batchmode', '-serial', 'ABC-123-DEF-456', '-quit'];
             const scrubbedArgs = testEditor.scrubSensitiveArgs(args);
 
-            expect(scrubbedArgs).toContain('-serial');
-            expect(scrubbedArgs).toContain('[REDACTED]');
-            expect(scrubbedArgs).not.toContain('ABC-123-DEF-456');
+            assert.ok(scrubbedArgs.includes('-serial'));
+            assert.ok(scrubbedArgs.includes('[REDACTED]'));
+            assert.ok(!scrubbedArgs.includes('ABC-123-DEF-456'));
         });
 
         it('should preserve non-sensitive arguments', () => {
@@ -101,18 +103,18 @@ describe('UnityEditor', () => {
             ];
             const scrubbedArgs = testEditor.scrubSensitiveArgs(args);
 
-            expect(scrubbedArgs).toEqual(args);
+            assert.deepEqual(scrubbedArgs, args);
         });
 
         it('should handle empty array', () => {
-            expect(testEditor.scrubSensitiveArgs([])).toEqual([]);
+            assert.deepEqual(testEditor.scrubSensitiveArgs([]), []);
         });
 
         it('should handle sensitive flag at end of array without value', () => {
             const scrubbedArgs = testEditor.scrubSensitiveArgs(['-batchmode', '-quit', '-username']);
 
-            expect(scrubbedArgs).toContain('-username');
-            expect(scrubbedArgs).not.toContain('[REDACTED]');
+            assert.ok(scrubbedArgs.includes('-username'));
+            assert.ok(!scrubbedArgs.includes('[REDACTED]'));
         });
     });
 });

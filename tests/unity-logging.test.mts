@@ -1,3 +1,5 @@
+import { describe, it } from 'node:test';
+import * as assert from 'node:assert/strict';
 import {
     type ActionTableSnapshot,
     describeUtpForUtpLogLevel,
@@ -5,42 +7,42 @@ import {
     normalizeAnnotationPath,
     sanitizeTelemetryJson,
     stringDisplayWidth
-} from '../src/unity-logging';
+} from '../dist/unity-logging.js';
 
 describe('sanitizeTelemetryJson', () => {
     it('removes trailing null characters that break JSON.parse', () => {
         const raw = '{"type":"TestStatus"}\u0000\u0000';
-        expect(sanitizeTelemetryJson(raw)).toBe('{"type":"TestStatus"}');
+        assert.equal(sanitizeTelemetryJson(raw), '{"type":"TestStatus"}');
     });
 
     it('strips a UTF-8 BOM and surrounding whitespace', () => {
         const raw = '\ufeff  {"key":"value"}  ';
         const result = sanitizeTelemetryJson(raw);
-        expect(result).not.toBeUndefined();
-        expect(result).toBe('{"key":"value"}');
+        assert.notEqual(result, undefined);
+        assert.equal(result, '{"key":"value"}');
     });
 
     it('removes ANSI color codes around JSON', () => {
         const raw = '\u001b[32m{"type":"TestStatus"}\u001b[0m';
         const result = sanitizeTelemetryJson(raw);
-        expect(result).not.toBeUndefined();
-        expect(result).toBe('{"type":"TestStatus"}');
+        assert.notEqual(result, undefined);
+        assert.equal(result, '{"type":"TestStatus"}');
     });
 });
 
 describe('stringDisplayWidth', () => {
     it('treats ASCII characters as single width', () => {
-        expect(stringDisplayWidth('ABC')).toBe(3);
+        assert.equal(stringDisplayWidth('ABC'), 3);
     });
 
     it('treats build status emoji as double width', () => {
-        expect(stringDisplayWidth('✅')).toBe(2);
-        expect(stringDisplayWidth('❌')).toBe(2);
-        expect(stringDisplayWidth('⏳')).toBe(2);
+        assert.equal(stringDisplayWidth('✅'), 2);
+        assert.equal(stringDisplayWidth('❌'), 2);
+        assert.equal(stringDisplayWidth('⏳'), 2);
     });
 
     it('handles emoji with variation selectors', () => {
-        expect(stringDisplayWidth('✔️')).toBe(2);
+        assert.equal(stringDisplayWidth('✔️'), 2);
     });
 });
 
@@ -76,30 +78,30 @@ describe('formatActionTimelineTable', () => {
     it('expands the description column to fill the terminal width when space allows', () => {
         const maxWidth = 200;
         const formatted = formatActionTimelineTable(snapshot, { maxWidth });
-        expect(formatted).toBeDefined();
+        assert.notEqual(formatted, undefined);
         const lines = collectTableLines(formatted?.text);
-        expect(lines.length).toBeGreaterThan(0);
+        assert.ok(lines.length > 0);
         lines.forEach(line => {
-            expect(stringDisplayWidth(line)).toBe(maxWidth);
+            assert.equal(stringDisplayWidth(line), maxWidth);
         });
 
         const fullRow = lines.find(line => line.includes('This is'));
-        expect(fullRow).toBeDefined();
-        expect(fullRow).not.toContain('...');
+        assert.notEqual(fullRow, undefined);
+        assert.ok(!fullRow.includes('...'));
     });
 
     it('uses the minimum description width when the terminal is too narrow', () => {
         const maxWidth = 38; // Intentionally smaller than the minimum viable table width
         const formatted = formatActionTimelineTable(snapshot, { maxWidth });
-        expect(formatted).toBeDefined();
+        assert.notEqual(formatted, undefined);
         const lines = collectTableLines(formatted?.text);
         const buildRow = lines.find(line => line.includes('This is'));
-        expect(buildRow).toBeDefined();
+        assert.notEqual(buildRow, undefined);
 
         const descriptionWidth = extractDescriptionCellWidth(buildRow!);
         const expectedMinWidth = Math.max(stringDisplayWidth('Description'), 16);
-        expect(descriptionWidth).toBe(expectedMinWidth);
-        expect(buildRow).toContain('...');
+        assert.equal(descriptionWidth, expectedMinWidth);
+        assert.ok(buildRow.includes('...'));
     });
 
     it('renders detailed error sections with multi-line stacks', () => {
@@ -122,11 +124,11 @@ describe('formatActionTimelineTable', () => {
         };
 
         const formatted = formatActionTimelineTable(snapshotWithErrors, { maxWidth: 120 });
-        expect(formatted?.text).toContain('Error Details');
-        expect(formatted?.text).toContain('Postprocess built player');
-        expect(formatted?.text).toContain('IOException: The file could not be moved');
-        expect(formatted?.text).toContain('at Foo()');
-        expect(formatted?.text).toContain('Another error occurred');
+        assert.ok(formatted?.text.includes('Error Details'));
+        assert.ok(formatted?.text.includes('Postprocess built player'));
+        assert.ok(formatted?.text.includes('IOException: The file could not be moved'));
+        assert.ok(formatted?.text.includes('at Foo()'));
+        assert.ok(formatted?.text.includes('Another error occurred'));
     });
 
     it('appends a player build info table when summary data is provided', () => {
@@ -146,10 +148,10 @@ describe('formatActionTimelineTable', () => {
         };
 
         const formatted = formatActionTimelineTable(snapshotWithBuildInfo, { maxWidth: 120 });
-        expect(formatted).toBeDefined();
-        expect(formatted?.text).toContain('📋 Player Build Info');
-        expect(formatted?.text).toContain('Postprocess built player');
-        expect(formatted?.text).toContain('# of Errors');
+        assert.notEqual(formatted, undefined);
+        assert.ok(formatted?.text.includes('📋 Player Build Info'));
+        assert.ok(formatted?.text.includes('Postprocess built player'));
+        assert.ok(formatted?.text.includes('# of Errors'));
     });
 });
 
@@ -162,9 +164,9 @@ describe('describeUtpForUtpLogLevel', () => {
             file: 'Assets/A.cs',
             line: 3,
         } as any);
-        expect(s).toContain('[UTP] Compiler');
-        expect(s).toContain('Assets/A.cs:3');
-        expect(s).toContain('bad');
+        assert.ok(s.includes('[UTP] Compiler'));
+        assert.ok(s.includes('Assets/A.cs:3'));
+        assert.ok(s.includes('bad'));
     });
 
     it('returns a one-line debug string for TestStatus', () => {
@@ -174,9 +176,9 @@ describe('describeUtpForUtpLogLevel', () => {
             state: 1,
             duration: 42,
         } as any);
-        expect(s).toContain('TestStatus');
-        expect(s).toContain('state=1');
-        expect(s).toContain('T.Name');
+        assert.ok(s.includes('TestStatus'));
+        assert.ok(s.includes('state=1'));
+        assert.ok(s.includes('T.Name'));
     });
 
     it('returns JSON for settings-like types', () => {
@@ -184,22 +186,22 @@ describe('describeUtpForUtpLogLevel', () => {
             type: 'BuildSettings',
             BuildSettings: { Platform: 'Android' },
         } as any);
-        expect(s).toContain('BuildSettings');
-        expect(s).toContain('Android');
+        assert.ok(s.includes('BuildSettings'));
+        assert.ok(s.includes('Android'));
     });
 
     it('returns undefined for an unknown type string', () => {
-        expect(describeUtpForUtpLogLevel({ type: 'FutureUnityType', x: 1 } as any)).toBeUndefined();
+        assert.equal(describeUtpForUtpLogLevel({ type: 'FutureUnityType', x: 1 } as any), undefined);
     });
 });
 
 describe('normalizeAnnotationPath edge cases', () => {
     it('returns empty result for undefined file', () => {
-        expect(normalizeAnnotationPath(undefined, '/tmp/proj')).toEqual({});
+        assert.deepEqual(normalizeAnnotationPath(undefined, '/tmp/proj'), {});
     });
 
     it('keeps normalized relative path without project path', () => {
         const out = normalizeAnnotationPath('Assets\\X.cs', undefined);
-        expect(out.annotationFile).toBe('Assets/X.cs');
+        assert.equal(out.annotationFile, 'Assets/X.cs');
     });
 });

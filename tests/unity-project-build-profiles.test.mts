@@ -1,7 +1,9 @@
+import { describe, it, beforeEach, afterEach } from 'node:test';
+import * as assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { UnityProject } from '../src/unity-project';
+import { UnityProject } from '../dist/unity-project.js';
 
 const buildProfile = (name: string, target: number) => `%YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
@@ -44,10 +46,10 @@ describe('UnityProject.GetBuildProfileTargets', () => {
         fs.writeFileSync(path.join(profiles, 'Android Release.asset'), buildProfile('Android Release', 13).replace(/\n/g, '\r\n'));
         fs.writeFileSync(path.join(projectPath, 'Assets', 'Other.asset'), 'MonoBehaviour:\n  m_BuildTarget: 9\n');
 
-        expect(new UnityProject(projectPath).GetBuildProfileTargets().sort()).toEqual(['Android', 'WebGL']);
+        assert.deepEqual(new UnityProject(projectPath).GetBuildProfileTargets().sort(), ['Android', 'WebGL']);
     });
 
     it('returns nothing without build profiles', () => {
-        expect(new UnityProject(projectPath).GetBuildProfileTargets()).toEqual([]);
+        assert.deepEqual(new UnityProject(projectPath).GetBuildProfileTargets(), []);
     });
 });

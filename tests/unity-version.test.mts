@@ -1,4 +1,6 @@
-import { UnityVersion } from '../src/unity-version';
+import { describe, it } from 'node:test';
+import * as assert from 'node:assert/strict';
+import { UnityVersion } from '../dist/unity-version.js';
 
 describe('UnityVersion', () => {
     it('normalizes Unity versions with build metadata', () => {
@@ -6,21 +8,21 @@ describe('UnityVersion', () => {
 
         // Ensure creating the version doesn't throw and comparisons use build metadata
         const f2 = new UnityVersion('2021.3.5f2');
-        expect(UnityVersion.compare(f2, version)).toBeGreaterThan(0);
+        assert.ok((UnityVersion.compare(f2, version)) > 0);
     });
 
     it('parses embedded changeset from version (changeset) strings', () => {
         const version = new UnityVersion('5.6.7f1 (e80cc3114ac1)');
-        expect(version.version).toBe('5.6.7f1');
-        expect(version.changeset).toBe('e80cc3114ac1');
-        expect(version.isFullyQualified()).toBe(true);
-        expect(version.toString()).toBe('5.6.7f1 (e80cc3114ac1)');
+        assert.equal(version.version, '5.6.7f1');
+        assert.equal(version.changeset, 'e80cc3114ac1');
+        assert.equal(version.isFullyQualified(), true);
+        assert.equal(version.toString(), '5.6.7f1 (e80cc3114ac1)');
     });
 
     it('keeps explicit changeset over embedded parenthetical', () => {
         const version = new UnityVersion('5.6.7f1 (e80cc3114ac1)', 'aaaaaaaaaaaa');
-        expect(version.version).toBe('5.6.7f1');
-        expect(version.changeset).toBe('aaaaaaaaaaaa');
+        assert.equal(version.version, '5.6.7f1');
+        assert.equal(version.changeset, 'aaaaaaaaaaaa');
     });
 
     it('orders Unity builds by channel and revision', () => {
@@ -30,16 +32,16 @@ describe('UnityVersion', () => {
         const final = new UnityVersion('2021.3.5f2');
         const previousFinal = new UnityVersion('2021.3.5f1');
         // f > p > b > a
-        expect(UnityVersion.compare(beta, alpha)).toBeGreaterThan(0);
-        expect(UnityVersion.compare(patch, beta)).toBeGreaterThan(0);
-        expect(UnityVersion.compare(final, patch)).toBeGreaterThan(0);
-        expect(UnityVersion.compare(final, previousFinal)).toBeGreaterThan(0);
+        assert.ok((UnityVersion.compare(beta, alpha)) > 0);
+        assert.ok((UnityVersion.compare(patch, beta)) > 0);
+        assert.ok((UnityVersion.compare(final, patch)) > 0);
+        assert.ok((UnityVersion.compare(final, previousFinal)) > 0);
         // explicit check: f2 should be newer than f1
         const f2 = new UnityVersion('2021.3.5f2');
         const f1 = new UnityVersion('2021.3.5f1');
-        expect(UnityVersion.compare(f2, f1)).toBeGreaterThan(0);
+        assert.ok((UnityVersion.compare(f2, f1)) > 0);
         // patch should be older than final
-        expect(UnityVersion.compare(patch, final)).toBeLessThan(0);
+        assert.ok((UnityVersion.compare(patch, final)) < 0);
     });
 
     it('finds latest final release when provided a partial version', () => {
@@ -54,9 +56,9 @@ describe('UnityVersion', () => {
         const version = new UnityVersion('2021.x');
         const match = version.findMatch(available);
 
-        expect(match.version).toBe('2021.3.5f2');
+        assert.equal(match.version, '2021.3.5f2');
         const older = new UnityVersion('2021.3.5f1');
-        expect(UnityVersion.compare(match, older)).toBeGreaterThan(0);
+        assert.ok((UnityVersion.compare(match, older)) > 0);
     });
 
     it('finds latest version in specified channels', () => {
@@ -71,9 +73,9 @@ describe('UnityVersion', () => {
         // f > p > b > a
         const version = new UnityVersion('2021.x');
         const match = version.findMatch(available, ['b', 'a']);
-        expect(match.version).toBe('2021.3.2b1');
+        assert.equal(match.version, '2021.3.2b1');
         const older = new UnityVersion('2021.3.2a1');
-        expect(UnityVersion.compare(match, older)).toBeGreaterThan(0);
+        assert.ok((UnityVersion.compare(match, older)) > 0);
     });
 
     it('finds latest final release when only major is provided', () => {
@@ -87,7 +89,7 @@ describe('UnityVersion', () => {
         const version = new UnityVersion('2021');
         const match = version.findMatch(available);
 
-        expect(match.version).toBe('2021.3.5f2');
+        assert.equal(match.version, '2021.3.5f2');
     });
 
     it('finds latest minor when using wildcard', () => {
@@ -100,7 +102,7 @@ describe('UnityVersion', () => {
         const version = new UnityVersion('2021.*');
         const match = version.findMatch(available);
 
-        expect(match.version).toBe('2021.3.5f2');
+        assert.equal(match.version, '2021.3.5f2');
     });
 
     it('prefers newer patch channels when allowed', () => {
@@ -112,7 +114,7 @@ describe('UnityVersion', () => {
         const version = new UnityVersion('2021.3');
         const match = version.findMatch(available, ['f', 'p']);
 
-        expect(match.version).toBe('2021.3.5p2');
+        assert.equal(match.version, '2021.3.5p2');
     });
 
     it('throws when no channel candidates exist', () => {
@@ -121,7 +123,7 @@ describe('UnityVersion', () => {
         ];
 
         const version = new UnityVersion('2021.3.x');
-        expect(() => version.findMatch(available, ['a'])).toThrow(/No Unity release matching/);
+        assert.throws(() => version.findMatch(available, ['a']), /No Unity release matching/);
     });
 
     it('throws when explicit minor has no matching releases', () => {
@@ -130,7 +132,7 @@ describe('UnityVersion', () => {
         ];
 
         const version = new UnityVersion('6000.0.x');
-        expect(() => version.findMatch(available)).toThrow(/No Unity release matching/);
+        assert.throws(() => version.findMatch(available), /No Unity release matching/);
     });
 
     it('throws for stable channel when only beta exists (6000.6)', () => {
@@ -140,7 +142,7 @@ describe('UnityVersion', () => {
             '6000.7.0a4',
         ];
         const version = new UnityVersion('6000.6');
-        expect(() => version.findMatch(available, ['f'])).toThrow(/No stable \(f\) release/);
+        assert.throws(() => version.findMatch(available, ['f']), /No stable \(f\) release/);
     });
 
     it('resolves beta channel for 6000.6 when only b releases exist', () => {
@@ -151,7 +153,7 @@ describe('UnityVersion', () => {
         ];
         const version = new UnityVersion('6000.6');
         const match = version.findMatch(available, ['b']);
-        expect(match.version).toBe('6000.6.0b7');
+        assert.equal(match.version, '6000.6.0b7');
     });
 
     it('evaluates caret compatibility with satisfies', () => {
@@ -159,27 +161,27 @@ describe('UnityVersion', () => {
         const compatible = new UnityVersion('2021.4.0f1');
         const incompatible = new UnityVersion('2022.1.0f1');
 
-        expect(baseline.satisfies(compatible)).toBe(true);
-        expect(baseline.satisfies(incompatible)).toBe(false);
+        assert.equal(baseline.satisfies(compatible), true);
+        assert.equal(baseline.satisfies(incompatible), false);
     });
 
     it('evaluates semantic version ranges using range()', () => {
         const version = new UnityVersion('2021.3.5f1');
 
-        expect(version.range('>=2021.3.0 <2021.4.0')).toBe(true);
-        expect(version.range('<2021.3.0')).toBe(false);
+        assert.equal(version.range('>=2021.3.0 <2021.4.0'), true);
+        assert.equal(version.range('<2021.3.0'), false);
     });
 
     it('compares versions with helper predicates', () => {
         const older = new UnityVersion('2021.3.5f1');
         const newer = new UnityVersion('2021.3.6f1');
 
-        expect(newer.isGreaterThan(older)).toBe(true);
-        expect(newer.isGreaterThan('2021.3.5f1')).toBe(true);
-        expect(newer.isGreaterThanOrEqualTo('2021.3.6f1')).toBe(true);
-        expect(older.isGreaterThanOrEqualTo(newer)).toBe(false);
-        expect(older.isLessThan(newer)).toBe(true);
-        expect(older.isLessThanOrEqualTo('2021.3.5f1')).toBe(true);
-        expect(newer.isLessThanOrEqualTo(older)).toBe(false);
+        assert.equal(newer.isGreaterThan(older), true);
+        assert.equal(newer.isGreaterThan('2021.3.5f1'), true);
+        assert.equal(newer.isGreaterThanOrEqualTo('2021.3.6f1'), true);
+        assert.equal(older.isGreaterThanOrEqualTo(newer), false);
+        assert.equal(older.isLessThan(newer), true);
+        assert.equal(older.isLessThanOrEqualTo('2021.3.5f1'), true);
+        assert.equal(newer.isLessThanOrEqualTo(older), false);
     });
 });

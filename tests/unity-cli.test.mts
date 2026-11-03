@@ -1,47 +1,50 @@
+import { describe, it, after, beforeEach, afterEach, mock } from 'node:test';
+import * as assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { Logger } from '../src/logging';
-import { FindAbsolutePath, UnityCli } from '../src/unity-cli';
-import { moveMacInstalledItem, resolveEditorExecutable } from '../src/unity-installer';
+import { Logger } from '../dist/logging.js';
+import { FindAbsolutePath, UnityCli } from '../dist/unity-cli.js';
+import { moveMacInstalledItem, resolveEditorExecutable } from '../dist/unity-installer.js';
 import {
     ActivateLicense,
     GetLegacyLicenseVersion,
     LicenseType,
     LicensingClient,
     ReturnLicense,
-} from '../src/license-client';
+} from '../dist/license-client.js';
 
 afterEach(() => {
-    jest.restoreAllMocks();
+    mock.restoreAll();
 });
 
 describe('FindAbsolutePath', () => {
     const absolute = process.platform === 'win32' ? 'C:\\Unity\\6000.0.0f1' : '/opt/unity/6000.0.0f1';
 
     it('reads a bare path', () => {
-        expect(FindAbsolutePath(absolute)).toBe(absolute);
+        assert.equal(FindAbsolutePath(absolute), absolute);
     });
 
     it('prefers well-known keys', () => {
-        expect(FindAbsolutePath({ name: 'x', path: absolute })).toBe(absolute);
+        assert.equal(FindAbsolutePath({ name: 'x', path: absolute }), absolute);
     });
 
     it('ignores relative paths and errors', () => {
-        expect(FindAbsolutePath({ path: 'relative/path', errors: [{ message: absolute }] })).toBeUndefined();
+        assert.equal(FindAbsolutePath({ path: 'relative/path', errors: [{ message: absolute }] }), undefined);
     });
 });
 
 describe('UnityCli.TemplatesListArgs', () => {
     it('uses templates --editor-version on CLI 1.0.0-beta.15 and newer', () => {
-        expect(new UnityCli('unity', '1.0.0-beta.15').TemplatesListArgs('6000.0.58f2')).toEqual(['templates', '--editor-version', '6000.0.58f2']);
-        expect(new UnityCli('unity', '1.0.0').TemplatesListArgs('6000.0.58f2')).toEqual(['templates', '--editor-version', '6000.0.58f2']);
-        expect(new UnityCli('unity', '1.0.0-beta.15').TemplatesListArgs()).toEqual(['templates']);
+        assert.deepEqual(new UnityCli('unity', '1.0.0-beta.15').TemplatesListArgs('6000.0.58f2'), ['templates', '--editor-version', '6000.0.58f2']);
+        assert.deepEqual(new UnityCli('unity', '1.0.0').TemplatesListArgs('6000.0.58f2'), ['templates', '--editor-version', '6000.0.58f2']);
+        assert.deepEqual(new UnityCli('unity', '1.0.0-beta.15').TemplatesListArgs(), ['templates']);
     });
 
     it('uses templates list --editor on CLI 1.0.0-beta.14 and older', () => {
-        expect(new UnityCli('unity', '1.0.0-beta.14').TemplatesListArgs('6000.0.58f2')).toEqual(['templates', 'list', '--editor', '6000.0.58f2']);
-        expect(new UnityCli('unity', '1.0.0-beta.9').TemplatesListArgs()).toEqual(['templates', 'list']);
+        assert.deepEqual(new UnityCli('unity', '1.0.0-beta.14').TemplatesListArgs('6000.0.58f2'), ['templates', 'list', '--editor', '6000.0.58f2']);
+        assert.deepEqual(new UnityCli('unity', '1.0.0-beta.9').TemplatesListArgs(), ['templates', 'list']);
     });
 });
 
@@ -54,16 +57,16 @@ describe('UnityCli.ListTemplates', () => {
 
     it('reads the items list of CLI 1.0.0-beta.15 and newer', async () => {
         const cli = new UnityCli('unity', '1.0.0-beta.15');
-        const exec = jest.spyOn(cli, 'ExecJson').mockResolvedValue({ items: listed });
-        await expect(cli.ListTemplates('6000.0.58f2')).resolves.toEqual(['com.unity.template.3d', 'com.unity.template.urp-blank']);
-        expect(exec).toHaveBeenCalledWith(['templates', '--editor-version', '6000.0.58f2']);
+        const exec = mock.method(cli, 'ExecJson', async () => ({ items: listed }));
+        assert.deepEqual(await cli.ListTemplates('6000.0.58f2'), ['com.unity.template.3d', 'com.unity.template.urp-blank']);
+        assert.ok(exec.mock.calls.some(call => isDeepStrictEqual(call.arguments, [['templates', '--editor-version', '6000.0.58f2']])));
     });
 
     it('reads the bare list of CLI 1.0.0-beta.14 and older', async () => {
         const cli = new UnityCli('unity', '1.0.0-beta.14');
-        const exec = jest.spyOn(cli, 'ExecJson').mockResolvedValue(listed);
-        await expect(cli.ListTemplates('6000.0.58f2')).resolves.toEqual(['com.unity.template.3d', 'com.unity.template.urp-blank']);
-        expect(exec).toHaveBeenCalledWith(['templates', 'list', '--editor', '6000.0.58f2']);
+        const exec = mock.method(cli, 'ExecJson', async () => listed);
+        assert.deepEqual(await cli.ListTemplates('6000.0.58f2'), ['com.unity.template.3d', 'com.unity.template.urp-blank']);
+        assert.ok(exec.mock.calls.some(call => isDeepStrictEqual(call.arguments, [['templates', 'list', '--editor', '6000.0.58f2']])));
     });
 });
 
@@ -77,8 +80,8 @@ describe('resolveEditorExecutable', () => {
                 : path.join(root, 'Editor', process.platform === 'win32' ? 'Unity.exe' : 'Unity');
             fs.mkdirSync(path.dirname(editorPath), { recursive: true });
             fs.writeFileSync(editorPath, '');
-            expect(resolveEditorExecutable(root)).toBe(editorPath);
-            expect(resolveEditorExecutable(path.join(root, 'missing'))).toBeUndefined();
+            assert.equal(resolveEditorExecutable(root), editorPath);
+            assert.equal(resolveEditorExecutable(path.join(root, 'missing')), undefined);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
@@ -87,13 +90,13 @@ describe('resolveEditorExecutable', () => {
 
 describe('GetLegacyLicenseVersion', () => {
     it('detects 4.x and 5.x editors', () => {
-        expect(GetLegacyLicenseVersion('/Applications/Unity/Hub/Editor/Unity 4.7.2/Unity.app/Contents/MacOS/Unity')).toBe('4.x');
-        expect(GetLegacyLicenseVersion('C:\\Program Files\\Unity\\Hub\\Editor\\5.6.7f1\\Editor\\Unity.exe')).toBe('5.x');
+        assert.equal(GetLegacyLicenseVersion('/Applications/Unity/Hub/Editor/Unity 4.7.2/Unity.app/Contents/MacOS/Unity'), '4.x');
+        assert.equal(GetLegacyLicenseVersion('C:\\Program Files\\Unity\\Hub\\Editor\\5.6.7f1\\Editor\\Unity.exe'), '5.x');
     });
 
     it('returns undefined for newer editors or no editor', () => {
-        expect(GetLegacyLicenseVersion('/opt/unity/6000.0.0f1/Editor/Unity')).toBeUndefined();
-        expect(GetLegacyLicenseVersion(undefined)).toBeUndefined();
+        assert.equal(GetLegacyLicenseVersion('/opt/unity/6000.0.0f1/Editor/Unity'), undefined);
+        assert.equal(GetLegacyLicenseVersion(undefined), undefined);
     });
 });
 
@@ -107,7 +110,7 @@ describe('license activation order', () => {
         delete process.env.RUNNER_ENVIRONMENT;
     });
 
-    afterAll(() => {
+    after(() => {
         if (originalEditorPath === undefined) {
             delete process.env.UNITY_EDITOR_PATH;
         } else {
@@ -124,7 +127,7 @@ describe('license activation order', () => {
     const mockCli = (results: { [command: string]: { exitCode: number; data?: unknown } }) => {
         const cli = new UnityCli('unity', '1.0.0-beta.14');
         const calls: string[][] = [];
-        jest.spyOn(cli, 'RunJson').mockImplementation(async (args: string[]) => {
+        mock.method(cli, 'RunJson', async (args: string[]) => {
             calls.push(args);
             const key = args.slice(0, 2).join(' ');
             const result = results[key] ?? { exitCode: 0, data: null };
@@ -135,7 +138,7 @@ describe('license activation order', () => {
                 stderr: '',
             };
         });
-        jest.spyOn(UnityCli, 'Get').mockResolvedValue(cli);
+        mock.method(UnityCli, 'Get', async () => cli);
         return calls;
     };
 
@@ -144,21 +147,21 @@ describe('license activation order', () => {
             'license activate': { exitCode: 0 },
             'license status': { exitCode: 0, data: { active: true } },
         });
-        const fallback = jest.spyOn(LicensingClient.prototype, 'Activate');
+        const fallback = mock.method(LicensingClient.prototype, 'Activate');
 
         await ActivateLicense({ licenseType: LicenseType.personal, username: 'user@example.com', password: 'secret' });
 
-        expect(calls[0]).toEqual(['license', 'activate', '--personal', '--accept-eula']);
-        expect(fallback).not.toHaveBeenCalled();
+        assert.deepEqual(calls[0], ['license', 'activate', '--personal', '--accept-eula']);
+        assert.equal(fallback.mock.callCount(), 0);
     });
 
     it('falls back to the licensing client when the Unity CLI fails', async () => {
         mockCli({ 'license activate': { exitCode: 3 } });
-        const fallback = jest.spyOn(LicensingClient.prototype, 'Activate').mockResolvedValue(undefined);
+        const fallback = mock.method(LicensingClient.prototype, 'Activate', async () => undefined);
 
         await ActivateLicense({ licenseType: LicenseType.personal, username: 'user@example.com', password: 'secret' });
 
-        expect(fallback).toHaveBeenCalledTimes(1);
+        assert.equal(fallback.mock.callCount(), 1);
     });
 
     it('falls back when the Unity CLI reports no active license', async () => {
@@ -166,22 +169,22 @@ describe('license activation order', () => {
             'license activate': { exitCode: 0 },
             'license status': { exitCode: 4, data: { active: false } },
         });
-        const fallback = jest.spyOn(LicensingClient.prototype, 'Activate').mockResolvedValue(undefined);
+        const fallback = mock.method(LicensingClient.prototype, 'Activate', async () => undefined);
 
         await ActivateLicense({ licenseType: LicenseType.personal, username: 'user@example.com', password: 'secret' });
 
-        expect(fallback).toHaveBeenCalledTimes(1);
+        assert.equal(fallback.mock.callCount(), 1);
     });
 
     it('uses the licensing client directly for 5.x editors', async () => {
         process.env.UNITY_EDITOR_PATH = 'C:\\Unity\\5.6.7f1\\Editor\\Unity.exe';
         const calls = mockCli({});
-        const fallback = jest.spyOn(LicensingClient.prototype, 'Activate').mockResolvedValue(undefined);
+        const fallback = mock.method(LicensingClient.prototype, 'Activate', async () => undefined);
 
         await ActivateLicense({ licenseType: LicenseType.personal, username: 'user@example.com', password: 'secret' });
 
-        expect(calls).toHaveLength(0);
-        expect(fallback).toHaveBeenCalledTimes(1);
+        assert.equal(calls.length, 0);
+        assert.equal(fallback.mock.callCount(), 1);
     });
 
     it('returns through the Unity CLI and verifies nothing is still active', async () => {
@@ -189,12 +192,12 @@ describe('license activation order', () => {
             'license return': { exitCode: 0 },
             'license status': { exitCode: 4, data: { active: false } },
         });
-        const fallback = jest.spyOn(LicensingClient.prototype, 'Deactivate');
+        const fallback = mock.method(LicensingClient.prototype, 'Deactivate');
 
         await ReturnLicense(LicenseType.personal);
 
-        expect(calls[0]).toEqual(['license', 'return', '--yes']);
-        expect(fallback).not.toHaveBeenCalled();
+        assert.deepEqual(calls[0], ['license', 'return', '--yes']);
+        assert.equal(fallback.mock.callCount(), 0);
     });
 
     it('returns through the licensing client when a license is still active', async () => {
@@ -202,11 +205,11 @@ describe('license activation order', () => {
             'license return': { exitCode: 0 },
             'license status': { exitCode: 0, data: { active: true } },
         });
-        const fallback = jest.spyOn(LicensingClient.prototype, 'Deactivate').mockResolvedValue(undefined);
+        const fallback = mock.method(LicensingClient.prototype, 'Deactivate', async () => undefined);
 
         await ReturnLicense(LicenseType.personal);
 
-        expect(fallback).toHaveBeenCalledTimes(1);
+        assert.equal(fallback.mock.callCount(), 1);
     });
 
     describe('on a shared runner identity', () => {
@@ -226,7 +229,7 @@ describe('license activation order', () => {
 
             await ReturnLicense(LicenseType.personal);
 
-            expect(calls).toHaveLength(0);
+            assert.equal(calls.length, 0);
         });
 
         it('returns a professional license under auto', async () => {
@@ -234,32 +237,32 @@ describe('license activation order', () => {
                 'license return': { exitCode: 0 },
                 'license status': { exitCode: 4, data: { active: false } },
             });
-            const warn = jest.spyOn(Logger.instance, 'warn');
+            const warn = mock.method(Logger.instance, 'warn');
 
             await ReturnLicense(LicenseType.professional);
 
-            expect(calls[0]).toEqual(['license', 'return', '--yes']);
-            expect(warn).not.toHaveBeenCalled();
+            assert.deepEqual(calls[0], ['license', 'return', '--yes']);
+            assert.equal(warn.mock.callCount(), 0);
         });
 
         it('warns about the seat when a professional return is skipped', async () => {
             const calls = mockCli({});
-            const warn = jest.spyOn(Logger.instance, 'warn').mockImplementation(() => undefined);
+            const warn = mock.method(Logger.instance, 'warn', () => undefined);
 
             await ReturnLicense(LicenseType.professional, undefined, 'never');
 
-            expect(calls).toHaveLength(0);
-            expect(warn).toHaveBeenCalledWith(expect.stringContaining('id.unity.com > My Seats'));
+            assert.equal(calls.length, 0);
+            assert.ok(warn.mock.calls.some(call => call.arguments.length === 1 && String(call.arguments[0]).includes('id.unity.com > My Seats')));
         });
 
         it('warns about the seat when a professional return fails', async () => {
             mockCli({ 'license return': { exitCode: 3 } });
-            jest.spyOn(LicensingClient.prototype, 'Deactivate').mockRejectedValue(new Error('no seat'));
-            const warn = jest.spyOn(Logger.instance, 'warn').mockImplementation(() => undefined);
+            mock.method(LicensingClient.prototype, 'Deactivate', async () => { throw new Error('no seat'); });
+            const warn = mock.method(Logger.instance, 'warn', () => undefined);
 
-            await expect(ReturnLicense(LicenseType.professional)).rejects.toThrow('no seat');
+            await assert.rejects(ReturnLicense(LicenseType.professional), /no seat/);
 
-            expect(warn).toHaveBeenCalledWith(expect.stringContaining('id.unity.com > My Seats'));
+            assert.ok(warn.mock.calls.some(call => call.arguments.length === 1 && String(call.arguments[0]).includes('id.unity.com > My Seats')));
         });
     });
 });
@@ -269,18 +272,21 @@ describe('licensing client output redaction', () => {
         const client = new LicensingClient('6.x');
         (client as any).licenseClientPath = process.execPath;
         const written: string[] = [];
-        jest.spyOn(process.stdout, 'write').mockImplementation((chunk: any) => {
-            written.push(String(chunk));
+        const write = process.stdout.write.bind(process.stdout);
+        mock.method(process.stdout, 'write', (chunk: any, ...rest: any[]) => {
+            // the test runner reports through stdout in binary chunks while this test awaits, so pass those through
+            if (typeof chunk !== 'string') { return write(chunk, ...rest); }
+            written.push(chunk);
             return true;
         });
 
         await (client as any).exec(['-e', 'console.log(process.argv.slice(1).join(" "))', '--', '--username', 'user@example.com', '--password', 'hunter2222', '--serial', 'AB-CDEF-1234-5678']);
 
         const logged = written.join('');
-        expect(logged).not.toContain('user@example.com');
-        expect(logged).not.toContain('hunter2222');
-        expect(logged).not.toContain('AB-CDEF-1234-5678');
-        expect(logged).toContain('*****');
+        assert.ok(!logged.includes('user@example.com'));
+        assert.ok(!logged.includes('hunter2222'));
+        assert.ok(!logged.includes('AB-CDEF-1234-5678'));
+        assert.ok(logged.includes('*****'));
     });
 });
 
@@ -288,15 +294,15 @@ describe('UnityCli.GetLicensingClientPath', () => {
     it('installs the licensing client with license status, which works without a Unity ID session', async () => {
         const cli = new UnityCli('unity', '1.0.0');
         const calls: string[][] = [];
-        jest.spyOn(cli, 'RunJson').mockImplementation(async (args: string[]) => {
+        mock.method(cli, 'RunJson', async (args: string[]) => {
             calls.push(args);
             // a headless runner has no Unity ID session, so license commands exit 3 (not signed in)
             const exitCode = args[0] === 'license' ? 3 : 0;
             return { exitCode, envelope: { success: exitCode === 0, data: {} }, stdout: '', stderr: '' } as any;
         });
 
-        await expect(cli.GetLicensingClientPath()).resolves.toBeUndefined();
-        expect(calls).toEqual([['license', 'status'], ['doctor']]);
+        assert.equal(await cli.GetLicensingClientPath(), undefined);
+        assert.deepEqual(calls, [['license', 'status'], ['doctor']]);
     });
 });
 
@@ -316,10 +322,10 @@ describe('moveMacInstalledItem', () => {
     };
 
     const expectMoved = (source: string, destination: string) => {
-        expect(fs.existsSync(source)).toBe(false);
-        expect(fs.readlinkSync(path.join(destination, 'MonoDevelop.app'))).toBe('/Applications/MonoDevelop.app');
-        expect(fs.readlinkSync(path.join(destination, 'tool-link'))).toBe('bin/tool');
-        expect(fs.statSync(path.join(destination, 'bin', 'tool')).mode & 0o777).toBe(0o755);
+        assert.equal(fs.existsSync(source), false);
+        assert.equal(fs.readlinkSync(path.join(destination, 'MonoDevelop.app')), '/Applications/MonoDevelop.app');
+        assert.equal(fs.readlinkSync(path.join(destination, 'tool-link')), 'bin/tool');
+        assert.equal(fs.statSync(path.join(destination, 'bin', 'tool')).mode & 0o777, 0o755);
     };
 
     posixIt('moves a tree with a dangling symlink', async () => {
@@ -343,10 +349,10 @@ describe('moveMacInstalledItem', () => {
             const destination = path.join(root, 'destination');
             fs.mkdirSync(destination);
             fs.writeFileSync(path.join(destination, 'stale'), '');
-            jest.spyOn(fs.promises, 'rename').mockRejectedValueOnce(Object.assign(new Error('cross-device link'), { code: 'EXDEV' }));
+            mock.method(fs.promises, 'rename', async () => { throw Object.assign(new Error('cross-device link'), { code: 'EXDEV' }); }, { times: 1 });
             await moveMacInstalledItem(source, destination);
             expectMoved(source, destination);
-            expect(fs.existsSync(path.join(destination, 'stale'))).toBe(false);
+            assert.equal(fs.existsSync(path.join(destination, 'stale')), false);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }

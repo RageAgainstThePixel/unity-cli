@@ -1,33 +1,34 @@
-import { UnityReleasesClient } from '@rage-against-the-pixel/unity-releases-api';
-import { UnityInstaller } from '../src/unity-installer';
-import { UnityVersion } from '../src/unity-version';
+import { describe, it, beforeEach, afterEach, mock } from 'node:test';
+import * as assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { UnityInstaller } from '../dist/unity-installer.js';
+import { UnityVersion } from '../dist/unity-version.js';
 
-jest.mock('@rage-against-the-pixel/unity-releases-api', () => {
-    const actual = jest.requireActual<typeof import('@rage-against-the-pixel/unity-releases-api')>(
-        '@rage-against-the-pixel/unity-releases-api'
-    );
-    return {
-        ...actual,
-        UnityReleasesClient: jest.fn(),
-    };
-});
+// the package index re-exports its client through getters, so mock the client where it is defined
+const releasesClient = createRequire(import.meta.url)('@rage-against-the-pixel/unity-releases-api/dist/client.js');
 
-const mockGetUnityReleases = jest.fn();
+const mockGetUnityReleases = mock.fn();
 
 describe('UnityInstaller GetEditorReleaseInfo (sparse API rows)', () => {
     beforeEach(() => {
-        jest.clearAllMocks();
-        (UnityReleasesClient as jest.Mock).mockImplementation(() => ({
-            api: {
-                Release: {
-                    getUnityReleases: mockGetUnityReleases,
+        mockGetUnityReleases.mock.resetCalls();
+        mock.method(releasesClient, 'UnityReleasesClient', function () {
+            return {
+                api: {
+                    Release: {
+                        getUnityReleases: mockGetUnityReleases,
+                    },
                 },
-            },
-        }));
+            };
+        });
+    });
+
+    afterEach(() => {
+        mock.restoreAll();
     });
 
     it('skips results with missing or empty version and still returns the first stable f release', async () => {
-        mockGetUnityReleases.mockResolvedValue({
+        mockGetUnityReleases.mock.mockImplementation(async () => ({
             data: {
                 results: [
                     {},
@@ -42,25 +43,25 @@ describe('UnityInstaller GetEditorReleaseInfo (sparse API rows)', () => {
                 ],
             },
             error: undefined,
-        });
+        }));
         const info = await UnityInstaller.GetEditorReleaseInfo(new UnityVersion('2021'));
 
-        expect(info.version).toBe('2021.3.45f1');
-        expect(info.shortRevision).toBe('goodrev');
+        assert.equal(info.version, '2021.3.45f1');
+        assert.equal(info.shortRevision, 'goodrev');
     });
 
     it('throws when no result row has a usable version for stable channel', async () => {
-        mockGetUnityReleases.mockResolvedValue({
+        mockGetUnityReleases.mock.mockImplementation(async () => ({
             data: {
                 results: [{}, { version: undefined }, { version: '2021.3.1a1', shortRevision: 'onlyalpha' }],
             },
             error: undefined,
-        });
-        await expect(UnityInstaller.GetEditorReleaseInfo(new UnityVersion('2021'))).rejects.toThrow(/No suitable Unity releases/);
+        }));
+        await assert.rejects(UnityInstaller.GetEditorReleaseInfo(new UnityVersion('2021')), /No suitable Unity releases/);
     });
 
     it('accepts beta releases when channel b is requested', async () => {
-        mockGetUnityReleases.mockResolvedValue({
+        mockGetUnityReleases.mock.mockImplementation(async () => ({
             data: {
                 results: [
                     { version: '6000.6.0b7', shortRevision: '53d4abb44f07' },
@@ -68,9 +69,9 @@ describe('UnityInstaller GetEditorReleaseInfo (sparse API rows)', () => {
                 ],
             },
             error: undefined,
-        });
+        }));
         const info = await UnityInstaller.GetEditorReleaseInfo(new UnityVersion('6000.6'), ['b']);
-        expect(info.version).toBe('6000.6.0b7');
-        expect(info.shortRevision).toBe('53d4abb44f07');
+        assert.equal(info.version, '6000.6.0b7');
+        assert.equal(info.shortRevision, '53d4abb44f07');
     });
 });

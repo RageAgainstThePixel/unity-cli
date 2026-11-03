@@ -1,4 +1,6 @@
-import { Severity } from '../src/utp';
+import { describe, it } from 'node:test';
+import * as assert from 'node:assert/strict';
+import { Severity } from '../dist/utp.js';
 import {
     mergeLogEntriesPreferringSeverity,
     buildTestResultsTableMarkdown,
@@ -6,41 +8,37 @@ import {
     stripSummaryNoiseFromLogMessage,
     truncateStringToUtf8ByteLength,
     utpToTestResultSummary,
-} from '../src/logging';
+} from '../dist/logging.js';
 
 describe('truncateStringToUtf8ByteLength', () => {
     it('returns the string unchanged when it fits', () => {
-        expect(truncateStringToUtf8ByteLength('hello', 100)).toBe('hello');
+        assert.equal(truncateStringToUtf8ByteLength('hello', 100), 'hello');
     });
 
     it('truncates with ellipsis when UTF-8 length exceeds the budget', () => {
         const long = 'a'.repeat(200);
         const out = truncateStringToUtf8ByteLength(long, 20);
-        expect(out.endsWith('…')).toBe(true);
-        expect(Buffer.byteLength(out, 'utf8')).toBeLessThanOrEqual(20);
+        assert.equal(out.endsWith('…'), true);
+        assert.ok(Buffer.byteLength(out, 'utf8') <= 20);
     });
 });
 
 describe('stripSummaryNoiseFromLogMessage', () => {
     it('removes access token noise and trims', () => {
-        expect(stripSummaryNoiseFromLogMessage('Scripts have compiler errors.\nAccess token is unavailable; failed to update')).toBe(
+        assert.equal(stripSummaryNoiseFromLogMessage('Scripts have compiler errors.\nAccess token is unavailable; failed to update'),
             'Scripts have compiler errors.'
         );
-        expect(stripSummaryNoiseFromLogMessage('Access token is unavailable; failed to update')).toBe('');
+        assert.equal(stripSummaryNoiseFromLogMessage('Access token is unavailable; failed to update'), '');
     });
 
     it('removes player-connection multicast noise', () => {
-        expect(stripSummaryNoiseFromLogMessage('Unable to join player connection multicast group (err: 10013).')).toBe('');
-        expect(
-            stripSummaryNoiseFromLogMessage('Before. Unable to join player connection multicast group (err: 10013). After.')
-        ).toBe('Before. After.');
+        assert.equal(stripSummaryNoiseFromLogMessage('Unable to join player connection multicast group (err: 10013).'), '');
+        assert.equal(stripSummaryNoiseFromLogMessage('Before. Unable to join player connection multicast group (err: 10013). After.'), 'Before. After.');
     });
 
     it('removes OpenCL / access-token noise phrases from the shared remap list', () => {
-        expect(stripSummaryNoiseFromLogMessage('Access token is unavailable; failed to update')).toBe('');
-        expect(
-            stripSummaryNoiseFromLogMessage('Failed to find a suitable OpenCL device, baking cannot use GPU lightmapper.')
-        ).toBe('');
+        assert.equal(stripSummaryNoiseFromLogMessage('Access token is unavailable; failed to update'), '');
+        assert.equal(stripSummaryNoiseFromLogMessage('Failed to find a suitable OpenCL device, baking cannot use GPU lightmapper.'), '');
     });
 });
 
@@ -61,8 +59,8 @@ describe('mergeLogEntriesPreferringSeverity', () => {
             severity: Severity.Error,
         };
         const merged = mergeLogEntriesPreferringSeverity([info, err]);
-        expect(merged).toHaveLength(1);
-        expect(merged[0].severity).toBe(Severity.Error);
+        assert.equal(merged.length, 1);
+        assert.equal(merged[0].severity, Severity.Error);
     });
 
     it('keeps first entry when severities tie', () => {
@@ -81,8 +79,8 @@ describe('mergeLogEntriesPreferringSeverity', () => {
             severity: Severity.Warning,
         };
         const merged = mergeLogEntriesPreferringSeverity([a, b]);
-        expect(merged).toHaveLength(1);
-        expect(merged[0]).toBe(a);
+        assert.equal(merged.length, 1);
+        assert.equal(merged[0], a);
     });
 });
 
@@ -97,8 +95,8 @@ describe('buildTestResultsTableMarkdown', () => {
             } as any),
         ];
         const md = buildTestResultsTableMarkdown(rows, 1024 * 1024, '');
-        expect(md).toContain('A\\|B');
-        expect(md.split('\n').filter(l => l.startsWith('|')).length).toBeGreaterThanOrEqual(3);
+        assert.ok(md.includes('A\\|B'));
+        assert.ok((md.split('\n').filter(l => l.startsWith('|')).length) >= 3);
     });
 
     it('escapes backslashes before pipes so markdown cells stay well-formed', () => {
@@ -111,7 +109,7 @@ describe('buildTestResultsTableMarkdown', () => {
             } as any),
         ];
         const md = buildTestResultsTableMarkdown(rows, 1024 * 1024, '');
-        expect(md).toMatch(/a\\\\b\\|c/);
+        assert.match(md, /a\\\\b\\|c/);
     });
 });
 
@@ -135,9 +133,9 @@ describe('buildUnitTestJobSummaryMarkdown', () => {
             } as any),
         ];
         const md = buildUnitTestJobSummaryMarkdown(rows, 1024 * 1024, '');
-        expect(md).toContain('### Unit test results');
-        expect(md).toContain('**2** tests');
-        expect(md).toContain('Fail.Test (Assets/Tests/Fail.cs:42)');
+        assert.ok(md.includes('### Unit test results'));
+        assert.ok(md.includes('**2** tests'));
+        assert.ok(md.includes('Fail.Test (Assets/Tests/Fail.cs:42)'));
     });
 });
 
@@ -150,7 +148,7 @@ describe('utpToTestResultSummary', () => {
             file: 'Assets/A.cs',
             line: 12,
         } as any);
-        expect(summary.file).toBe('Assets/A.cs');
-        expect(summary.line).toBe(12);
+        assert.equal(summary.file, 'Assets/A.cs');
+        assert.equal(summary.line, 12);
     });
 });

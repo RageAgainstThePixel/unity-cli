@@ -1,5 +1,7 @@
-import { Logger } from '../src/logging';
-import type { UTP } from '../src/utp';
+import { describe, it } from 'node:test';
+import * as assert from 'node:assert/strict';
+import { Logger } from '../dist/logging.js';
+import type { UTP } from '../dist/utp.js';
 
 describe('workflow summary formatting', () => {
     it('renders build timeline as a table when budget allows', () => {
@@ -35,13 +37,13 @@ describe('workflow summary formatting', () => {
 
         Logger.instance.CI_appendWorkflowSummary('Build-Unity', telemetry);
 
-        expect(summaryWrites).toHaveLength(1);
+        assert.equal(summaryWrites.length, 1);
         const summary = summaryWrites[0];
-        expect(summary).toContain('<details open><summary>Build actions (1)</summary>');
-        expect(summary).toContain('| Status | Duration | Errors | Action |');
-        expect(summary).toContain('| ✅ | 1.2s | 0 | Build Player |');
-        expect(summary).toContain(`Assets/UnityCliTests/CompilerErrors.cs(2): error CS1029: #error: 'Intentional compiler error: CS1029'`);
-        expect(summary).not.toContain('```text\n✅');
+        assert.ok(summary.includes('<details open><summary>Build actions (1)</summary>'));
+        assert.ok(summary.includes('| Status | Duration | Errors | Action |'));
+        assert.ok(summary.includes('| ✅ | 1.2s | 0 | Build Player |'));
+        assert.ok(summary.includes(`Assets/UnityCliTests/CompilerErrors.cs(2): error CS1029: #error: 'Intentional compiler error: CS1029'`));
+        assert.ok(!summary.includes('```text\n✅'));
     });
 
     it('does not cap log lines at a fixed character length when under byte budget', () => {
@@ -69,9 +71,9 @@ describe('workflow summary formatting', () => {
 
         Logger.instance.CI_appendWorkflowSummary('Build-Unity', telemetry);
 
-        expect(summaryWrites).toHaveLength(1);
-        expect(summaryWrites[0]).toContain(longTail);
-        expect(summaryWrites[0]).not.toMatch(/artifact tail Z+…/);
+        assert.equal(summaryWrites.length, 1);
+        assert.ok(summaryWrites[0].includes(longTail));
+        assert.doesNotMatch(summaryWrites[0], /artifact tail Z+…/);
     });
 
     it('collapses multiline log messages into one summary line', () => {
@@ -100,11 +102,11 @@ describe('workflow summary formatting', () => {
 
         Logger.instance.CI_appendWorkflowSummary('Build-Unity', telemetry);
 
-        expect(summaryWrites).toHaveLength(1);
+        assert.equal(summaryWrites.length, 1);
         const summary = summaryWrites[0];
-        expect(summary).toContain('Scripts have compiler errors.');
-        expect(summary).not.toContain('Access token is unavailable; failed to update');
-        expect(summary).not.toContain('\n- Access token is unavailable; failed to update');
+        assert.ok(summary.includes('Scripts have compiler errors.'));
+        assert.ok(!summary.includes('Access token is unavailable; failed to update'));
+        assert.ok(!summary.includes('\n- Access token is unavailable; failed to update'));
     });
 
     it('omits access-token noise-only log lines from the summary', () => {
@@ -131,10 +133,10 @@ describe('workflow summary formatting', () => {
 
         Logger.instance.CI_appendWorkflowSummary('Build-Unity', telemetry);
 
-        expect(summaryWrites).toHaveLength(1);
+        assert.equal(summaryWrites.length, 1);
         const summary = summaryWrites[0];
-        expect(summary).toContain('Errors: 0');
-        expect(summary).not.toContain('Access token is unavailable');
+        assert.ok(summary.includes('Errors: 0'));
+        assert.ok(!summary.includes('Access token is unavailable'));
     });
 
     it('drops action table and uses plaintext timeline when near byte limit', () => {
@@ -170,11 +172,11 @@ describe('workflow summary formatting', () => {
 
         Logger.instance.CI_appendWorkflowSummary('Build-Unity', telemetry);
 
-        expect(summaryWrites).toHaveLength(1);
+        assert.equal(summaryWrites.length, 1);
         const summary = summaryWrites[0];
-        expect(summary).toContain('<details open><summary>Build actions (12)</summary>');
-        expect(summary).not.toContain('| Status | Duration | Errors | Action |');
-        expect(summary).toContain('```text');
-        expect(summary).toContain('Build Player step');
+        assert.ok(summary.includes('<details open><summary>Build actions (12)</summary>'));
+        assert.ok(!summary.includes('| Status | Duration | Errors | Action |'));
+        assert.ok(summary.includes('```text'));
+        assert.ok(summary.includes('Build Player step'));
     });
 });

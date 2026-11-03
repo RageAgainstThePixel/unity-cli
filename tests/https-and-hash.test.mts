@@ -1,7 +1,9 @@
+import { describe, it } from 'node:test';
+import * as assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { Sha256FileHex } from '../src/utilities';
+import { Sha256FileHex } from '../dist/utilities.js';
 
 describe('Sha256FileHex', () => {
     it('Sha256FileHex matches known digest', async () => {
@@ -10,7 +12,7 @@ describe('Sha256FileHex', () => {
         await fs.promises.writeFile(filePath, 'hello', 'utf8');
 
         const hex = await Sha256FileHex(filePath);
-        expect(hex).toBe(
+        assert.equal(hex,
             '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824'
         );
 
