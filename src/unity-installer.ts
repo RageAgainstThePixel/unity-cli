@@ -50,8 +50,9 @@ export DEBIAN_FRONTEND=noninteractive
 APT_OPTS="-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3 -o DPkg::Lock::Timeout=120"
 timeout 300 apt-get $APT_OPTS update
 # without pulseaudio, FMOD logs audio device errors on 2019 and 2020 editors; it pulls in about 38 MB,
-# which the runners' Azure mirror has taken over 10 minutes to serve
-timeout 1200 apt-get $APT_OPTS install -y --no-install-recommends xvfb libgtk2.0-0 libglu1-mesa libgconf-2-4 libncurses5 pulseaudio
+# which the runners' Azure mirror has taken over 10 minutes to serve. Ubuntu 26.04 only ships libxml2.so.16, so libxml2
+# comes from jammy there for the libxml2.so.2 the editor links against
+timeout 1200 apt-get $APT_OPTS install -y --no-install-recommends xvfb libgtk2.0-0 libglu1-mesa libgconf-2-4 libncurses5 pulseaudio libxml2
 `;
 
 /** ffmpeg is only for video capture and import, so it is opt-in with UNITY_CLI_LINUX_FFMPEG=true. */
