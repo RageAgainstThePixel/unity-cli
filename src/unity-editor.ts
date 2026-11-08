@@ -15,7 +15,7 @@ import {
     Exec,
     redactSensitiveLiterals,
 } from './utilities';
-import { UnityCli } from './unity-cli';
+import { HasErrorAnnotation, UnityCli, UnityCliEnvironment, UnityCliError, UnityCliExitPhrase } from './unity-cli';
 import { FindLicenseExhaustedLine } from './failure-markers';
 import {
     IsExecutableNamed,
@@ -221,6 +221,7 @@ export class UnityEditor {
         let unityProcess: ChildProcess;
         let unityRunOutput: string | undefined = undefined;
         let editorLogPath: string | undefined = undefined;
+        let cliAnnotated = false;
 
         const editorRootPath = this.editorRootPath;
         let runStartedAt = 0;
@@ -346,7 +347,7 @@ export class UnityEditor {
                     runArgs, {
                     stdio: ['ignore', 'pipe', 'pipe'],
                     ...OwnedSpawnOptions(),
-                    env: baseEditorEnv
+                    env: UnityCliEnvironment(baseEditorEnv)
                 });
                 const collect = (data: Buffer) => { unityRunOutput += data.toString(); };
                 child.stdout.on('data', collect);
@@ -454,7 +455,9 @@ export class UnityEditor {
                     }
 
                     if (output.length > 0) {
-                        this.logger.info(`unity run output:\n${output}`);
+                        // printed at every log level, so github-format error lines in it always become the run's annotations
+                        this.logger.ci(`unity run output:\n${output}`);
+                        cliAnnotated = HasErrorAnnotation(output);
                     }
                 }
 
@@ -467,7 +470,14 @@ export class UnityEditor {
                 } else if (exitCode !== 0) {
                     // a run that stopped because no license seat was free names it, so the failure is marked retryable
                     const licenseLine = FindLicenseExhaustedLine(logTail?.errorLines ?? []);
-                    throw Error(`Unity failed with exit code ${exitCode}${licenseLine ? `: ${licenseLine}` : ''}`);
+                    const detail = licenseLine ? `: ${licenseLine}` : '';
+
+                    // only unity run's exit codes follow the official CLI's table; an editor launched directly keeps its own
+                    if (unityRunOutput !== undefined) {
+                        throw new UnityCliError(`Unity failed with ${UnityCliExitPhrase(exitCode)}${detail}`, exitCode, cliAnnotated);
+                    }
+
+                    throw Error(`Unity failed with exit code ${exitCode}${detail}`);
                 }
             } else {
                 // a cancelled run did not finish, so it must not end the command with exit code 0

@@ -68,8 +68,9 @@ describe('LicensingClient floating activation order', () => {
 
 describe('LicensingClient waitForLicenseServerConfiguration', () => {
     const createTempLog = () => {
-        const tempFile = path.join(os.tmpdir(), `unity-cli-log-${Date.now()}-${Math.random()}`);
-        fs.writeFileSync(tempFile, 'initial line\n');
+        // a private directory from mkdtemp, so no other user can pre-create or swap the file
+        const tempFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'unity-cli-log-')), 'licensing.log');
+        fs.writeFileSync(tempFile, 'initial line\n', { flag: 'wx', mode: 0o600 });
         return tempFile;
     };
 

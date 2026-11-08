@@ -313,7 +313,7 @@ unity-cli upm-pack --source <path-to-package-folder> --destination <output-path>
 
 ## Retryable Failures
 
-When a command fails because no license seats are free or the network dropped, unity-cli adds a notice titled `unity-license-exhausted` or `unity-transient-failure` on GitHub Actions. [retry-failed-jobs](https://github.com/RageAgainstThePixel/retry-failed-jobs) reruns the failed jobs when every failure carries one of those markers.
+When a command fails because no license seats are free or the network dropped, unity-cli adds a notice titled `unity-license-exhausted` or `unity-transient-failure` on GitHub Actions. [retry-failed-jobs](https://github.com/RageAgainstThePixel/retry-failed-jobs) reruns the failed jobs when every failure carries one of those markers. Official CLI exit code 7 (a Unity service was unreachable) is marked transient; exit code 8 (`unity test` ran and tests failed) is never marked.
 
 ## Environment Variables
 
@@ -322,6 +322,7 @@ Besides the variables documented with each command:
 - `UNITY_USERNAME_BASE64`, `UNITY_PASSWORD_BASE64`: base64 encoded fallbacks for `UNITY_USERNAME` and `UNITY_PASSWORD`.
 - `UNITY_LICENSING_CLIENT_PATH`: the `Unity.Licensing.Client` executable to use instead of the copy the official CLI manages.
 - `UNITY_ALLOW_SECURITY_ALERT`: same as `--allow-security-alert`.
+- `UNITY_FORMAT`: output format for the official CLI. Defaults to `github` for the CLI processes unity-cli starts on GitHub Actions, so Unity writes its own failures as annotations.
 - `UNITY_CLI_DIRECT_LAUNCH`: `true` launches the editor directly instead of through `unity run`.
 - `UNITY_CLI_LINUX_FFMPEG`: `true` also installs ffmpeg with the Linux editor dependencies, for video capture and import.
 - `UPM_CLI_PATH`: the `upm` executable to use instead of the managed install.

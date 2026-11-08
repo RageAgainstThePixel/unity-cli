@@ -1,5 +1,6 @@
 import { Logger, LogLevel } from './logging';
 import { UnitySecurityAlertError } from './unity-security';
+import { UNITY_CLI_TESTS_FAILED_EXIT_CODE, UnityCliError } from './unity-cli';
 
 /** Annotation title for a failure a later rerun can clear because a license seat was taken. */
 export const LICENSE_EXHAUSTED_MARKER = 'unity-license-exhausted';
@@ -11,8 +12,9 @@ export const TRANSIENT_FAILURE_MARKER = 'unity-transient-failure';
 // "acquiring license failed" also cover a wrong password or a revoked license, which a rerun would only repeat.
 // Literal alternations only, so matching stays linear on any message.
 const LICENSE_EXHAUSTED_PATTERN = /activations? limit|maximum number of activations|max activations|no free seats?|no available seats?|seat limit|0 free entitlements|sign-in rate limit/i;
-// a refused connection usually means a wrong host or port, which a rerun repeats, so it is not listed
-const TRANSIENT_PATTERN = /HTTP 5\d\d|Bad Gateway|Service Unavailable|Gateway Time-?out|ECONNRESET|ECONNABORTED|ETIMEDOUT|EAI_AGAIN|socket hang up/i;
+// a refused connection usually means a wrong host or port, which a rerun repeats, so it is not listed; "retryable exit code"
+// is the installer's network, install-locked or timeout exit after its own retry
+const TRANSIENT_PATTERN = /HTTP 5\d\d|Bad Gateway|Service Unavailable|Gateway Time-?out|ECONNRESET|ECONNABORTED|ETIMEDOUT|EAI_AGAIN|socket hang up|retryable exit code/i;
 
 /**
  * The marker for a failure a rerun after other jobs finish can clear, if the message names one.
@@ -57,10 +59,19 @@ export function ReportFailure(error: unknown): void {
         return;
     }
 
-    const marker = ClassifyFailure(message);
+    // the official CLI's exit 8 means tests ran and failed, which a rerun repeats whatever the message says
+    const marker = error instanceof UnityCliError && error.exitCode === UNITY_CLI_TESTS_FAILED_EXIT_CODE
+        ? undefined
+        : ClassifyFailure(message);
 
     if (marker) {
         Logger.instance.annotate(LogLevel.INFO, `Retryable failure: ${message}`, undefined, undefined, undefined, undefined, undefined, marker);
+    }
+
+    // the official CLI already annotated its own error in github format, so this line stays in the log only, at every log level
+    if (error instanceof UnityCliError && error.annotated) {
+        Logger.instance.ci(message);
+        return;
     }
 
     Logger.instance.error(message);
