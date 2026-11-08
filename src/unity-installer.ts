@@ -14,7 +14,7 @@ import {
     ReportUnitySecurityAlert,
 } from './unity-security';
 import { UnityVersion } from './unity-version';
-import { FindAbsolutePath, UnityCli } from './unity-cli';
+import { FindAbsolutePath, HasErrorAnnotation, UnityCli, UnityCliError } from './unity-cli';
 import { IsPathUnder } from './process-tracker';
 import {
     DownloadFile,
@@ -305,7 +305,7 @@ export class UnityInstaller {
         if (result.exitCode !== 0) {
             // a retryable code that outlasts the retry is named as one, so ClassifyFailure marks it for a later rerun
             const retryable = RETRYABLE_EXIT_CODES.includes(result.exitCode) ? 'retryable ' : '';
-            throw new Error(`unity ${args.join(' ')} failed with ${retryable}exit code ${result.exitCode}`);
+            throw new UnityCliError(`unity ${args.join(' ')} failed with ${retryable}exit code ${result.exitCode}`, result.exitCode, HasErrorAnnotation(`${result.stdout}\n${result.stderr}`));
         }
     }
 

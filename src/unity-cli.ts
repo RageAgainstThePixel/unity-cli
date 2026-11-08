@@ -19,6 +19,53 @@ const TOOL_NAME = 'unity-cli';
 const EXE_NAME = process.platform === 'win32' ? 'unity.exe' : 'unity';
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
+/** The official CLI's exit code for a Unity service it could not reach even after its own retries: safe to rerun. */
+export const UNITY_CLI_SERVICE_UNREACHABLE_EXIT_CODE = 7;
+
+/** The official CLI's exit code for `unity test` runs whose tests ran and failed: a rerun repeats it, so it is never retried. */
+export const UNITY_CLI_TESTS_FAILED_EXIT_CODE = 8;
+
+/** A failed official CLI command, with its exit code and whether the CLI already printed its own error annotation. */
+export class UnityCliError extends Error {
+    constructor(
+        message: string,
+        public readonly exitCode: number,
+        public readonly annotated: boolean = false
+    ) {
+        super(message);
+        this.name = 'UnityCliError';
+    }
+}
+
+/**
+ * Whether official CLI output holds an error annotation it wrote in github format (`::error::...`).
+ * @param output The CLI's stdout and stderr.
+ */
+export function HasErrorAnnotation(output: string): boolean {
+    return /^::error(?: [^:\r\n]*)?::/m.test(output);
+}
+
+/**
+ * The environment for an official CLI process. Under GitHub Actions, UNITY_FORMAT defaults to github, so the CLI writes its
+ * own failures as annotations; an explicit UNITY_FORMAT or `--format` still wins. The job's environment is not changed.
+ * @param base The environment to start from. Defaults to process.env.
+ */
+export function UnityCliEnvironment(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+    if (base.GITHUB_ACTIONS === 'true' && !base.UNITY_FORMAT && !base.HUB_FORMAT) {
+        return { ...base, UNITY_FORMAT: 'github' };
+    }
+
+    return { ...base };
+}
+
+/**
+ * The phrase a failure message uses for an official CLI exit code. Exit 7 is named retryable, so ClassifyFailure marks it.
+ * @param exitCode The CLI's exit code.
+ */
+export function UnityCliExitPhrase(exitCode: number): string {
+    return `${exitCode === UNITY_CLI_SERVICE_UNREACHABLE_EXIT_CODE ? 'retryable ' : ''}exit code ${exitCode}`;
+}
+
 export interface UnityCliResult {
     exitCode: number;
     stdout: string;
@@ -238,7 +285,7 @@ export class UnityCli {
                 const child = spawn(this.executable, args, {
                     shell: false,
                     stdio: ['ignore', 'pipe', 'pipe'],
-                    env: process.env,
+                    env: UnityCliEnvironment(),
                     ...OwnedSpawnOptions(),
                 });
                 // helpers the CLI leaves running, such as its licensing client, stay reachable through this record
@@ -316,7 +363,9 @@ export class UnityCli {
 
         if (result.exitCode !== 0) {
             const tail = options.stream === false ? `\n${result.stdout}${stripHint(result.stderr)}` : '';
-            throw new Error(`unity ${redactSensitiveLiterals(args.join(' '), options.redactLiterals)} failed with exit code ${result.exitCode}${tail}`);
+            // a streamed github-format error is already on the run summary, so ReportFailure does not annotate this one again
+            const annotated = options.stream !== false && HasErrorAnnotation(`${result.stdout}\n${result.stderr}`);
+            throw new UnityCliError(`unity ${redactSensitiveLiterals(args.join(' '), options.redactLiterals)} failed with ${UnityCliExitPhrase(result.exitCode)}${tail}`, result.exitCode, annotated);
         }
 
         return result.stdout;
@@ -346,7 +395,7 @@ export class UnityCli {
 
         if (exitCode !== 0 || !envelope || envelope.success === false) {
             const errors = envelope?.errors?.map(e => `${e.code}: ${e.message}`).join('\n') || `${stdout}${stripHint(stderr)}`.trim();
-            throw new Error(`unity ${redactSensitiveLiterals(args.join(' '), options.redactLiterals)} failed with exit code ${exitCode}\n${errors}`);
+            throw new UnityCliError(`unity ${redactSensitiveLiterals(args.join(' '), options.redactLiterals)} failed with ${UnityCliExitPhrase(exitCode)}\n${errors}`, exitCode);
         }
 
         return envelope.data as T;

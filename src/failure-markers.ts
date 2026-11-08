@@ -1,5 +1,6 @@
 import { Logger, LogLevel } from './logging';
 import { UnitySecurityAlertError } from './unity-security';
+import { UNITY_CLI_TESTS_FAILED_EXIT_CODE, UnityCliError } from './unity-cli';
 
 /** Annotation title for a failure a later rerun can clear because a license seat was taken. */
 export const LICENSE_EXHAUSTED_MARKER = 'unity-license-exhausted';
@@ -58,10 +59,19 @@ export function ReportFailure(error: unknown): void {
         return;
     }
 
-    const marker = ClassifyFailure(message);
+    // the official CLI's exit 8 means tests ran and failed, which a rerun repeats whatever the message says
+    const marker = error instanceof UnityCliError && error.exitCode === UNITY_CLI_TESTS_FAILED_EXIT_CODE
+        ? undefined
+        : ClassifyFailure(message);
 
     if (marker) {
         Logger.instance.annotate(LogLevel.INFO, `Retryable failure: ${message}`, undefined, undefined, undefined, undefined, undefined, marker);
+    }
+
+    // the official CLI already annotated its own error in github format, so this line stays in the log only
+    if (error instanceof UnityCliError && error.annotated) {
+        Logger.instance.info(message);
+        return;
     }
 
     Logger.instance.error(message);

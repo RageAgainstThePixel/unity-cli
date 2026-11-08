@@ -1,6 +1,8 @@
-import { describe, it } from 'node:test';
+import { afterEach, describe, it, mock } from 'node:test';
 import * as assert from 'node:assert/strict';
-import { ClassifyFailure, FindLicenseExhaustedLine, LICENSE_EXHAUSTED_MARKER, TRANSIENT_FAILURE_MARKER } from '../dist/failure-markers.js';
+import { ClassifyFailure, FindLicenseExhaustedLine, LICENSE_EXHAUSTED_MARKER, ReportFailure, TRANSIENT_FAILURE_MARKER } from '../dist/failure-markers.js';
+import { Logger } from '../dist/logging.js';
+import { HasErrorAnnotation, UnityCliEnvironment, UnityCliError, UnityCliExitPhrase } from '../dist/unity-cli.js';
 
 describe('FindLicenseExhaustedLine', () => {
     it('carries the licensing client\'s seat error into the editor failure, so it is marked retryable', () => {
@@ -58,4 +60,59 @@ describe('ClassifyFailure', () => {
             assert.equal(ClassifyFailure(message), undefined);
         });
     }
+});
+
+describe('official CLI exit codes', () => {
+    afterEach(() => {
+        mock.restoreAll();
+    });
+
+    it('marks exit 7 (service unreachable) as transient', () => {
+        assert.equal(ClassifyFailure(`unity editors info 6000.0.0f1 failed with ${UnityCliExitPhrase(7)}`), TRANSIENT_FAILURE_MARKER);
+    });
+
+    it('leaves exit 6 to the message', () => {
+        assert.equal(UnityCliExitPhrase(6), 'exit code 6');
+        assert.equal(ClassifyFailure(`Unity failed with ${UnityCliExitPhrase(6)}`), undefined);
+    });
+
+    it('never marks exit 8 (tests failed), even when the message names a network error', () => {
+        const annotate = mock.method(Logger.instance, 'annotate', () => { });
+        mock.method(Logger.instance, 'error', () => { });
+        ReportFailure(new UnityCliError('unity test failed with exit code 8: socket hang up', 8));
+        assert.equal(annotate.mock.callCount(), 0);
+    });
+
+    it('keeps the marker but skips its own error annotation when the CLI already annotated', () => {
+        const annotate = mock.method(Logger.instance, 'annotate', () => { });
+        const error = mock.method(Logger.instance, 'error', () => { });
+        const info = mock.method(Logger.instance, 'info', () => { });
+        ReportFailure(new UnityCliError(`unity install 6000.0.0f1 failed with ${UnityCliExitPhrase(7)}`, 7, true));
+        assert.equal(annotate.mock.callCount(), 1);
+        assert.equal(annotate.mock.calls[0]!.arguments[7], TRANSIENT_FAILURE_MARKER);
+        assert.equal(error.mock.callCount(), 0);
+        assert.equal(info.mock.callCount(), 1);
+    });
+
+    it('still reports an unannotated CLI failure as an error', () => {
+        const error = mock.method(Logger.instance, 'error', () => { });
+        mock.method(Logger.instance, 'annotate', () => { });
+        ReportFailure(new UnityCliError('unity install 6000.0.0f1 failed with exit code 6', 6, false));
+        assert.equal(error.mock.callCount(), 1);
+    });
+});
+
+describe('github format', () => {
+    it('detects the CLI\'s error annotations', () => {
+        assert.equal(HasErrorAnnotation('::error::Editor path is not signed\n  Code: EDITOR_PATH_NOT_SIGNED'), true);
+        assert.equal(HasErrorAnnotation('Installing...\n::error title=x::boom'), true);
+        assert.equal(HasErrorAnnotation('Error: something failed\n::warning::careful'), false);
+    });
+
+    it('defaults UNITY_FORMAT to github under GitHub Actions only', () => {
+        assert.equal(UnityCliEnvironment({ GITHUB_ACTIONS: 'true' }).UNITY_FORMAT, 'github');
+        assert.equal(UnityCliEnvironment({ GITHUB_ACTIONS: 'true', UNITY_FORMAT: 'human' }).UNITY_FORMAT, 'human');
+        assert.equal(UnityCliEnvironment({ GITHUB_ACTIONS: 'true', HUB_FORMAT: 'human' }).UNITY_FORMAT, undefined);
+        assert.equal(UnityCliEnvironment({}).UNITY_FORMAT, undefined);
+    });
 });
