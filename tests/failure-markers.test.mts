@@ -86,7 +86,7 @@ describe('official CLI exit codes', () => {
     it('keeps the marker but skips its own error annotation when the CLI already annotated', () => {
         const annotate = mock.method(Logger.instance, 'annotate', () => { });
         const error = mock.method(Logger.instance, 'error', () => { });
-        const info = mock.method(Logger.instance, 'info', () => { });
+        const info = mock.method(Logger.instance, 'ci', () => { });
         ReportFailure(new UnityCliError(`unity install 6000.0.0f1 failed with ${UnityCliExitPhrase(7)}`, 7, true));
         assert.equal(annotate.mock.callCount(), 1);
         assert.equal(annotate.mock.calls[0]!.arguments[7], TRANSIENT_FAILURE_MARKER);

@@ -455,8 +455,8 @@ export class UnityEditor {
                     }
 
                     if (output.length > 0) {
-                        // printed to stdout, so github-format error lines in it become the run's annotations
-                        this.logger.info(`unity run output:\n${output}`);
+                        // printed at every log level, so github-format error lines in it always become the run's annotations
+                        this.logger.ci(`unity run output:\n${output}`);
                         cliAnnotated = HasErrorAnnotation(output);
                     }
                 }

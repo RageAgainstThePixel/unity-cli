@@ -68,9 +68,9 @@ export function ReportFailure(error: unknown): void {
         Logger.instance.annotate(LogLevel.INFO, `Retryable failure: ${message}`, undefined, undefined, undefined, undefined, undefined, marker);
     }
 
-    // the official CLI already annotated its own error in github format, so this line stays in the log only
+    // the official CLI already annotated its own error in github format, so this line stays in the log only, at every log level
     if (error instanceof UnityCliError && error.annotated) {
-        Logger.instance.info(message);
+        Logger.instance.ci(message);
         return;
     }
 
