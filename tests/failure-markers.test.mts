@@ -38,6 +38,7 @@ describe('ClassifyFailure', () => {
         'unity install failed: 503 Service Unavailable',
         'aborted',
         'Error: aborted',
+        'unity install --editor-version 6000.0.40f1 --architecture x86_64 --accept-eula --yes failed with retryable exit code 7',
     ]) {
         it(`marks transient failures: ${message}`, () => {
             assert.equal(ClassifyFailure(message), TRANSIENT_FAILURE_MARKER);
@@ -51,6 +52,7 @@ describe('ClassifyFailure', () => {
         'License command failed with exit code 17: Seat activation or deactivation failed',
         'License command failed with exit code 19: Acquiring license failed',
         'connect ECONNREFUSED 127.0.0.1:443',
+        'unity install --editor-version 6000.0.40f1 --architecture x86_64 --accept-eula --yes failed with exit code 1',
     ]) {
         it(`leaves other failures unmarked: ${message}`, () => {
             assert.equal(ClassifyFailure(message), undefined);

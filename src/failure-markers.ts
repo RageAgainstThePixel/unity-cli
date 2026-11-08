@@ -11,8 +11,9 @@ export const TRANSIENT_FAILURE_MARKER = 'unity-transient-failure';
 // "acquiring license failed" also cover a wrong password or a revoked license, which a rerun would only repeat.
 // Literal alternations only, so matching stays linear on any message.
 const LICENSE_EXHAUSTED_PATTERN = /activations? limit|maximum number of activations|max activations|no free seats?|no available seats?|seat limit|0 free entitlements|sign-in rate limit/i;
-// a refused connection usually means a wrong host or port, which a rerun repeats, so it is not listed
-const TRANSIENT_PATTERN = /HTTP 5\d\d|Bad Gateway|Service Unavailable|Gateway Time-?out|ECONNRESET|ECONNABORTED|ETIMEDOUT|EAI_AGAIN|socket hang up/i;
+// a refused connection usually means a wrong host or port, which a rerun repeats, so it is not listed; "retryable exit code"
+// is the installer's network, install-locked or timeout exit after its own retry
+const TRANSIENT_PATTERN = /HTTP 5\d\d|Bad Gateway|Service Unavailable|Gateway Time-?out|ECONNRESET|ECONNABORTED|ETIMEDOUT|EAI_AGAIN|socket hang up|retryable exit code/i;
 
 /**
  * The marker for a failure a rerun after other jobs finish can clear, if the message names one.

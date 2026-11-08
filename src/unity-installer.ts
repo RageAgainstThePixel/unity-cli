@@ -303,7 +303,9 @@ export class UnityInstaller {
         }
 
         if (result.exitCode !== 0) {
-            throw new Error(`unity ${args.join(' ')} failed with exit code ${result.exitCode}`);
+            // a retryable code that outlasts the retry is named as one, so ClassifyFailure marks it for a later rerun
+            const retryable = RETRYABLE_EXIT_CODES.includes(result.exitCode) ? 'retryable ' : '';
+            throw new Error(`unity ${args.join(' ')} failed with ${retryable}exit code ${result.exitCode}`);
         }
     }
 
