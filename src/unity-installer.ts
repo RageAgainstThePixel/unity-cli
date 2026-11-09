@@ -16,6 +16,7 @@ import {
 import { UnityVersion } from './unity-version';
 import { FindAbsolutePath, HasErrorAnnotation, UnityCli, UnityCliError } from './unity-cli';
 import { IsPathUnder } from './process-tracker';
+import { ClearExecutableStack } from './elf';
 import {
     DownloadFile,
     DownloadOptions,
@@ -192,6 +193,7 @@ export class UnityInstaller {
 
         await fs.promises.access(editorPath, fs.constants.X_OK);
         await this.patchBeeBackend(editorPath);
+        await this.patchLicensingClientStack(editorPath);
         return new UnityEditor(path.normalize(editorPath), resolvedVersion);
     }
 
@@ -898,6 +900,43 @@ done
             const tempWrapper = path.join(dataPath, `.bee_backend.${randomUUID()}.tmp`);
             await fs.promises.writeFile(tempWrapper, wrapperSource, { encoding: 'utf-8', mode: 0o755, flag: 'wx' });
             await fs.promises.rename(tempWrapper, beeBackend);
+        }
+    }
+
+    /**
+     * Clears the executable stack flag on the editor's bundled Unity Licensing Client libraries.
+     * glibc 2.41 and later (Ubuntu 26.04) refuse to load a library that asks for one, so the 2020.x client's
+     * libbindings.so fails, the client never opens its channel, and the editor exits 199 waiting for it.
+     * @param editorPath The path to the Unity Editor executable.
+     */
+    private async patchLicensingClientStack(editorPath: string): Promise<void> {
+        if (process.platform !== 'linux') {
+            return;
+        }
+
+        const licensingPath = path.join(path.dirname(editorPath), 'Data', 'Resources', 'Licensing');
+        let entries: string[];
+
+        try {
+            entries = await fs.promises.readdir(licensingPath, { recursive: true });
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                return;
+            }
+
+            throw error;
+        }
+
+        for (const entry of entries.filter(name => /\.so(\.\d+)*$/.test(name))) {
+            const library = path.join(licensingPath, entry);
+
+            try {
+                if (await ClearExecutableStack(library)) {
+                    this.logger.ci(`Cleared the executable stack flag on ${library}`);
+                }
+            } catch (error) {
+                this.logger.warn(`Failed to clear the executable stack flag on ${library}: ${error}`);
+            }
         }
     }
 
