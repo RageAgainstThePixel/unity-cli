@@ -14,10 +14,6 @@ on:
         type: choice
         options: [unity-6-and-newer, legacy]
         default: unity-6-and-newer
-      linux-runner:
-        description: The runner label for the Linux rows, such as ubuntu-26.04, to test a new image before ubuntu-latest moves to it
-        type: string
-        default: ubuntu-latest
 concurrency:
   # the monthly legacy run gets its own group, so a push to main does not cancel it
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'schedule' && 'legacy' || inputs.editors || 'unity-6-and-newer' }}
@@ -112,33 +108,10 @@ jobs:
           fi
           echo "Testing Unity streams: $(jq -r '."unity-version" | join(", ")' "${generated}")"
           echo "path=${generated}" >> "${GITHUB_OUTPUT}"
-      - name: Linux runner
-        id: options
-        shell: bash
-        env:
-          OPTIONS: ${{ env.LEGACY == 'true' && './.github/workflows/build-options-legacy.json' || steps.streams.outputs.path }}
-          LINUX_RUNNER: ${{ inputs.linux-runner || 'ubuntu-latest' }}
-        run: |
-          set -euo pipefail
-          if [ "${LINUX_RUNNER}" = 'ubuntu-latest' ]; then
-            echo "path=${OPTIONS}" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-          # an image test runs only the Linux rows, moved to the requested label, so it holds no Windows or macOS runners
-          generated="${RUNNER_TEMP}/build-options-linux.json"
-          jq --arg runner "${LINUX_RUNNER}" '
-            walk(if . == "ubuntu-latest" then $runner else . end)
-            | .os = [$runner]
-            | .include = [(.include // [])[] | select(.os == $runner)]
-            | .exclude = [(.exclude // [])[] | select(.os == $runner)]
-            # a version excluded on Linux as a whole would leave an empty group, which fails the run
-            | ."unity-version" -= [.exclude[] | select(keys == ["os", "unity-version"]) | ."unity-version"]' "${OPTIONS}" > "${generated}"
-          echo "Linux rows run on ${LINUX_RUNNER}"
-          echo "path=${generated}" >> "${GITHUB_OUTPUT}"
       - uses: RageAgainstThePixel/job-builder@v1
         id: setup-jobs
         with:
-          build-options: ${{ steps.options.outputs.path }}
+          build-options: ${{ env.LEGACY == 'true' && './.github/workflows/build-options-legacy.json' || steps.streams.outputs.path }}
           # one group per editor version; every group runs at once, since macOS and Linux rows share one seat per OS
           # and Windows rows return theirs
           group-by: unity-version
@@ -158,8 +131,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # activated on the same image as the Linux rows it serves; an image test has no macOS rows
-        os: ${{ fromJSON(inputs.linux-runner && inputs.linux-runner != 'ubuntu-latest' && format('["{0}"]', inputs.linux-runner) || '["ubuntu-latest", "macos-latest"]') }}
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
