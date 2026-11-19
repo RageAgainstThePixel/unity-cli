@@ -57,7 +57,7 @@ export interface ActivateOptions {
 const LICENSING_CLIENT_TIMEOUT_MS = 10 * 60 * 1000;
 
 // literal alternations only, so matching stays linear on any line
-const LICENSING_DIAGNOSTIC_PATTERN = /error|fail|seat|entitlement|activation|limit|denied|invalid|expired/i;
+const LICENSING_DIAGNOSTIC_PATTERN = /error|fail|seat|entitlement|activation|limit|denied|invalid|expired|no remaining license|too many requests/i;
 
 /**
  * The lines of sanitized licensing client output that say why a command failed, such as a seat limit.
@@ -1507,20 +1507,25 @@ async function activateWithUnityCli(options: ActivateOptions): Promise<{ activat
             Logger.instance.CI_mask(leftover);
         }
 
-        let released = false;
+        let released = 'no';
 
-        try {
-            await returnLicense(options.licenseType, leftover);
-            released = true;
-        } catch (error) {
-            Logger.instance.warn(`Could not release the lease left by the inconsistent activation.\n${error}`);
+        if (options.licenseType === LicenseType.personal && IsSharedRunnerIdentity()) {
+            // same safeguard as ReturnLicense: a return here would revoke the license for every job and repo on this identity
+            released = 'skipped on a shared runner identity';
+        } else {
+            try {
+                await returnLicense(options.licenseType, leftover);
+                released = 'yes';
+            } catch (error) {
+                Logger.instance.warn(`Could not release the lease left by the inconsistent activation.\n${error}`);
+            }
         }
 
         return {
             activated: false,
             inconsistent: true,
             reason: `unity license activate exited ${exitCode} and reported success, but unity license status reports no active license` +
-                ` (token in response: ${leftover ? 'yes' : 'no'}, lease released: ${released ? 'yes' : 'no'})`,
+                ` (token in response: ${leftover ? 'yes' : 'no'}, lease released: ${released})`,
         };
     }
 

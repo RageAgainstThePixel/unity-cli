@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach, mock } from 'node:test';
 import * as assert from 'node:assert/strict';
-import { ActivateLicense, LicensingClient, LicenseType } from '../dist/license-client.js';
+import { ActivateLicense, LicensingClient, LicensingClientDiagnostic, LicenseType } from '../dist/license-client.js';
 import { ClassifyFailure, LICENSE_EXHAUSTED_MARKER } from '../dist/failure-markers.js';
 import { Logger } from '../dist/logging.js';
 import { UnityCli } from '../dist/unity-cli.js';
@@ -126,6 +126,34 @@ describe('inconsistent Unity CLI activation', () => {
         assert.match(logger.annotate.mock.calls[0]!.arguments[1], /token in response: no, lease released: no/);
     });
 
+    it('skips the return for a personal license on a shared runner identity', async () => {
+        const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+        const runner = process.env.RUNNER_ENVIRONMENT;
+        Object.defineProperty(process, 'platform', { value: 'linux' });
+        process.env.RUNNER_ENVIRONMENT = 'github-hosted';
+
+        try {
+            const logger = mockLogger();
+            const calls = mockCli({ license: { token: LEASE } }, true);
+            const client = mockLicensingClient(async () => undefined);
+
+            await ActivateLicense({ licenseType: LicenseType.personal, username: 'user@example.com', password: 'unused' });
+
+            assert.equal(calls.some(args => args[1] === 'return'), false);
+            assert.equal(client.deactivate.mock.callCount(), 0);
+            assert.equal(client.activate.mock.callCount(), 1);
+            assert.match(logger.annotate.mock.calls[0]!.arguments[1], /lease released: skipped on a shared runner identity/);
+        } finally {
+            Object.defineProperty(process, 'platform', platform);
+
+            if (runner === undefined) {
+                delete process.env.RUNNER_ENVIRONMENT;
+            } else {
+                process.env.RUNNER_ENVIRONMENT = runner;
+            }
+        }
+    });
+
     it('keeps the false success in the error when the fallback hits a floating 429, marked exhausted', async () => {
         mockLogger();
         mockCli({ license: { token: LEASE } }, true);
@@ -154,4 +182,15 @@ describe('floating exhaustion markers', () => {
             assert.equal(ClassifyFailure(message), LICENSE_EXHAUSTED_MARKER);
         });
     }
+
+    it('keeps the floating detail through diagnostic extraction', () => {
+        const diagnostic = LicensingClientDiagnostic([
+            'Acquiring license failed',
+            '[status: 429 | title: Can not acquire Floating license | detail: No remaining license for server default toolset]',
+            '',
+        ]);
+
+        assert.match(diagnostic ?? '', /No remaining license/);
+        assert.equal(ClassifyFailure(`License command failed with exit code 19: ${diagnostic}`), LICENSE_EXHAUSTED_MARKER);
+    });
 });
