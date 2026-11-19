@@ -2,7 +2,7 @@ import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
-import { Logger } from './logging';
+import { Logger, LogLevel } from './logging';
 import { UnityCli } from './unity-cli';
 import {
     ResolveGlobToPath,
@@ -57,7 +57,7 @@ export interface ActivateOptions {
 const LICENSING_CLIENT_TIMEOUT_MS = 10 * 60 * 1000;
 
 // literal alternations only, so matching stays linear on any line
-const LICENSING_DIAGNOSTIC_PATTERN = /error|fail|seat|entitlement|activation|limit|denied|invalid|expired/i;
+const LICENSING_DIAGNOSTIC_PATTERN = /error|fail|seat|entitlement|activation|limit|denied|invalid|expired|no remaining license|too many requests/i;
 
 /**
  * The lines of sanitized licensing client output that say why a command failed, such as a seat limit.
@@ -1210,6 +1210,7 @@ export async function ActivateLicense(options: ActivateOptions): Promise<string 
 
     logger.CI_setOutput('license-source', 'account');
     let cliError: unknown;
+    let inconsistent = false;
 
     try {
         const result = await activateWithUnityCli(options);
@@ -1220,11 +1221,16 @@ export async function ActivateLicense(options: ActivateOptions): Promise<string 
         }
 
         cliError = result.reason;
+        inconsistent = result.inconsistent === true;
     } catch (error) {
         cliError = error;
     }
 
-    logger.warn(`Unity CLI license activation failed, falling back to the Unity Licensing Client.\n${cliError}`);
+    if (inconsistent) {
+        logger.annotate(LogLevel.WARN, `Unity CLI reported a successful activation without an active license, falling back to the Unity Licensing Client.\n${cliError}`, undefined, undefined, undefined, undefined, undefined, 'unity-cli-inconsistent-activation');
+    } else {
+        logger.warn(`Unity CLI license activation failed, falling back to the Unity Licensing Client.\n${cliError}`);
+    }
 
     if (options.licenseType !== LicenseType.floating &&
         !options.username && !process.env.UNITY_USERNAME_BASE64) {
@@ -1232,7 +1238,16 @@ export async function ActivateLicense(options: ActivateOptions): Promise<string 
     }
 
     await LicensingClient.StopBackgroundClients();
-    const token = await new LicensingClient().Activate(options);
+    let token: string | undefined;
+
+    try {
+        token = await new LicensingClient().Activate(options);
+    } catch (error) {
+        // keep the official CLI's failure (or false success) visible next to the fallback's
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`${message}\nBefore the fallback: ${cliError}`, { cause: error });
+    }
+
     await logLicenseBinding();
     return token;
 }
@@ -1450,7 +1465,7 @@ async function activateFromLicenseFile(licenseFile: string): Promise<boolean> {
     }
 }
 
-async function activateWithUnityCli(options: ActivateOptions): Promise<{ activated: boolean; token?: string | undefined; reason?: string | undefined }> {
+async function activateWithUnityCli(options: ActivateOptions): Promise<{ activated: boolean; inconsistent?: boolean; token?: string | undefined; reason?: string | undefined }> {
     const args = ['license', 'activate'];
     const redactLiterals: string[] = [];
 
@@ -1485,7 +1500,33 @@ async function activateWithUnityCli(options: ActivateOptions): Promise<{ activat
     }
 
     if (!(await isLicenseActive(cli))) {
-        return { activated: false, reason: 'unity license activate succeeded, but unity license status reports no active license' };
+        // the official CLI may still have taken a lease: return it before the fallback asks for another
+        const leftover = findToken(envelope?.data);
+
+        if (leftover) {
+            Logger.instance.CI_mask(leftover);
+        }
+
+        let released = 'no';
+
+        if (options.licenseType === LicenseType.personal && IsSharedRunnerIdentity()) {
+            // same safeguard as ReturnLicense: a return here would revoke the license for every job and repo on this identity
+            released = 'skipped on a shared runner identity';
+        } else {
+            try {
+                await returnLicense(options.licenseType, leftover);
+                released = 'yes';
+            } catch (error) {
+                Logger.instance.warn(`Could not release the lease left by the inconsistent activation.\n${error}`);
+            }
+        }
+
+        return {
+            activated: false,
+            inconsistent: true,
+            reason: `unity license activate exited ${exitCode} and reported success, but unity license status reports no active license` +
+                ` (token in response: ${leftover ? 'yes' : 'no'}, lease released: ${released})`,
+        };
     }
 
     const token = findToken(envelope?.data);
