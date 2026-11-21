@@ -171,6 +171,57 @@ describe('inconsistent Unity CLI activation', () => {
             return true;
         });
     });
+
+    it('skips fallback when a leftover token cannot be released', async () => {
+        const logger = mockLogger();
+        mockCli({ license: { token: LEASE } }, true);
+        mock.method(LicensingClient.prototype as any, 'setupServicesConfig', async () => '/tmp/services-config.json');
+        mock.method(LicensingClient.prototype, 'GetMachineBindings', async () => []);
+        mock.method(LicensingClient, 'StopBackgroundClients', async () => { });
+        const activate = mock.method(LicensingClient.prototype, 'Activate', async () => 'fallback-token');
+        const deactivate = mock.method(LicensingClient.prototype, 'Deactivate', async () => {
+            throw new Error('floating server returned HTTP 503 Service Unavailable');
+        });
+
+        await assert.rejects(ActivateLicense({ ...floating }), (error: Error) => {
+            assert.match(error.message, /token in response: yes, lease released: no/);
+            assert.match(error.message, /skipping fallback activation to avoid occupying a second seat/);
+            assert.match(error.message, /HTTP 503 Service Unavailable/);
+            assert.equal(error.message.includes(LEASE), false);
+            return true;
+        });
+
+        assert.equal(deactivate.mock.callCount(), 1);
+        assert.equal(activate.mock.callCount(), 0);
+        assert.equal(logger.mask.mock.calls.some(call => call.arguments[0] === LEASE), true);
+        assert.equal(logger.annotate.mock.callCount(), 1);
+        assert.equal(logger.annotate.mock.calls[0]!.arguments[7], 'unity-cli-inconsistent-activation');
+    });
+
+    it('does not classify a non-retryable fallback error using an earlier retryable CLI error', async () => {
+        mockLogger();
+        mock.method(UnityCli, 'Get', async () => ({
+            RunJson: async () => ({
+                exitCode: 1,
+                envelope: { success: false, errors: [{ code: 'HTTP_503', message: 'HTTP 503 Service Unavailable' }] },
+                stdout: '',
+                stderr: '',
+            }),
+        }));
+        mockLicensingClient(async () => {
+            throw new Error('Unity ID sign-in failed: invalid email or password');
+        });
+
+        await assert.rejects(
+            ActivateLicense({ licenseType: LicenseType.personal, username: 'user@example.com', password: 'wrong' }),
+            (error: Error) => {
+                assert.match(error.message, /invalid email or password/);
+                assert.match(error.message, /Before the fallback:[\s\S]*HTTP 503 Service Unavailable/);
+                assert.equal(ClassifyFailure(error.message), undefined);
+                return true;
+            }
+        );
+    });
 });
 
 describe('floating exhaustion markers', () => {
