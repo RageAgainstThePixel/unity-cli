@@ -1211,6 +1211,8 @@ export async function ActivateLicense(options: ActivateOptions): Promise<string 
     logger.CI_setOutput('license-source', 'account');
     let cliError: unknown;
     let inconsistent = false;
+    let unreleasedLease = false;
+    let releaseError: unknown;
 
     try {
         const result = await activateWithUnityCli(options);
@@ -1222,8 +1224,17 @@ export async function ActivateLicense(options: ActivateOptions): Promise<string 
 
         cliError = result.reason;
         inconsistent = result.inconsistent === true;
+        unreleasedLease = result.unreleasedLease === true;
+        releaseError = result.releaseError;
     } catch (error) {
         cliError = error;
+    }
+
+    if (unreleasedLease) {
+        const releaseMessage = releaseError instanceof Error ? releaseError.message : String(releaseError);
+        const detail = `${cliError}\nCould not release the leftover lease, so skipping fallback activation to avoid occupying a second seat: ${releaseMessage}`;
+        logger.annotate(LogLevel.WARN, `Unity CLI reported a successful activation without an active license.\n${detail}`, undefined, undefined, undefined, undefined, undefined, 'unity-cli-inconsistent-activation');
+        throw new Error(detail, { cause: releaseError });
     }
 
     if (inconsistent) {
@@ -1465,7 +1476,14 @@ async function activateFromLicenseFile(licenseFile: string): Promise<boolean> {
     }
 }
 
-async function activateWithUnityCli(options: ActivateOptions): Promise<{ activated: boolean; inconsistent?: boolean; token?: string | undefined; reason?: string | undefined }> {
+async function activateWithUnityCli(options: ActivateOptions): Promise<{
+    activated: boolean;
+    inconsistent?: boolean;
+    unreleasedLease?: boolean;
+    releaseError?: unknown;
+    token?: string | undefined;
+    reason?: string | undefined;
+}> {
     const args = ['license', 'activate'];
     const redactLiterals: string[] = [];
 
@@ -1508,6 +1526,7 @@ async function activateWithUnityCli(options: ActivateOptions): Promise<{ activat
         }
 
         let released = 'no';
+        let releaseError: unknown;
 
         if (options.licenseType === LicenseType.personal && IsSharedRunnerIdentity()) {
             // same safeguard as ReturnLicense: a return here would revoke the license for every job and repo on this identity
@@ -1517,6 +1536,7 @@ async function activateWithUnityCli(options: ActivateOptions): Promise<{ activat
                 await returnLicense(options.licenseType, leftover);
                 released = 'yes';
             } catch (error) {
+                releaseError = error;
                 Logger.instance.warn(`Could not release the lease left by the inconsistent activation.\n${error}`);
             }
         }
@@ -1524,6 +1544,8 @@ async function activateWithUnityCli(options: ActivateOptions): Promise<{ activat
         return {
             activated: false,
             inconsistent: true,
+            unreleasedLease: Boolean(leftover && releaseError !== undefined),
+            releaseError,
             reason: `unity license activate exited ${exitCode} and reported success, but unity license status reports no active license` +
                 ` (token in response: ${leftover ? 'yes' : 'no'}, lease released: ${released})`,
         };

@@ -22,12 +22,15 @@ const TRANSIENT_PATTERN = /HTTP 5\d\d|Bad Gateway|Service Unavailable|Gateway Ti
  * @returns The marker, or undefined for a failure a rerun would repeat.
  */
 export function ClassifyFailure(message: string): string | undefined {
-    if (LICENSE_EXHAUSTED_PATTERN.test(message)) {
+    // only classify the final failure, not an earlier CLI error appended as context after a fallback
+    const primary = message.split('\nBefore the fallback:')[0] ?? message;
+
+    if (LICENSE_EXHAUSTED_PATTERN.test(primary)) {
         return LICENSE_EXHAUSTED_MARKER;
     }
 
     // Node reports a download cut off mid-stream with a bare "aborted"
-    if (TRANSIENT_PATTERN.test(message) || /^(Error: )?aborted$/.test(message.trim())) {
+    if (TRANSIENT_PATTERN.test(primary) || /^(Error: )?aborted$/.test(primary.trim())) {
         return TRANSIENT_FAILURE_MARKER;
     }
 
